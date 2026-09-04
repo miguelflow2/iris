@@ -25,3 +25,6 @@ server/.env
 *.log
 vite-dev.log
 release/
+
+# donnees de developpement locales
+backend/dev-data/
