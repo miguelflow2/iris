@@ -5,7 +5,12 @@ doit rester explicite, et le jeton doit être exigé partout, sans exception.
 """
 from __future__ import annotations
 
-from iris.mobile import PAGE, urls_locales
+from iris.mobile import MANIFESTE, PAGE, urls_locales
+
+# La voile VELA, source unique : renderer/src/components/Voile.tsx. Aucune approximation.
+FOC = "M 36.5 46.3 L 36.6 158 L 0 158 Z"
+GRAND_VOILE = "M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"
+CREME, ENCRE, TERRACOTTA = "#F8F0E7", "#1B140E", "#B36B3B"
 
 
 # --------------------------------------------------------------------------- sécurité
@@ -173,3 +178,96 @@ def test_lagent_de_service_ne_met_jamais_lapi_en_cache(client_sans_jeton):
 
 def test_la_page_declare_le_manifeste():
     assert 'rel="manifest"' in PAGE and "serviceWorker" in PAGE
+
+
+# --------------------------------------------------------------------------- identité VELA
+def test_la_voile_remplace_lancien_anneau():
+    """Le logo est une voile, reprise au tracé près de la source unique."""
+    assert PAGE.count(FOC) == 2, "le foc doit être là deux fois : entête et écran de connexion"
+    assert PAGE.count(GRAND_VOILE) == 2
+    assert 'viewBox="0 0 120 158"' in PAGE
+    assert "A 36 36 0 1 0" not in PAGE, "l'ancien anneau ne doit plus exister nulle part"
+
+
+def test_le_logo_reste_visible_sur_le_fond_sombre():
+    """Règle absolue : jamais la grand-voile encre sur fond sombre, elle y disparaîtrait."""
+    for morceau in PAGE.split("<svg")[1:]:
+        svg = morceau.split("</svg>")[0]
+        grand = svg.split(GRAND_VOILE, 1)[1] if GRAND_VOILE in svg else ""
+        assert CREME in grand.split("/>", 1)[0], "la grand-voile doit être crème sur ce fond encre"
+        foc = svg.split(FOC, 1)[1]
+        assert TERRACOTTA in foc.split("/>", 1)[0], "le foc porte la couleur de la marque"
+
+
+def test_lancien_teal_a_totalement_disparu():
+    for teal in ("#17c793", "#0f6e56", "17C793", "0F6E56"):
+        assert teal not in PAGE, f"couleur abandonnée encore présente : {teal}"
+
+
+def test_la_palette_vela_est_en_place():
+    for couleur in (CREME, ENCRE, TERRACOTTA, "#D08A55"):
+        assert couleur in PAGE, f"manque à la palette : {couleur}"
+    assert '<meta name="theme-color" content="#1B140E">' in PAGE
+    assert MANIFESTE["theme_color"] == MANIFESTE["background_color"] == ENCRE
+
+
+# --------------------------------------------------------------------------- l'iPhone de Miguel
+def test_liphone_est_reconnu():
+    """iOS n'offre jamais « Installer l'application » : il faut le détecter pour l'expliquer."""
+    assert "iPad|iPhone|iPod" in PAGE
+    assert "navigator.standalone" in PAGE, "déjà posée sur l'écran d'accueil : ne rien proposer"
+
+
+def test_le_bandeau_dinstallation_nomme_safari_et_ne_revient_pas():
+    assert "Safari" in PAGE, "sans Safari, le geste « Sur l'écran d'accueil » n'existe pas"
+    assert "Sur l'écran d'accueil" in PAGE
+    assert "Partager" in PAGE
+    assert "iris_ios_installe" in PAGE, "le bandeau fermé doit rester fermé"
+
+
+def test_la_synthese_vocale_est_amorcee_par_un_geste():
+    """Sans énonciation lancée depuis un vrai geste, iOS garde IRIS muette pour toujours."""
+    assert "amorcerSynthese" in PAGE
+    assert PAGE.count("amorcerSynthese()") >= 3, "le bouton, l'envoi écrit et la connexion"
+    debut = PAGE.index("function amorcerSynthese")
+    corps = PAGE[debut:debut + 420]
+    assert "SpeechSynthesisUtterance" in corps and "volume = 0" in corps
+
+
+def test_une_voix_francaise_est_choisie_si_le_telephone_en_a_une():
+    assert "fr-ca" in PAGE and "fr-fr" in PAGE
+    assert "voiceschanged" in PAGE, "sur iOS la liste des voix arrive après le chargement"
+
+
+def test_le_bouton_ne_reste_jamais_bloque_sur_parlez():
+    """onend sans résultat, session coupée, micro muet : dans tous les cas on revient au repos."""
+    assert "reco.onend" in PAGE and "onerror" in PAGE
+    assert "setTimeout" in PAGE and "12000" in PAGE, "un garde-fou doit reprendre la main"
+    for rappel in ("function repos", "clearTimeout(garde)", "classList.remove('ecoute')"):
+        assert rappel in PAGE, f"manque : {rappel}"
+
+
+def test_le_micro_refuse_bascule_en_saisie_ecrite():
+    assert "basculerEnEcrit" in PAGE
+    assert "not-allowed" in PAGE and "service-not-allowed" in PAGE
+    assert "Voix indisponible" in PAGE and "champ.focus()" in PAGE
+
+
+def test_la_zone_sure_et_le_clavier_sont_respectes():
+    for regle in ("env(safe-area-inset-top)", "env(safe-area-inset-bottom)",
+                  "env(safe-area-inset-left)", "env(safe-area-inset-right)"):
+        assert regle in PAGE, f"encoche ou barre du bas ignorée : {regle}"
+    assert "visualViewport" in PAGE, "sinon le clavier iOS recouvre le champ de saisie"
+    assert "font-size:16px" in PAGE, "sous 16 px, Safari zoome tout seul à la mise au point"
+
+
+def test_la_hauteur_a_un_repli_pour_les_ios_anciens():
+    """100dvh manque avant iOS 15.4 : sans repli, la page serait coupée."""
+    assert "--hauteur:100vh" in PAGE
+    assert "@supports (height: 100dvh)" in PAGE
+
+
+def test_le_stockage_local_ne_fait_jamais_planter_la_page():
+    """Safari en navigation privée fait lever localStorage : la page doit survivre."""
+    assert "function memoire" in PAGE and "function retenir" in PAGE
+    assert "localStorage.getItem" in PAGE[PAGE.index("function memoire"):PAGE.index("function memoire") + 200]

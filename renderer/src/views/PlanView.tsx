@@ -28,7 +28,7 @@ export function PlanView(): JSX.Element {
 
       <div className="card col">
         <div className="row between"><strong>Utilisation ce mois-ci ({u.month})</strong><span className="small muted">{u.requests} / {u.requests_limit} requêtes</span></div>
-        <div className="progress"><div style={{ width: `${pct}%`, background: pct >= 95 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--accent)' }} /></div>
+        <div className="progress"><div style={{ width: `${pct}%`, background: pct >= 95 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--accent-2)' }} /></div>
         {u.tts_chars_limit ? <div className="small muted">Voix ElevenLabs : {u.tts_chars} / {u.tts_chars_limit} caractères</div> : <div className="small muted">Voix Windows incluse (ElevenLabs à partir du plan Essentiel).</div>}
       </div>
 

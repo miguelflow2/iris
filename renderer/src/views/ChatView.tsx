@@ -751,7 +751,7 @@ export function ChatView(): JSX.Element {
               title="Parler tout de suite, sans le mot d’activation (Ctrl+Maj+Espace) — fonctionne même micro coupé ou écoute en pause"
               onClick={() => api.send({ type: 'voice.push_to_talk' })}
             >
-              🎙 Parler maintenant <kbd style={{ color: 'inherit', background: 'rgba(0,0,0,0.18)', borderColor: 'rgba(0,0,0,0.26)' }}>Ctrl+Maj+Espace</kbd>
+              🎙 Parler maintenant <kbd style={{ color: 'inherit', background: 'rgba(27,20,14,0.22)', borderColor: 'rgba(27,20,14,0.34)' }}>Ctrl+Maj+Espace</kbd>
             </button>
           </div>
         </div>

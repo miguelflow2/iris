@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Ring } from '../components/Ring'
+import { Voile } from '../components/Voile'
 import { Toggle } from '../components/ui'
 import { api } from '../lib/api'
 import { useStore } from '../lib/store'
@@ -49,7 +49,7 @@ export function Onboarding(): JSX.Element {
         <div className="steps">{steps.map((s, i) => <span key={s} className={i <= step ? 'done' : ''} />)}</div>
         {step === 0 ? (
           <>
-            <div className="row" style={{ marginBottom: 12 }}><Ring /><h3 style={{ margin: 0 }}>Bienvenue dans IRIS</h3></div>
+            <div className="row" style={{ marginBottom: 12 }}><Voile taille={30} variante="clair" className="voile lueur" titre="VELA" /><h3 style={{ margin: 0 }}>Bienvenue dans IRIS</h3></div>
             {/* Première phrase du produit : bénéfice concret, aucun jargon, promesse vérifiable (cf. docs/DIFFERENCIATION.md §3.A). */}
             <p>IRIS est une assistante vocale : elle fait travailler votre ordinateur à votre place, retient ce qui compte pour vous, et vous laisse <strong>vérifier vous-même</strong> ce qu’elle a capté et ce qu’elle a envoyé. Rien ne sort de cet ordinateur sans votre accord.</p>
             {/* Triade de marque conservée, dans sa forme en français clair du README. */}

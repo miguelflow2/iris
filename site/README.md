@@ -20,7 +20,7 @@ python -m http.server 8080
 
 | Fichier | Page |
 |---|---|
-| `index.html` | Accueil : hero plein écran avec l'anneau animé, registre chaîné animé, commande vocale animée, trois piliers, « Pourquoi VELA existe », garanties, aperçu des plans |
+| `index.html` | Accueil : hero plein écran avec la voile qui se hisse, registre chaîné animé, commande vocale animée, trois piliers, « Pourquoi VELA existe », garanties, aperçu des plans |
 | `confidentialite.html` | La confidentialité vérifiable expliquée simplement + démonstration interactive du registre chaîné |
 | `fonctionnalites.html` | Tableau complet de ce qu'IRIS sait faire, avec le plan requis, et ce qui n'existe pas encore |
 | `plans.html` | Plans et prix exacts, boutons de paiement PayPal, offre groupée, comportement du quota |
@@ -31,12 +31,19 @@ python -m http.server 8080
 | `DEPLOIEMENT.md` | Marche à suivre pour publier (Netlify Drop, alternative Cloudflare) et liste de vérification après mise en ligne |
 | `_headers` | En-têtes de sécurité au format Netlify (CSP, HSTS, anti-cadre, cache) |
 | `robots.txt`, `sitemap.xml` | Indexation. **Contiennent l'adresse du site : à corriger si le domaine change.** |
-| `assets/style.css` | Système visuel, repris de `renderer/src/styles.css` (mêmes variables, même palette teal) |
+| `assets/style.css` | Système visuel, repris de `renderer/src/styles.css` (mêmes variables, même palette : crème, encre, terracotta) |
 | `assets/site.js` | Menu sur téléphone + démonstration du registre : SHA-256 implémenté dans la page |
 | `telechargement/` | L'installeur `IRIS-Setup-0.1.0.exe` servi par le bouton de `installer.html` (voir plus bas) |
 
-Le logo est le symbole VELA de l'application (anneau volontairement ouvert), redessiné en SVG en ligne
-dans chaque page — même tracé que `renderer/src/components/Ring.tsx`.
+Le logo est la voile de VELA, reprise en SVG en ligne dans chaque page — **exactement les deux mêmes
+chemins** que `renderer/src/components/Voile.tsx`, jamais redessinés :
+
+    foc          M 36.5 46.3 L 36.6 158 L 0 158 Z
+    grand-voile  M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z
+
+Le site est sur fond sombre, donc c'est la variante **grand-voile crème + foc terracotta** partout
+(entête, pied, hero, filigranes, favicon). La variante grand-voile encre est réservée aux fonds
+clairs : posée ici, elle disparaîtrait.
 
 ### Les visuels : tout est dessiné, rien n'est importé
 
@@ -46,16 +53,16 @@ ouvert en `file://` et hors ligne.
 
 | Visuel | Où | Comment |
 |---|---|---|
-| Anneau du hero | `index.html`, classe `.hero-mark` | Le tracé se dessine au chargement (`stroke-dasharray: 184`, la longueur d'arc réelle du chemin), avec un cercle pointillé qui tourne et un point sur l'ouverture |
+| Voile qui se hisse | `index.html`, classe `.hero-mark` | Le mât se trace du pied vers la tête (`stroke-dasharray: 158`), puis les deux voiles montent le long : un `clip-path: inset()` qui remonte du pied vers la tête. Ensuite la grand-voile se remplit de vent, très légèrement (`scaleX` 1 → 1,022 sur 9 s) |
 | Registre chaîné animé | `index.html`, `.viz-chain` | Cinq blocs, quatre liens. Une boucle CSS de 9 s : la 2ᵉ entrée est réécrite, la cassure descend la chaîne bloc par bloc (`animation-delay: calc(var(--i) * 0.32s)`) |
 | Commande vocale animée | `index.html`, `.viz-voice` | Boucle de 8 s : onde sonore, phrase dévoilée de gauche à droite (`clip-path`), action, puis inscription au registre |
-| Lunettes au trait | `index.html`, `.viz-glasses` | Deux anneaux ouverts du logo, ouverture tournée vers le pont, branches, annotations « micro », « son » et « aucune caméra » |
+| Lunettes au trait | `index.html`, `.viz-glasses` | Deux verres ronds tracés au chargement, pont, branches, annotations « micro », « son » et « aucune caméra » |
 | Pictogrammes | `index.html`, `<symbol>` en haut du fichier, appelés par `<use href="#…">` | Douze icônes au trait. Même document, donc aucune requête réseau |
 
 **`prefers-reduced-motion` coupe tout.** La règle en haut de `style.css` ramène la durée à 0,001 ms **et
 force `animation-iteration-count: 1`** : sans ça, une boucle infinie clignoterait mille fois par seconde.
 Chaque visuel est donc écrit pour que son **état de repos** soit celui qu'on veut montrer à l'arrêt :
-anneau tracé, chaîne intacte, phrase entière, lunettes dessinées.
+voile entièrement hissée, chaîne intacte, phrase entière, lunettes dessinées.
 
 ### Ce qu'on dit des lunettes
 

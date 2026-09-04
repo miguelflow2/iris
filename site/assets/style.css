@@ -5,31 +5,41 @@
    ========================================================================= */
 
 :root {
-  /* surfaces */
-  --bg: #08090a;
-  --bg-2: #0d0f11;
-  --panel: #141719;
-  --panel-2: #1b1f22;
-  --panel-3: #23282c;
-  --border: #23272b;
-  --border-2: #31373c;
+  /* --- les quatre couleurs de la marque, tirées du logo lui-même --- */
+  --creme: #F8F0E7;        /* la grand-voile sur fond sombre, et tout le texte courant */
+  --encre: #1B140E;        /* le fond, et le texte posé sur le terracotta */
+  --terracotta: #B36B3B;   /* le foc : la couleur que la marque porte */
+  --terracotta-clair: #D08A55; /* la même, éclaircie pour le PETIT texte sur fond sombre */
+
+  /* surfaces : des encres chaudes, toutes dérivées du #1B140E du logo */
+  --bg: #0E0A07;
+  --bg-2: #140E0A;
+  --panel: #1E1610;
+  --panel-2: #271D15;
+  --panel-3: #33261C;
+  --border: #2C211A;
+  --border-2: #3F2F24;
 
   /* texte */
-  --text: #f4f6f7;
-  --text-2: #b9c1c6;
-  --muted: #8b959c;
+  --text: var(--creme);
+  --text-2: #D6C7B8;
+  --muted: #A2907F;
 
-  /* marque VELA : teal, une seule couleur d'accent */
-  --accent: #0f6e56;
-  --accent-2: #17c793;
-  --accent-3: #3fe0b0;
-  --accent-soft: rgba(23, 199, 147, 0.13);
-  --accent-line: rgba(23, 199, 147, 0.32);
+  /* marque VELA : le terracotta du foc, une seule couleur d'accent.
+     Règle de lisibilité : --accent-2 pour les REMPLISSAGES et les traits,
+     --accent-3 dès qu'il s'agit de TEXTE — le terracotta pur ne contraste
+     qu'à 4,4:1 sur nos fonds sombres, la version claire monte à 6,3:1. */
+  --accent: #8C4F2B;
+  --accent-2: var(--terracotta);
+  --accent-3: var(--terracotta-clair);
+  --accent-hi: #E6A275;
+  --accent-soft: rgba(179, 107, 59, 0.16);
+  --accent-line: rgba(208, 138, 85, 0.34);
 
-  --danger: #ff5a5f;
-  --danger-soft: rgba(255, 90, 95, 0.13);
-  --warn: #efb552;
-  --warn-soft: rgba(239, 181, 82, 0.13);
+  --danger: #ff6b63;
+  --danger-soft: rgba(255, 107, 99, 0.14);
+  --warn: #E9C46A;
+  --warn-soft: rgba(233, 196, 106, 0.13);
 
   /* rythme */
   --radius: 12px;
@@ -64,8 +74,8 @@ html { scroll-behavior: smooth; }
 body {
   margin: 0;
   background:
-    radial-gradient(1100px 620px at 14% -8%, rgba(23, 199, 147, 0.07), transparent 62%),
-    radial-gradient(900px 520px at 100% 100%, rgba(23, 199, 147, 0.035), transparent 60%),
+    radial-gradient(1100px 620px at 14% -8%, rgba(179, 107, 59, 0.10), transparent 62%),
+    radial-gradient(900px 520px at 100% 100%, rgba(179, 107, 59, 0.05), transparent 60%),
     var(--bg);
   background-repeat: no-repeat;
   color: var(--text);
@@ -76,10 +86,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent-2); text-underline-offset: 3px; }
-a:hover { color: var(--accent-3); }
+a { color: var(--accent-3); text-underline-offset: 3px; }
+a:hover { color: var(--accent-hi); }
 :focus-visible { outline: 2px solid var(--accent-3); outline-offset: 3px; border-radius: 6px; }
-::selection { background: rgba(23, 199, 147, 0.28); }
+::selection { background: rgba(179, 107, 59, 0.38); color: var(--creme); }
 img, svg { max-width: 100%; }
 hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 
@@ -88,21 +98,26 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 
 .skip {
   position: absolute; left: -9999px; top: 0; z-index: 100;
-  background: var(--accent-2); color: #04120d; padding: 10px 16px; border-radius: 0 0 8px 0; font-weight: 600;
+  background: var(--accent-3); color: var(--encre); padding: 10px 16px; border-radius: 0 0 8px 0; font-weight: 600;
 }
 .skip:focus, .skip:focus-visible { left: 0; }
 
 /* ------------------------------------------------------------------ entête */
 .site-head {
   position: sticky; top: 0; z-index: 40;
-  background: rgba(8, 9, 10, 0.88);
+  background: rgba(14, 10, 7, 0.90);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
 .head-inner { display: flex; align-items: center; gap: 18px; min-height: 64px; }
 
 .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--text); flex: none; }
-.ring { width: 34px; height: 34px; flex: none; filter: drop-shadow(0 0 12px rgba(23, 199, 147, 0.35)); }
+/* Le logo VELA : une voile. Deux chemins, jamais redessinés.
+   Sur ce site, dont le fond est sombre, la grand-voile est CRÈME : la variante
+   encre y disparaîtrait. Le foc reste terracotta dans les deux cas. */
+.voile { width: 29px; height: 38px; flex: none; filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.55)); }
+.v-foc { fill: var(--terracotta); }
+.v-grand { fill: var(--creme); }
 .brand-txt { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-txt b { font-weight: 700; letter-spacing: 0.2em; font-size: 15px; }
 .brand-txt i { font-style: normal; font-size: 9.5px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; }
@@ -122,10 +137,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 .site-nav a:hover { background: var(--panel); color: var(--text); }
 .site-nav a[aria-current="page"] { background: var(--panel-2); color: var(--text); border-color: var(--border); }
 .site-nav a.nav-cta {
-  background: linear-gradient(180deg, var(--accent-2), #12a87c); color: #04120d; font-weight: 620;
+  background: linear-gradient(180deg, var(--accent-3), #BE7845); color: var(--encre); font-weight: 620;
   border-color: transparent; margin-left: 6px;
 }
-.site-nav a.nav-cta:hover { background: linear-gradient(180deg, var(--accent-3), var(--accent-2)); color: #04120d; }
+.site-nav a.nav-cta:hover { background: linear-gradient(180deg, var(--accent-hi), var(--accent-3)); color: var(--encre); }
 
 /* ------------------------------------------------------------- typographie */
 main { display: block; padding-bottom: 80px; }
@@ -174,14 +189,16 @@ p { margin: 0 0 14px; }
   font-size: 15px; font-weight: 540; cursor: pointer; font-family: inherit;
   transition: background 0.14s var(--ease), border-color 0.14s var(--ease), transform 0.08s var(--ease);
 }
-.btn:hover { background: var(--panel-3); border-color: #3d444a; color: var(--text); }
+.btn:hover { background: var(--panel-3); border-color: #4C392B; color: var(--text); }
 .btn:active { transform: translateY(1px); }
 .btn.primary {
-  background: linear-gradient(180deg, var(--accent-2), #12a87c);
-  border-color: transparent; color: #04120d; font-weight: 620;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.14) inset, 0 6px 18px -8px rgba(23, 199, 147, 0.7);
+  /* Terracotta clair → terracotta, texte encre : 5,3:1 sur la bande la plus
+     foncée du dégradé. Le terracotta pur sous du texte encre tomberait à 4,4:1. */
+  background: linear-gradient(180deg, var(--accent-3), #BE7845);
+  border-color: transparent; color: var(--encre); font-weight: 620;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 6px 18px -8px rgba(179, 107, 59, 0.8);
 }
-.btn.primary:hover { background: linear-gradient(180deg, var(--accent-3), var(--accent-2)); color: #04120d; }
+.btn.primary:hover { background: linear-gradient(180deg, var(--accent-hi), var(--accent-3)); color: var(--encre); }
 .btn.sm { padding: 7px 14px; font-size: 13.5px; }
 
 /* ------------------------------------------------------------------ blocs */
@@ -257,7 +274,7 @@ td.price .pay { display: flex; margin-top: 10px; font-family: var(--font); }
 .card.offre {
   border-color: var(--accent-line);
   background:
-    radial-gradient(520px 200px at 0% 0%, rgba(23, 199, 147, 0.12), transparent 70%),
+    radial-gradient(520px 200px at 0% 0%, rgba(179, 107, 59, 0.16), transparent 70%),
     linear-gradient(180deg, var(--panel), var(--bg-2));
   box-shadow: var(--shadow-2);
 }
@@ -268,7 +285,7 @@ td.price .pay { display: flex; margin-top: 10px; font-family: var(--font); }
   padding: 26px 28px; border-radius: var(--radius-lg);
   border: 1px solid var(--accent-line);
   background:
-    radial-gradient(560px 220px at 0% 0%, rgba(23, 199, 147, 0.13), transparent 70%),
+    radial-gradient(560px 220px at 0% 0%, rgba(179, 107, 59, 0.17), transparent 70%),
     linear-gradient(180deg, var(--panel), var(--bg-2));
   box-shadow: var(--shadow-2);
 }
@@ -462,11 +479,11 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 }
 .hero-inner { position: relative; z-index: 1; width: 100%; }
 
-/* halo diffus derrière l'anneau : pur CSS, respire lentement */
+/* halo diffus derrière la voile : pur CSS, respire lentement */
 .hero-glow {
   position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%);
   width: min(120vw, 900px); aspect-ratio: 1; pointer-events: none; z-index: 0;
-  background: radial-gradient(circle, rgba(23, 199, 147, 0.16), rgba(23, 199, 147, 0.05) 42%, transparent 68%);
+  background: radial-gradient(circle, rgba(179, 107, 59, 0.20), rgba(179, 107, 59, 0.06) 42%, transparent 68%);
   animation: respire 7s var(--ease) infinite;
 }
 @keyframes respire {
@@ -474,37 +491,50 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
   50%      { opacity: 1;    transform: translate(-50%, -50%) scale(1.07); }
 }
 
-/* L'anneau domine, mais il se règle aussi sur la HAUTEUR de l'écran :
-   sinon, sur un portable, il pousse le bouton sous la ligne de flottaison. */
-.hero-mark { width: clamp(150px, min(28vw, 30vh), 320px); margin: 0 auto 24px; }
-.hero-mark svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* La voile domine, mais elle se règle aussi sur la HAUTEUR de l'écran :
+   sinon, sur un portable, elle pousse le bouton sous la ligne de flottaison. */
+.hero-mark { width: clamp(140px, min(26vw, 30vh), 300px); margin: 0 auto 24px; }
+.hero-mark svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.5)); }
 
-/* l'anneau : le trait se dessine au chargement (longueur d'arc réelle ~= 184) */
-.hm-ring {
-  stroke: var(--accent-2); stroke-width: 9; stroke-linecap: round; fill: none;
-  stroke-dasharray: 184; stroke-dashoffset: 184;
-  animation: trace 1.7s cubic-bezier(0.25, 0.75, 0.25, 1) 0.15s forwards;
-  filter: drop-shadow(0 0 18px rgba(23, 199, 147, 0.45));
+/* Le mât se trace du pied vers la tête, puis la voile se hisse le long.
+   État de repos (mouvement réduit) = voile entièrement hissée, jamais un vide. */
+.hm-mat {
+  stroke: rgba(248, 240, 231, 0.32); stroke-width: 1.6; fill: none; stroke-linecap: round;
+  stroke-dasharray: 158; stroke-dashoffset: 158;
+  animation: hisse-mat 0.8s cubic-bezier(0.25, 0.75, 0.25, 1) 0.1s forwards;
 }
-@keyframes trace { to { stroke-dashoffset: 0; } }
+@keyframes hisse-mat { to { stroke-dashoffset: 0; } }
 
-/* cercle pointillé qui tourne autour : donne de la vie sans distraire */
-.hm-orbit {
-  stroke: var(--accent-line); stroke-width: 1.2; fill: none;
-  stroke-dasharray: 2 12; opacity: 0;
-  transform-origin: 49.4px 52px;
-  animation: orbite-app 1.2s ease 1.4s forwards, orbite 34s linear 1.4s infinite;
+/* la ligne d'eau : posée en dernier, elle ancre le logo sans le concurrencer */
+.hm-mer {
+  stroke: var(--accent-line); stroke-width: 1.4; stroke-linecap: round;
+  stroke-dasharray: 2 9; opacity: 0;
+  animation: hm-fondu 0.9s ease 1.5s forwards;
 }
-@keyframes orbite-app { to { opacity: 1; } }
-@keyframes orbite { to { transform: rotate(360deg); } }
+@keyframes hm-fondu { to { opacity: 1; } }
 
-/* le point qui ferme presque l'anneau : l'ouverture est volontaire, on la montre */
-.hm-dot {
-  fill: var(--accent-3); opacity: 0;
-  animation: pt-app 0.5s ease 1.8s forwards, pt-bat 3.4s ease-in-out 2.3s infinite;
+/* Le foc part en premier, court et vif. */
+.hm-foc {
+  fill: var(--terracotta);
+  clip-path: inset(100% 0 0 0);
+  animation: hisser 0.9s cubic-bezier(0.22, 0.72, 0.28, 1) 0.45s forwards;
 }
-@keyframes pt-app { to { opacity: 1; } }
-@keyframes pt-bat { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* La grand-voile suit, plus longue à monter, puis se remplit de vent.
+   Crème sur fond sombre : la variante encre disparaîtrait ici. */
+.hm-grand {
+  fill: var(--creme);
+  clip-path: inset(100% 0 0 0);
+  transform-box: view-box; transform-origin: 41.4px 158px;
+  animation:
+    hisser 1.6s cubic-bezier(0.22, 0.72, 0.28, 1) 0.62s forwards,
+    souffle 9s ease-in-out 2.4s infinite;
+}
+/* Le découpage remonte du pied vers la tête : c'est la voile qui se hisse. */
+@keyframes hisser { to { clip-path: inset(0 0 0 0); } }
+@keyframes souffle {
+  0%, 100% { transform: scaleX(1); }
+  50%      { transform: scaleX(1.022); }
+}
 
 .hero-full .eyebrow { animation: monte 0.7s var(--ease) 0.5s both; }
 .hero-title {
@@ -537,15 +567,18 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 
 /* --------------------------------------------------- en-tete des pages secondaires */
 .hero { position: relative; overflow-x: clip; }
-.hero-ring-bg {
-  position: absolute; right: -70px; top: -60px; width: 320px; pointer-events: none; z-index: 0;
-  opacity: 0.2;
+/* Filigrane : la même voile, hissée doucement, assez pâle pour ne jamais
+   passer devant le texte qu'elle accompagne. */
+.hero-voile-bg {
+  position: absolute; right: -26px; top: -54px; width: 208px; pointer-events: none; z-index: 0;
+  opacity: 0.11;
 }
-.hero-ring-bg path {
-  stroke: var(--accent-2); stroke-width: 7; stroke-linecap: round; fill: none;
-  stroke-dasharray: 184; stroke-dashoffset: 184;
-  animation: trace 1.9s cubic-bezier(0.25, 0.75, 0.25, 1) 0.2s forwards;
+.hero-voile-bg path {
+  clip-path: inset(100% 0 0 0);
+  animation: hisser 1.9s cubic-bezier(0.22, 0.72, 0.28, 1) 0.25s forwards;
 }
+.hero-voile-bg .hv-foc { fill: var(--terracotta); }
+.hero-voile-bg .hv-grand { fill: var(--creme); }
 .hero > .wrap { position: relative; z-index: 1; }
 
 /* -------------------------------------------------------------- pictogrammes */
@@ -565,7 +598,7 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
   margin: 0; padding: 26px 24px;
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   background:
-    radial-gradient(700px 300px at 20% 0%, rgba(23, 199, 147, 0.07), transparent 70%),
+    radial-gradient(700px 300px at 20% 0%, rgba(179, 107, 59, 0.10), transparent 70%),
     linear-gradient(180deg, var(--panel), var(--bg-2));
   box-shadow: var(--shadow-2);
   overflow: hidden;
@@ -656,7 +689,7 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 
 .vs-wave { display: flex; align-items: flex-end; gap: 3px; height: 28px; flex: none; }
 .vs-wave i {
-  display: block; width: 3px; height: 8px; border-radius: 2px; background: var(--accent-2);
+  display: block; width: 3px; height: 8px; border-radius: 2px; background: var(--accent-3);
   animation: onde 1.05s ease-in-out infinite alternate;
   animation-delay: calc(var(--b, 0) * 0.09s);
 }
@@ -682,7 +715,7 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 /* ------------------------------------------------- visuel 3 : lunettes au trait */
 .viz-glasses svg { display: block; width: 100%; height: auto; }
 .gl-line {
-  stroke: var(--accent-2); fill: none; stroke-linecap: round; stroke-linejoin: round;
+  stroke: var(--accent-3); fill: none; stroke-linecap: round; stroke-linejoin: round;
   stroke-dasharray: 260; stroke-dashoffset: 260;
   animation: trace-gl 2.2s cubic-bezier(0.25, 0.75, 0.25, 1) forwards;
   animation-delay: calc(var(--d, 0) * 1s);
@@ -756,7 +789,7 @@ details.plus .plus-body p:last-child, details.plus .plus-body ul:last-child { ma
   .hero-mark { margin-bottom: 20px; }
   .scroll-cue { display: none; }
   .viz { padding: 20px 16px; }
-  .hero-ring-bg { width: 200px; right: -55px; top: -34px; opacity: 0.14; }
+  .hero-voile-bg { width: 128px; right: -22px; top: -30px; opacity: 0.12; }
   .vs-row { padding: 12px 12px; gap: 10px; }
   .vs-wave { display: none; }
   /* Sur téléphone la phrase passe sous la pastille : elle a besoin de toute la

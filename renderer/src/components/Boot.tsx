@@ -1,5 +1,5 @@
 import React from 'react'
-import { Ring } from './Ring'
+import { Voile } from './Voile'
 
 /**
  * Écrans de démarrage et de panne du service IRIS.
@@ -47,7 +47,7 @@ export function Splash({ logPath }: { logPath?: string }): JSX.Element {
 
   return (
     <div className="splash">
-      <Ring />
+      <Voile taille={60} variante="clair" className="voile lueur" anime titre="VELA" />
       <div>IRIS se prépare…</div>
       <div className="progress indet" style={{ width: 220 }}>
         <div />
@@ -84,7 +84,9 @@ export function Failure({ down, message, logPath }: { down: boolean; message: st
 
   return (
     <div className="splash">
-      <Ring color="#e5484d" />
+      {/* La voile garde sa variante claire — l'encre disparaîtrait sur ce fond sombre.
+          C'est le halo, rouge, qui dit la panne. */}
+      <Voile taille={54} variante="clair" className="voile panne" titre="VELA" />
       <div style={{ color: 'var(--text)', fontSize: 16 }}>
         {down ? 'IRIS a été interrompue. Elle redémarre toute seule, quelques secondes.' : 'IRIS n’a pas réussi à démarrer sur cet ordinateur.'}
       </div>

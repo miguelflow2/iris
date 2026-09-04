@@ -1,36 +1,46 @@
 /* =========================================================================
    IRIS — système visuel
-   Principes : une seule couleur de marque (teal VELA), de la profondeur par
-   les surfaces et non par les bordures, une échelle typographique lisible à
-   1 m d'un portable, et un état vocal toujours visible.
+   Principes : la palette est tirée du logo VELA (la voile) et de rien d'autre,
+   de la profondeur par les surfaces et non par les bordures, une échelle
+   typographique lisible à 1 m d'un portable, et un état vocal toujours visible.
+
+   Les trois couleurs du logo :
+     crème      #F8F0E7 — le texte, et la grand-voile sur fond sombre
+     encre      #1B140E — le fond de l'application
+     terracotta #B36B3B — le foc, et l'unique accent
+
+   Règle de contraste appliquée partout : le terracotta pur ne donne que 4,41:1
+   sur l'encre — insuffisant pour du texte. Le texte accentué et les petits
+   éléments prennent donc le terracotta clair `--accent-2` (6,46:1) ; le
+   terracotta pur `--accent` ne sert que de remplissage et de trait.
    ========================================================================= */
 
 :root {
-  /* --- surfaces : du plus profond au plus proche --- */
-  --bg: #08090a;
-  --bg-2: #0d0f11;
-  --panel: #141719;
-  --panel-2: #1b1f22;
-  --panel-3: #23282c;
-  --border: #23272b;
-  --border-2: #31373c;
+  /* --- surfaces : du plus profond au plus proche, toutes dérivées de l'encre --- */
+  --bg: #1b140e;
+  --bg-2: #221a13;
+  --panel: #2a2019;
+  --panel-2: #33271e;
+  --panel-3: #3e2f24;
+  --border: #362a20;
+  --border-2: #7e6250;
 
-  /* --- texte --- */
-  --text: #f4f6f7;
-  --text-2: #b9c1c6;
-  --muted: #7d878e;
+  /* --- texte : crème et ses dégradés chauds (16,1:1 / 11,3:1 / 6,0:1 sur l'encre) --- */
+  --text: #f8f0e7;
+  --text-2: #d8c9ba;
+  --muted: #a5917f;
 
-  /* --- marque VELA : teal, une seule couleur d'accent --- */
-  --accent: #0f6e56;
-  --accent-2: #17c793;
-  --accent-3: #3fe0b0;
-  --accent-soft: rgba(23, 199, 147, 0.13);
-  --accent-line: rgba(23, 199, 147, 0.32);
+  /* --- marque VELA : terracotta, une seule couleur d'accent --- */
+  --accent: #b36b3b;
+  --accent-2: #d08a55;
+  --accent-3: #e3a87a;
+  --accent-soft: rgba(179, 107, 59, 0.18);
+  --accent-line: rgba(208, 138, 85, 0.38);
 
-  --danger: #ff5a5f;
-  --danger-soft: rgba(255, 90, 95, 0.13);
+  --danger: #ff7a6e;
+  --danger-soft: rgba(255, 122, 110, 0.14);
   --warn: #efb552;
-  --warn-soft: rgba(239, 181, 82, 0.13);
+  --warn-soft: rgba(239, 181, 82, 0.14);
 
   /* --- rythme --- */
   --radius: 12px;
@@ -49,8 +59,8 @@
 html, body, #root { height: 100%; margin: 0; }
 body {
   background:
-    radial-gradient(1100px 620px at 14% -8%, rgba(23, 199, 147, 0.07), transparent 62%),
-    radial-gradient(900px 520px at 100% 100%, rgba(23, 199, 147, 0.035), transparent 60%),
+    radial-gradient(1100px 620px at 14% -8%, rgba(179, 107, 59, 0.16), transparent 62%),
+    radial-gradient(900px 520px at 100% 100%, rgba(179, 107, 59, 0.08), transparent 60%),
     var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -65,10 +75,10 @@ a { color: var(--accent-2); text-underline-offset: 2px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 6px; }
-::selection { background: rgba(23, 199, 147, 0.28); }
+::selection { background: rgba(208, 138, 85, 0.3); }
 ::-webkit-scrollbar { width: 11px; height: 11px; }
-::-webkit-scrollbar-thumb { background: #2b3237; border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: #3a4248; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: #4a392c; border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #6b5442; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------------------------------------------------------------- layout */
@@ -85,10 +95,30 @@ button { cursor: pointer; }
 /* la navigation défile, l'état d'écoute et le mode confidentiel restent toujours visibles en bas */
 .sidebar .nav-scroll { overflow-y: auto; overflow-x: hidden; min-height: 0; flex: 1; margin: 0 -12px; padding: 0 12px; }
 .sidebar .nav-scroll::-webkit-scrollbar { width: 6px; }
-.ring { width: 28px; height: 28px; flex: none; }
+/* ------------------------------------------------------------- le logo
+   La voile est dessinée par components/Voile.tsx, qui pose lui-même sa taille et
+   ses couleurs. On ne lui donne ici qu'une lueur : sur l'encre, un halo terracotta
+   détache la grand-voile crème sans jamais la recouvrir. */
+.voile { flex: none; display: block; }
+.voile.lueur { filter: drop-shadow(0 0 12px rgba(179, 107, 59, 0.55)); }
+/* Écran de panne : la voile reste en variante claire (l'encre disparaîtrait sur ce
+   fond), c'est le halo qui vire au rouge. */
+.voile.panne { filter: drop-shadow(0 0 10px rgba(255, 122, 110, 0.85)) drop-shadow(0 0 34px rgba(255, 122, 110, 0.4)); opacity: 0.9; }
+
+/* Hissage : le foc monte, puis la grand-voile se déploie. Durée passée par le composant. */
+.voile-foc, .voile-grand { transform-origin: 50% 100%; }
+.voile-foc { animation: voile-hisse var(--voile-duree, 900ms) var(--ease) both; }
+.voile-grand { animation: voile-hisse var(--voile-duree, 900ms) var(--ease) 120ms both; }
+@keyframes voile-hisse {
+  from { transform: scaleY(0.04); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voile-foc, .voile-grand { animation: none; }
+}
+
 .brand { display: flex; align-items: center; gap: 11px; padding: 2px 8px 10px; }
 .brand-claim { font-size: 11.5px; line-height: 1.4; color: var(--muted); padding: 0 9px 10px; }
-.brand .ring { width: 30px; height: 30px; filter: drop-shadow(0 0 12px rgba(23, 199, 147, 0.35)); }
 .brand .name { font-weight: 700; letter-spacing: 0.2em; font-size: 15px; }
 .brand .sub { font-size: 9.5px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; }
 
@@ -150,17 +180,17 @@ button { cursor: pointer; }
   font-size: 13.5px; font-weight: 500; white-space: nowrap;
   transition: background 0.14s var(--ease), border-color 0.14s var(--ease), transform 0.08s var(--ease);
 }
-.btn:hover { background: var(--panel-3); border-color: #3d444a; }
+.btn:hover { background: var(--panel-3); border-color: #96755f; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
 .btn.primary {
-  background: linear-gradient(180deg, var(--accent-2), #12a87c);
-  border-color: transparent; color: #04120d; font-weight: 620;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset, 0 6px 18px -8px rgba(23,199,147,0.7);
+  background: linear-gradient(180deg, var(--accent-2), #bc7643);
+  border-color: transparent; color: #1b140e; font-weight: 620;
+  box-shadow: 0 1px 0 rgba(248,240,231,0.2) inset, 0 6px 18px -8px rgba(179,107,59,0.75);
 }
 .btn.primary:hover { background: linear-gradient(180deg, var(--accent-3), var(--accent-2)); }
-.btn.danger { color: var(--danger); border-color: rgba(255,90,95,0.38); background: transparent; }
-.btn.danger:hover { background: var(--danger-soft); border-color: rgba(255,90,95,0.6); }
+.btn.danger { color: var(--danger); border-color: rgba(255,122,110,0.4); background: transparent; }
+.btn.danger:hover { background: var(--danger-soft); border-color: rgba(255,122,110,0.62); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
 .btn.ghost:hover { background: var(--panel-2); color: var(--text); }
 .btn.sm { padding: 5px 11px; font-size: 12.5px; }
@@ -179,11 +209,11 @@ label.field span.hint { color: var(--muted); font-size: 12px; line-height: 1.45;
 
 .toggle {
   position: relative; width: 42px; height: 24px; border-radius: 12px;
-  background: #343b40; border: none; flex: none; transition: background 0.18s var(--ease);
+  background: #6b5442; border: none; flex: none; transition: background 0.18s var(--ease);
 }
 .toggle::after {
   content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
-  background: white; transition: transform 0.18s var(--ease); box-shadow: var(--shadow-1);
+  background: var(--text); transition: transform 0.18s var(--ease); box-shadow: var(--shadow-1);
 }
 .toggle.on { background: var(--accent-2); }
 .toggle.on::after { transform: translateX(18px); }
@@ -194,16 +224,16 @@ label.field span.hint { color: var(--muted); font-size: 12px; line-height: 1.45;
   font-size: 11.5px; font-weight: 500; border: 1px solid var(--border-2); color: var(--text-2);
 }
 .pill.ok { border-color: var(--accent-line); color: var(--accent-3); background: var(--accent-soft); }
-.pill.warn { border-color: rgba(239,181,82,0.45); color: var(--warn); background: var(--warn-soft); }
-.pill.err { border-color: rgba(255,90,95,0.45); color: var(--danger); background: var(--danger-soft); }
+.pill.warn { border-color: rgba(239,181,82,0.48); color: var(--warn); background: var(--warn-soft); }
+.pill.err { border-color: rgba(255,122,110,0.48); color: var(--danger); background: var(--danger-soft); }
 
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #454c52; display: inline-block; flex: none; }
-.dot.on { background: var(--accent-3); box-shadow: 0 0 10px rgba(63,224,176,0.55); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #6b5442; display: inline-block; flex: none; }
+.dot.on { background: var(--accent-3); box-shadow: 0 0 10px rgba(227,168,122,0.6); }
 .dot.rec { background: var(--danger); animation: pulse 1.6s infinite; }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255,90,95,0.55); }
-  70% { box-shadow: 0 0 0 8px rgba(255,90,95,0); }
-  100% { box-shadow: 0 0 0 0 rgba(255,90,95,0); }
+  0% { box-shadow: 0 0 0 0 rgba(255,122,110,0.55); }
+  70% { box-shadow: 0 0 0 8px rgba(255,122,110,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,122,110,0); }
 }
 
 .empty { color: var(--muted); text-align: center; padding: 56px 24px; }
@@ -225,7 +255,7 @@ kbd {
 table.table { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.table th, table.table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.table th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
+table.table tbody tr:hover { background: rgba(248,240,231,0.028); }
 
 /* ------------------------------------------------------------------ chat */
 /* 248 px = largeur de la barre latérale : les deux gouttières s'alignent. */
@@ -271,7 +301,7 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
   background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow-1);
 }
 .msg.user .bubble { background: var(--accent-soft); border-color: var(--accent-line); }
-.msg .bubble.err { border-color: rgba(255,90,95,0.45); background: var(--danger-soft); }
+.msg .bubble.err { border-color: rgba(255,122,110,0.48); background: var(--danger-soft); }
 .msg .images { display: flex; gap: 8px; flex-wrap: wrap; }
 .msg .images img { max-height: 160px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
 
@@ -297,7 +327,7 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
 .composer .attachments { display: flex; gap: 8px; flex-wrap: wrap; }
 .composer .attachments .att { position: relative; }
 .composer .attachments img { height: 56px; border-radius: 6px; border: 1px solid var(--border); }
-.composer .attachments button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: var(--danger); color: white; font-size: 11px; line-height: 1; }
+.composer .attachments button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: var(--danger); color: #1b140e; font-size: 11px; line-height: 1; }
 .composer .bar { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
 /* La barre vocale porte déjà la séparation : sans cela, deux traits se superposent. */
 .voice-bar + .composer { border-top: none; }
@@ -319,7 +349,7 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
 .voice-bar[data-state="armed"] { background: var(--accent-soft); box-shadow: inset 0 1px 0 var(--accent-line); }
 .voice-bar[data-state="processing"] { background: var(--panel-2); }
 .voice-bar[data-state="speaking"] { box-shadow: inset 0 2px 0 var(--accent-2); }
-.voice-bar[data-state="muted"] { background: rgba(255, 90, 95, 0.07); }
+.voice-bar[data-state="muted"] { background: rgba(255, 122, 110, 0.09); }
 
 /* pastille d'écoute : anneau qui respire quand IRIS attend le mot d'activation */
 .mic-orb { position: relative; width: 26px; height: 26px; flex: none; display: grid; place-items: center; }
@@ -333,12 +363,12 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
   position: absolute; inset: 0; border-radius: 50%;
   border: 1.5px solid var(--border-2); transition: border-color 0.2s var(--ease);
 }
-.mic-orb b { width: 8px; height: 8px; border-radius: 50%; background: #454c52; transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease); }
+.mic-orb b { width: 8px; height: 8px; border-radius: 50%; background: #6b5442; transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease); }
 .mic-orb.listening i { border-color: var(--accent-line); animation: breathe 2.6s ease-in-out infinite; }
-.mic-orb.listening b { background: var(--accent-3); box-shadow: 0 0 12px rgba(63,224,176,0.6); }
+.mic-orb.listening b { background: var(--accent-3); box-shadow: 0 0 12px rgba(227,168,122,0.65); }
 .mic-orb.talking i { border-color: var(--accent-2); }
 .mic-orb.talking b { background: var(--accent-2); }
-.mic-orb.muted i { border-color: rgba(255,90,95,0.5); }
+.mic-orb.muted i { border-color: rgba(255,122,110,0.52); }
 .mic-orb.muted b { background: var(--danger); }
 /* IRIS vous écoute : le point grossit. IRIS réfléchit : l'anneau tourne. Les deux états
    doivent se distinguer à la caméra, sans lire l'étiquette. */
@@ -374,7 +404,7 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
 
 /* -------------------------------------------------- modales et messages */
 .overlay {
-  position: fixed; inset: 0; background: rgba(4, 6, 7, 0.72); backdrop-filter: blur(6px);
+  position: fixed; inset: 0; background: rgba(10, 7, 4, 0.74); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center; z-index: 50;
   animation: fade 0.15s var(--ease);
 }
@@ -400,12 +430,12 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
 .toast.success { border-left-color: var(--accent-3); }
 
 .splash { height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; color: var(--muted); }
-.splash .ring { width: 60px; height: 60px; filter: drop-shadow(0 0 24px rgba(23,199,147,0.4)); }
+.splash .voile.lueur { filter: drop-shadow(0 0 24px rgba(179, 107, 59, 0.6)); }
 .steps { display: flex; gap: 6px; margin-bottom: 16px; }
 .steps span { height: 3px; flex: 1; background: var(--border-2); border-radius: 2px; transition: background 0.3s var(--ease); }
 .steps span.done { background: var(--accent-2); }
-.progress { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-.progress > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 0.3s var(--ease); }
+.progress { height: 6px; background: #4a392c; border-radius: 3px; overflow: hidden; }
+.progress > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent-3)); transition: width 0.3s var(--ease); }
 /* Barre indéterminée : le démarrage n'a pas d'étapes mesurables, on montre du mouvement
    plutôt qu'une fausse progression. */
 .progress.indet > div { width: 40%; animation: iris-indet 1.4s var(--ease) infinite; }
@@ -420,7 +450,7 @@ table.table tbody tr:hover { background: rgba(255,255,255,0.017); }
   border-radius: var(--radius-lg);
   border: 1px solid var(--accent-line);
   background:
-    radial-gradient(560px 220px at 0% 0%, rgba(23, 199, 147, 0.13), transparent 70%),
+    radial-gradient(560px 220px at 0% 0%, rgba(179, 107, 59, 0.22), transparent 70%),
     linear-gradient(180deg, var(--panel), var(--bg-2));
   box-shadow: var(--shadow-2);
 }

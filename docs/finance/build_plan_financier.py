@@ -18,7 +18,8 @@ BOLD = Font(name=FONT, bold=True, size=10)
 TITLE = Font(name=FONT, bold=True, size=14)
 H2 = Font(name=FONT, bold=True, size=11, color="FFFFFF")
 YELLOW = PatternFill("solid", fgColor="FFFF00")
-HEAD = PatternFill("solid", fgColor="0F6E56")
+# Palette VELA, extraite du logo : encre #1B140E, terracotta #B36B3B, crème #F8F0E7
+HEAD = PatternFill("solid", fgColor="1B140E")
 GREY = PatternFill("solid", fgColor="F2F2F2")
 THIN = Side(style="thin", color="BFBFBF")
 BOX = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
@@ -107,7 +108,7 @@ def header(ws, row, cols, texts):
 def section(ws, row, text, span="A:F"):
     c = ws[f"A{row}"]
     c.value = text
-    c.font = Font(name=FONT, bold=True, size=11, color="0F6E56")
+    c.font = Font(name=FONT, bold=True, size=11, color="B36B3B")
     ws.row_dimensions[row].height = 18
 
 

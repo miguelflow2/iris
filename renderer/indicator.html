@@ -11,21 +11,28 @@
         display: flex; align-items: center; gap: 10px;
         height: 36px; margin: 4px; padding: 0 14px 0 12px;
         border-radius: 18px;
-        background: #0c0c0c; color: #f2f2f2;
-        border: 1px solid #2a2a2a;
+        background: #1b140e; color: #f8f0e7;
+        border: 1px solid #4a392c;
         font-size: 13px; letter-spacing: 0.01em;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.55);
       }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 0 rgba(229,72,77,0.6); animation: pulse 1.4s infinite; }
-      .dot.screen { background: #0F6E56; box-shadow: 0 0 0 0 rgba(15,110,86,0.6); }
-      .brand { font-weight: 700; letter-spacing: 0.08em; font-size: 11px; color: #9a9a9a; }
-      @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(229,72,77,0.55);} 70% { box-shadow: 0 0 0 8px rgba(229,72,77,0);} 100% { box-shadow: 0 0 0 0 rgba(229,72,77,0);} }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff7a6e; box-shadow: 0 0 0 0 rgba(255,122,110,0.6); animation: pulse 1.4s infinite; }
+      .dot.screen { background: #d08a55; box-shadow: 0 0 0 0 rgba(208,138,85,0.6); }
+      .brand { font-weight: 700; letter-spacing: 0.08em; font-size: 11px; color: #a5917f; display: flex; align-items: center; gap: 7px; }
+      .brand svg { display: block; }
+      @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,122,110,0.55);} 70% { box-shadow: 0 0 0 8px rgba(255,122,110,0);} 100% { box-shadow: 0 0 0 0 rgba(255,122,110,0);} }
     </style>
   </head>
   <body>
     <div class="pill" title="Indicateur de capture IRIS : ne peut pas être masqué tant qu'une capture est en cours">
       <span class="dot" id="dot"></span>
-      <span class="brand">IRIS</span>
+      <span class="brand">
+        <svg width="12" height="16" viewBox="0 0 120 158" aria-hidden="true">
+          <path d="M 36.5 46.3 L 36.6 158 L 0 158 Z" fill="#B36B3B" />
+          <path d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z" fill="#F8F0E7" />
+        </svg>
+        IRIS
+      </span>
       <span id="label">micro actif</span>
     </div>
     <script type="module" src="/src/indicator.ts"></script>

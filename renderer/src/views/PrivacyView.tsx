@@ -139,7 +139,7 @@ export function PrivacyView(): JSX.Element {
             </button>
           </div>
         </div>
-        {check ? <div className={`small ${check.ok ? '' : ''}`} style={{ marginBottom: 8, color: check.ok ? '#4cc9a6' : 'var(--danger)' }}>{check.ok ? `Intégrité vérifiée : ${check.count} entrées, empreinte finale ${(check.last_hash || '').slice(0, 16)}…` : `Altération détectée à l’entrée n° ${check.first_bad_id}`}</div> : null}
+        {check ? <div className={`small ${check.ok ? '' : ''}`} style={{ marginBottom: 8, color: check.ok ? 'var(--accent-3)' : 'var(--danger)' }}>{check.ok ? `Intégrité vérifiée : ${check.count} entrées, empreinte finale ${(check.last_hash || '').slice(0, 16)}…` : `Altération détectée à l’entrée n° ${check.first_bad_id}`}</div> : null}
         <table className="table">
           <thead>
             <tr><th>Date</th><th>Événement</th><th>Donnée</th><th>IA</th><th>Détail</th></tr>

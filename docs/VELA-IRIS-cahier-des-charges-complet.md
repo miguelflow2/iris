@@ -35,7 +35,7 @@ VELA construit la confiance directement dans le matériel plutôt que d'ajouter 
 - **Nom** : VELA
 - **Produit logiciel** : IRIS (couche 3 — orchestration IA, mémoire, confidentialité)
 - **Logo** : symbole en trait unique (comète/brushstroke) qui se courbe en un anneau volontairement laissé ouvert — symbolise la continuité (vision → mémoire → action) et l'ouverture/transparence (jamais complètement fermé, à l'opposé d'un système opaque)
-- **Couleur** : monochrome noir pour l'usage principal, teal (#0F6E56) comme couleur d'accent unique
+- **Couleur** *(périmé — identité refaite le 2026-09-04)* : la marque est désormais une **voile**, palette encre `#1B140E`, crème `#F8F0E7`, terracotta `#B36B3B`. Source : `renderer/src/components/Voile.tsx`.
 - **Règle de style** : pas de dégradé, pas d'effet "IA générique" (pas de circuits, pas de neurones, pas de paillettes)
 
 ---
@@ -334,7 +334,7 @@ Voir le détail complet des capacités en Partie 3 (sections A à H) — IRIS es
 
 - Concept de logo retenu : trait unique (comète/brushstroke) qui se courbe en anneau volontairement laissé ouvert
 - Contraintes de style : couleur unique, pas de dégradé, pas de double-contour, doit rester lisible à très petite taille (icône d'app, gravure sur branche de lunettes)
-- Fichiers vectoriels produits : version noire, version accent teal (#0F6E56), version avec le nom "VELA"
+- *(périmé)* Le symbole est aujourd'hui la voile, en deux variantes : grand-voile encre sur fond clair, grand-voile crème sur fond sombre. Le foc reste terracotta. Ancien texte : version noire, accent teal, version avec le nom "VELA"
 - Prompt Gemini verrouillé disponible pour itérer sur le symbole si besoin d'affiner davantage
 
 ---

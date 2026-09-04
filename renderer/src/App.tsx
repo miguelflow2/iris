@@ -1,6 +1,6 @@
 import React from 'react'
 import { Failure, Splash } from './components/Boot'
-import { Ring } from './components/Ring'
+import { Voile } from './components/Voile'
 import { Modal } from './components/ui'
 import { useStore, type View } from './lib/store'
 import { AgentsView } from './views/AgentsView'
@@ -86,7 +86,8 @@ export default function App(): JSX.Element {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <Ring />
+          {/* Variante claire : l'application est sur fond encre, la grand-voile y est crème. */}
+          <Voile taille={30} variante="clair" className="voile lueur" titre="VELA" />
           <div>
             <div className="name">IRIS</div>
             <div className="sub">VELA</div>
