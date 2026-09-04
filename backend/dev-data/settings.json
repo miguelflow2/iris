@@ -1,0 +1,74 @@
+{
+  "assistant_name": "IRIS",
+  "glasses": {
+    "address": "",
+    "name": "",
+    "auto_connect": false
+  },
+  "audio_input_device": "",
+  "user_name": "Miguel",
+  "wake_word": "Dis-moi Iris",
+  "wake_aliases": [
+    "dis moi iris",
+    "dis moi irisse",
+    "dis moi hiris",
+    "dit moi iris"
+  ],
+  "language": "fr-CA",
+  "local_only": false,
+  "default_agent": "openrouter",
+  "routing_mode": "auto",
+  "retention_days": 0,
+  "tts_enabled": true,
+  "tts_rate": 185,
+  "tts_voice": "",
+  "voice_ack": true,
+  "stt_engine": "auto",
+  "voice_autostart": true,
+  "voice_effort": "low",
+  "voice_model": "",
+  "voice_followup": true,
+  "confirm_commands": "dangerous",
+  "claude_effort": "medium",
+  "claude_thinking_display": true,
+  "claude_web_search": true,
+  "history_window": 40,
+  "onboarded": true,
+  "agents": {
+    "claude": {
+      "label": "Claude",
+      "active": true,
+      "model": "claude-opus-5",
+      "base_url": "",
+      "local": false
+    },
+    "gpt": {
+      "label": "GPT",
+      "active": false,
+      "model": "gpt-5",
+      "base_url": "",
+      "local": false
+    },
+    "gemini": {
+      "label": "Gemini",
+      "active": false,
+      "model": "gemini-2.5-pro",
+      "base_url": "",
+      "local": false
+    },
+    "custom": {
+      "label": "Agent local / perso",
+      "active": false,
+      "model": "llama3.2",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "local": true
+    },
+    "openrouter": {
+      "label": "OpenRouter",
+      "active": true,
+      "model": "minimax/minimax-m3:free",
+      "base_url": "",
+      "local": false
+    }
+  }
+}

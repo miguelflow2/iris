@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VELA — IRIS, une IA que vous pouvez vérifier</title>
+<meta name="description" content="IRIS est l’assistante vocale de VELA : elle contrôle votre ordinateur à la voix, retient ce qui compte, et vous laisse vérifier vous-même, ligne par ligne, ce qu’elle a capté et envoyé.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M 72 24 A 36 36 0 1 0 84 62' fill='none' stroke='%2317c793' stroke-width='10' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<!-- ==========================================================================
+     Pictogrammes du site : dessinés au trait, rangés une seule fois ici et
+     appelés par <use href="#…">. Même document, donc aucune requête réseau :
+     tout fonctionne ouvert depuis le disque, hors ligne.
+     ========================================================================== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-voit" viewBox="0 0 24 24">
+    <path d="M1.8 12S5.6 5.6 12 5.6 22.2 12 22.2 12 18.4 18.4 12 18.4 1.8 12 1.8 12Z"/>
+    <path d="M14.14 9.36A3.4 3.4 0 1 0 15.27 12.94"/>
+  </symbol>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
+  </symbol>
+  <symbol id="i-fais" viewBox="0 0 24 24">
+    <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
+    <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
+  </symbol>
+  <symbol id="i-consent" viewBox="0 0 24 24">
+    <rect x="2.6" y="7.4" width="18.8" height="9.2" rx="4.6"/>
+    <circle cx="16.8" cy="12" r="2.6"/>
+    <path d="M5.4 12 7 13.7 9.9 10.4"/>
+  </symbol>
+  <symbol id="i-indicateur" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>
+    <path d="M16.6 7.4a6.5 6.5 0 0 1 0 9.2"/><path d="M19.8 4.2a11 11 0 0 1 0 15.6"/>
+    <path d="M7.4 16.6a6.5 6.5 0 0 1 0-9.2"/><path d="M4.2 19.8a11 11 0 0 1 0-15.6"/>
+  </symbol>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M7.6 18.4h9.7a3.6 3.6 0 0 0 .5-7.1 5.3 5.3 0 0 0-9.8-1.6 4.4 4.4 0 0 0-.4 8.7Z"/>
+    <path d="M4 20.6 20 3.4"/>
+  </symbol>
+  <symbol id="i-chiffre" viewBox="0 0 24 24">
+    <rect x="4.2" y="10.4" width="15.6" height="10.4" rx="2.4"/>
+    <path d="M8 10.4V7.6a4 4 0 0 1 8 0v2.8"/>
+    <circle cx="12" cy="15.4" r="1.5"/>
+  </symbol>
+  <symbol id="i-chaine" viewBox="0 0 24 24">
+    <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
+    <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
+  <symbol id="i-micro" viewBox="0 0 24 24">
+    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
+    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
+  </symbol>
+  <symbol id="i-horloge" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.7 2.2"/>
+  </symbol>
+  <symbol id="i-eclair" viewBox="0 0 24 24"><path d="M13.4 2.4 5.6 13.6h5.6l-.7 8 8.1-11.5h-5.9z"/></symbol>
+</svg>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA : un anneau volontairement ouvert">
+        <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="index.html" aria-current="page">Accueil</a>
+      <a href="confidentialite.html">Confidentialité</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="plans.html">Plans</a>
+      <a href="installer.html">Installer</a>
+      <a href="contact.html" class="nav-cta">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <!-- ================================================================ hero -->
+  <section class="hero-full">
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="wrap hero-inner">
+
+      <div class="hero-mark">
+        <svg viewBox="0 0 100 100" role="img" aria-label="Symbole VELA : un anneau volontairement laissé ouvert, qui se dessine d’un seul trait">
+          <circle class="hm-orbit" cx="49.4" cy="52" r="45"/>
+          <path class="hm-ring" d="M 72 24 A 36 36 0 1 0 84 62"/>
+          <circle class="hm-dot" cx="83.7" cy="41.2" r="3.6"/>
+        </svg>
+      </div>
+
+      <p class="eyebrow">VELA · IRIS</p>
+      <h1 class="hero-title">Parlez. Elle agit.<br><em>Vous vérifiez.</em></h1>
+      <p class="hero-lead">
+        IRIS pilote votre ordinateur à la voix et inscrit chaque capture, chaque envoi
+        dans un registre que vous vérifiez vous-même, d’un clic.
+      </p>
+      <p class="hero-cta"><a class="btn primary btn-xl" href="installer.html">Installer IRIS</a></p>
+      <p class="hero-sub">
+        Windows 10 et 11 · le plan Gratuit ne coûte rien ·
+        <a href="#preuve">voir la preuve</a>
+      </p>
+
+    </div>
+    <a class="scroll-cue" href="#preuve" aria-label="Descendre à la démonstration du registre"><span></span></a>
+  </section>
+
+  <!-- ======================================================= registre chaîné -->
+  <section class="band" id="preuve">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">La preuve avant la promesse</p>
+        <h2>Un registre qui ne se réécrit pas en douce.</h2>
+        <p>Chaque ligne est scellée par une empreinte qui contient celle de la ligne d’avant.
+          Touchez à une seule&nbsp;: tout ce qui suit devient faux, immédiatement.</p>
+      </div>
+
+      <figure class="viz viz-chain">
+        <div class="chain-track" aria-hidden="true">
+          <div class="cb" data-hold>
+            <span class="cb-n">#1</span>
+            <span class="cb-t">Consentement accordé</span>
+            <span class="cb-h">a91f4c02…</span>
+          </div>
+          <span class="cl" style="--i:0"></span>
+          <div class="cb" style="--i:0">
+            <span class="cb-n">#2</span>
+            <span class="cb-t">Envoi à un agent</span>
+            <span class="cb-h">7d3b91ee…</span>
+            <span class="cb-flag">ligne réécrite</span>
+          </div>
+          <span class="cl" style="--i:1"></span>
+          <div class="cb" style="--i:1">
+            <span class="cb-n">#3</span>
+            <span class="cb-t">Capture d’écran</span>
+            <span class="cb-h">2c60af71…</span>
+          </div>
+          <span class="cl" style="--i:2"></span>
+          <div class="cb" style="--i:2">
+            <span class="cb-n">#4</span>
+            <span class="cb-t">Commande exécutée</span>
+            <span class="cb-h">be04d5a9…</span>
+          </div>
+          <span class="cl" style="--i:3"></span>
+          <div class="cb" style="--i:3">
+            <span class="cb-n">#5</span>
+            <span class="cb-t">Mode 100&nbsp;% local</span>
+            <span class="cb-h">f38e17bc…</span>
+          </div>
+        </div>
+
+        <p class="chain-status" aria-hidden="true">
+          <span class="cs-ok"><svg class="ico" style="width:18px;height:18px" aria-hidden="true"><use href="#i-check"/></svg> Chaîne intacte — 5 entrées vérifiées</span>
+          <span class="cs-bad">Altération détectée à l’entrée n°&nbsp;2 — tout ce qui suit est invalidé</span>
+        </p>
+
+        <figcaption>
+          Cinq entrées d’un registre d’exemple. La deuxième est réécrite après coup&nbsp;:
+          la cassure se propage jusqu’au bout de la chaîne.
+        </figcaption>
+      </figure>
+
+      <p class="actions" style="margin-top:26px;justify-content:center">
+        <a class="btn primary" href="confidentialite.html#demonstration">Essayer la vérification</a>
+      </p>
+
+      <details class="plus">
+        <summary>Comment ça tient techniquement</summary>
+        <div class="plus-body">
+          <p>L’empreinte est un SHA-256 de la ligne, calculé avec l’empreinte de la précédente. Personne
+            ne sait fabriquer deux textes différents qui donneraient la même empreinte&nbsp;: c’est ce qui
+            rend le carnet contrôlable plutôt que crédible.</p>
+          <p>Dans l’application, le bouton «&nbsp;Vérifier&nbsp;» recalcule toute la chaîne devant vous, hors ligne.
+            Le registre reste sur votre ordinateur et s’exporte en JSON ou en CSV&nbsp;: il est à vous.
+            <a href="confidentialite.html">Tout sur la confidentialité vérifiable</a>.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ========================================================= commande vocale -->
+  <section id="voix">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Une phrase suffit</p>
+        <h2>Vous parlez. Elle fait.</h2>
+        <p>Rien à taper, rien à chercher. Et le dialogue continue sans qu’il faille répéter le mot d’activation.</p>
+      </div>
+
+      <figure class="viz viz-voice">
+        <div class="vs">
+          <div class="vs-row vs-ask">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
+            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i><i style="--b:8"></i><i style="--b:9"></i></span>
+            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, ouvre YouTube.&nbsp;»</span></p>
+          </div>
+          <div class="vs-row vs-do">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></span>
+            <p>YouTube ouvert. Elle attend la suite, sans redemander le mot d’activation.</p>
+          </div>
+          <div class="vs-row vs-log">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
+            <p>Inscrit au registre&nbsp;: <span class="mono">commande exécutée</span>.</p>
+          </div>
+        </div>
+        <figcaption>Ce qu’il se passe quand vous parlez&nbsp;: la demande, l’action, la trace.</figcaption>
+      </figure>
+
+      <div class="grid grid-3" style="margin-top:22px">
+        <div class="card">
+          <p class="mono small" style="color:var(--accent-3);margin-bottom:8px">«&nbsp;…&nbsp;rappelle-moi d’appeler la clinique à 15&nbsp;h&nbsp;30.&nbsp;»</p>
+          <p class="small muted" style="margin:0">Annoncé à voix haute à l’heure dite, même réduite dans la barre système.</p>
+        </div>
+        <div class="card">
+          <p class="mono small" style="color:var(--accent-3);margin-bottom:8px">«&nbsp;…&nbsp;mode travail.&nbsp;»</p>
+          <p class="small muted" style="margin:0">Une routine enregistrée une fois, rejouée telle quelle, sans repasser par un modèle d’IA.</p>
+        </div>
+        <div class="card">
+          <p class="mono small" style="color:var(--accent-3);margin-bottom:8px">«&nbsp;…&nbsp;connecte-toi à mon portail.&nbsp;»</p>
+          <p class="small muted" style="margin:0">Elle remplit le formulaire&nbsp;; le mot de passe reste dans le coffre du système. Plan Essentiel.</p>
+        </div>
+      </div>
+
+      <p class="actions" style="margin-top:24px;justify-content:center">
+        <a class="btn" href="fonctionnalites.html">Tout ce qu’IRIS sait faire</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================= 3 piliers -->
+  <section class="band" id="piliers">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Les trois piliers</p>
+        <h2>Vois. Souviens-toi. Fais.</h2>
+      </div>
+      <div class="grid grid-3">
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-voit"/></svg></span>
+          <h3>Vois</h3>
+          <p>Elle lit votre écran quand vous le lui demandez, puis clique sur ce qu’elle y a lu.</p>
+          <span class="pill plan-note">Lecture d’écran&nbsp;: Pro</span>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
+          <h3>Souviens-toi</h3>
+          <p>Vos préférences, décisions et promesses restent dans une mémoire locale qu’elle consulte pour vous répondre.</p>
+          <span class="pill plan-note">Mémoire&nbsp;: Pro</span>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-fais"/></svg></span>
+          <h3>Fais</h3>
+          <p>Ouvrir, lancer, chercher, exécuter, rappeler&nbsp;: elle agit sur commande, jamais d’elle-même.</p>
+          <span class="pill ok plan-note">Inclus dès le Gratuit</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== pourquoi VELA existe -->
+  <section id="pourquoi">
+    <div class="wrap">
+      <div class="story">
+
+        <div class="story-txt">
+          <p class="section-label">Pourquoi VELA existe</p>
+          <p class="story-quote">La confiance ne devrait pas arriver en dernier.</p>
+          <p>J’ai travaillé sur des lunettes intelligentes avant de lancer VELA. C’est là que j’ai compris
+            une chose&nbsp;: dans ce genre de produit, la confiance arrive toujours à la fin. On décide la
+            fiche technique, le prix, la date de sortie — puis on ajoute une page qui promet que vos données
+            sont bien traitées.</p>
+          <p>J’ai voulu construire l’inverse. Un produit où vous n’avez rien à croire sur parole&nbsp;: vous
+            ouvrez le registre, vous cliquez sur «&nbsp;Vérifier&nbsp;», et vous voyez vous-même ce qui a été
+            capté et ce qui est sorti de votre appareil.</p>
+          <p>C’est pour ça que le registre existe avant le reste. Il a été écrit avant la voix, avant les
+            commandes, avant les lunettes.</p>
+          <p class="story-sign">— <b>Miguel</b>, fondateur de VELA</p>
+        </div>
+
+        <figure class="viz viz-glasses">
+          <svg viewBox="0 0 320 132" role="img" aria-label="Illustration au trait des lunettes VELA : deux anneaux ouverts reliés par un pont, un micro d’un côté, le son de l’autre, et aucune caméra.">
+            <!-- verres : le même anneau ouvert que le logo, l'ouverture tournée vers le pont -->
+            <path class="gl-line" style="--d:0" stroke-width="3" d="M 121.3 33.5 A 34 34 0 1 0 132.7 69.4"/>
+            <path class="gl-line" style="--d:.18" stroke-width="3" d="M 198.7 33.5 A 34 34 0 1 1 187.3 69.4"/>
+            <!-- pont : il passe par les deux ouvertures -->
+            <path class="gl-line" style="--d:.42" stroke-width="2.6" d="M 133 52 Q 160 41 187 52"/>
+            <!-- branches -->
+            <path class="gl-line" style="--d:.56" stroke-width="2.6" d="M 67.2 51.2 L 30 43 Q 18 40.5 16 50"/>
+            <path class="gl-line" style="--d:.56" stroke-width="2.6" d="M 252.8 51.2 L 290 43 Q 302 40.5 304 50"/>
+
+            <!-- micro (gauche) -->
+            <circle class="gl-dot gl-pulse" cx="44" cy="47.5" r="3.4"/>
+            <text class="gl-txt" x="44" y="112" text-anchor="middle">micro</text>
+            <path class="gl-line" style="--d:.9" stroke-width="1.2" stroke-dasharray="3 3" d="M 44 53 L 44 100"/>
+
+            <!-- son (droite) -->
+            <circle class="gl-dot gl-pulse" cx="276" cy="47.5" r="3.4"/>
+            <text class="gl-txt" x="276" y="112" text-anchor="middle">son</text>
+            <path class="gl-line" style="--d:.9" stroke-width="1.2" stroke-dasharray="3 3" d="M 276 53 L 276 100"/>
+
+            <!-- l'absence de caméra, dite plutôt que cachée -->
+            <circle class="gl-none" cx="160" cy="88" r="7"/>
+            <path class="gl-none" d="M 155 93 L 165 83"/>
+            <text class="gl-txt" x="160" y="112" text-anchor="middle">aucune caméra</text>
+          </svg>
+          <figcaption>
+            Les lunettes portent le micro et le son. Pas de caméra&nbsp;: à ce prix, la différence ne se joue
+            plus dans le boîtier, elle se joue dans le logiciel. IRIS fonctionne aussi seule, sur un PC.
+          </figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= garanties -->
+  <section class="band" id="garanties">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Ce que vous contrôlez</p>
+        <h2>Quatre décisions de conception, pas quatre options.</h2>
+      </div>
+      <div class="grid grid-4">
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-consent"/></svg></span>
+          <h3>Consentement par type</h3>
+          <p>Texte, audio, images, écran, mémoire&nbsp;: vous autorisez chaque type séparément, et vous
+            reprenez votre accord quand vous voulez.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-indicateur"/></svg></span>
+          <h3>Indicateur de capture</h3>
+          <p>Une pastille flottante apparaît dès que le micro ou l’écran servent. L’application ne permet
+            pas de la fermer.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
+          <h3>Mode 100&nbsp;% local</h3>
+          <p>Plus rien ne sort de l’ordinateur&nbsp;: seul un modèle installé chez vous peut répondre.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chiffre"/></svg></span>
+          <h3>Chiffré au repos</h3>
+          <p>AES-256-GCM sur votre disque, et vos clés d’API dans le coffre du système, jamais dans
+            l’interface.</p>
+        </div>
+      </div>
+      <p class="actions" style="margin-top:24px;justify-content:center">
+        <a class="btn" href="confidentialite.html">La confidentialité en détail</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================================= plans -->
+  <section id="plans">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Plans</p>
+        <h2>Un plan gratuit réellement utilisable.</h2>
+        <p>La voix, le contrôle de l’ordinateur, les routines, les rappels et toute la gouvernance de la
+          confidentialité&nbsp;: c’est dans le Gratuit.</p>
+      </div>
+
+      <div class="grid grid-4">
+        <div class="card plan-mini">
+          <h3>Gratuit</h3>
+          <p class="pm-prix">0&nbsp;$</p>
+          <p class="pm-par">pour toujours</p>
+          <p class="pm-quoi">300&nbsp;requêtes par mois, voix Windows, reconnaissance hors ligne.</p>
+        </div>
+        <div class="card plan-mini">
+          <h3>Essentiel</h3>
+          <p class="pm-prix">19,99&nbsp;$</p>
+          <p class="pm-par">par mois</p>
+          <p class="pm-quoi">600&nbsp;requêtes, voix ElevenLabs, navigation web et comptes enregistrés.</p>
+        </div>
+        <div class="card plan-mini">
+          <h3>Pro</h3>
+          <p class="pm-prix">29,99&nbsp;$</p>
+          <p class="pm-par">par mois</p>
+          <p class="pm-quoi">1&nbsp;000&nbsp;requêtes, contrôle de l’écran, mémoire, tâches en arrière-plan.</p>
+        </div>
+        <div class="card plan-mini">
+          <h3>Ultra</h3>
+          <p class="pm-prix">99,99&nbsp;$</p>
+          <p class="pm-par">par mois</p>
+          <p class="pm-quoi">1&nbsp;500&nbsp;requêtes, Claude Opus 5 pour le raisonnement et la vision.</p>
+        </div>
+      </div>
+
+      <p class="actions" style="margin-top:24px;justify-content:center">
+        <a class="btn primary" href="plans.html">Comparer les plans</a>
+        <a class="btn" href="plans.html#acheter">S’abonner ou acheter les lunettes</a>
+      </p>
+
+      <details class="plus">
+        <summary>Vos propres clés, l’offre groupée, et comment on s’abonne</summary>
+        <div class="plus-body">
+          <p>Si vous apportez votre clé OpenRouter ou ElevenLabs, ce que vos clés paient n’est jamais bridé
+            par le plan&nbsp;: voix, écran, mémoire, tâches et navigation restent ouverts, même au Gratuit.</p>
+          <p>Les lunettes VELA se commandent avec l’<a href="plans.html#acheter">offre groupée</a> (matériel
+            + 12&nbsp;mois du plan Pro)&nbsp;; la livraison est convenue par courriel, au cas par cas. Le
+            paiement PayPal est un versement unique&nbsp;: c’est une clé envoyée par courriel qui active
+            votre plan. <a href="plans.html#acheter">Le détail est ici</a>.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============================================================ appel final -->
+  <section class="band">
+    <div class="wrap narrow center">
+      <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-eclair"/></svg></span>
+      <h2>Prête en quelques minutes, sur un PC ordinaire.</h2>
+      <p class="lead" style="margin:0 auto 24px">
+        Un fichier à télécharger, cinq étapes, et votre premier «&nbsp;Dis-moi Iris&nbsp;».
+      </p>
+      <p class="actions" style="justify-content:center">
+        <a class="btn primary btn-xl" href="installer.html">Installer IRIS</a>
+        <a class="btn" href="contact.html">Nous écrire</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA">
+            <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Vois. Souviens-toi. Fais.<br>Une IA. Toute ta vie. Rien à taper.</p>
+      </div>
+      <div>
+        <h4>Le produit</h4>
+        <ul>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Nous joindre</h4>
+        <ul>
+          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

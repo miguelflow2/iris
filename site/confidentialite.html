@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confidentialité vérifiable — VELA</title>
+<meta name="description" content="Le registre de transparence d’IRIS : chaque capture et chaque envoi sont scellés par une empreinte SHA-256 que vous vérifiez vous-même, d’un clic, dans l’application.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M 72 24 A 36 36 0 1 0 84 62' fill='none' stroke='%2317c793' stroke-width='10' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA : un anneau volontairement ouvert">
+        <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="index.html">Accueil</a>
+      <a href="confidentialite.html" aria-current="page">Confidentialité</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="plans.html">Plans</a>
+      <a href="installer.html">Installer</a>
+      <a href="contact.html" class="nav-cta">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <section class="hero">
+    <svg class="hero-ring-bg" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="M 72 24 A 36 36 0 1 0 84 62"/></svg>
+    <div class="wrap">
+      <p class="eyebrow">Confidentialité</p>
+      <h1>Vous n’avez pas à nous croire. Vous pouvez vérifier.</h1>
+      <p class="lead">
+        Tous les assistants promettent de bien se conduire. Le nôtre vous remet de quoi le contrôler&nbsp;:
+        un journal que l’application ne peut pas réécrire discrètement, et un bouton qui le prouve.
+      </p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="wrap">
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Le principe, expliqué simplement</h3>
+          <p>Imaginez un carnet où chaque nouvelle ligne commence par le résumé de la ligne d’avant&nbsp;: un
+            code de 64 caractères qui dépend de chaque virgule du texte précédent.</p>
+          <p>Si quelqu’un revient en arrière et modifie une ligne, son résumé change. Le début de la ligne
+            suivante ne correspond plus. Et de proche en proche, tout ce qui suit devient faux.</p>
+          <p class="small muted">Ce résumé s’appelle une empreinte SHA-256. Personne ne sait fabriquer deux
+            textes différents qui donneraient la même empreinte&nbsp;: c’est ce qui rend le carnet
+            contrôlable.</p>
+        </div>
+        <div class="card">
+          <h3>Ce qui est inscrit</h3>
+          <ul class="check">
+            <li>chaque envoi de données à un agent d’IA extérieur, avec le type de donnée et l’agent visé&nbsp;;</li>
+            <li>chaque capture d’écran, même celles qui restent sur l’appareil&nbsp;;</li>
+            <li>chaque commande exécutée sur l’ordinateur et chaque fichier écrit&nbsp;;</li>
+            <li>chaque consentement accordé ou retiré, avec la date&nbsp;;</li>
+            <li>chaque changement de mode&nbsp;: mode confidentiel, mode 100&nbsp;% local, purge, export.</li>
+          </ul>
+          <p class="small muted">Le registre reste sur votre ordinateur. Il s’exporte en JSON ou en CSV, et se
+            vide si vous le décidez&nbsp;: c’est votre journal, pas le nôtre.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="demonstration">
+    <div class="wrap">
+      <p class="section-label">Démonstration</p>
+      <h2>Essayez de falsifier le registre.</h2>
+      <p class="lead" style="margin-bottom:22px">
+        Voici cinq lignes d’un registre d’exemple. Réécrivez-en une pour cacher un envoi, puis lancez la
+        vérification&nbsp;: le calcul se fait dans votre navigateur, sans rien envoyer nulle part, exactement
+        comme le bouton «&nbsp;Vérifier&nbsp;» de l’application le fait sur votre vrai registre.
+      </p>
+
+      <div class="proof" style="margin-bottom:20px">
+        <div class="proof-main">
+          <div class="proof-label">Registre de transparence — exemple</div>
+          <div class="proof-state" data-state>Chaîne SHA-256 — non vérifiée pour l’instant</div>
+          <p class="proof-hint">Chaque entrée contient l’empreinte de la précédente. Modifier ou retirer une
+            ligne casse la chaîne, et la vérification le montre.</p>
+        </div>
+      </div>
+
+      <div class="demo" data-chain-demo>
+        <div class="demo-head">
+          <span class="grow small muted">Journée du 3 septembre 2026 · 5 entrées</span>
+          <button class="btn primary sm" type="button" data-verify>Vérifier la chaîne</button>
+          <button class="btn sm" type="button" data-tamper>Réécrire l’entrée n°&nbsp;2</button>
+          <button class="btn sm" type="button" data-reset hidden>Rétablir</button>
+        </div>
+        <div class="demo-body" data-entries>
+          <p class="small muted">Activez JavaScript pour manipuler cette démonstration. Le principe reste le
+            même&nbsp;: chaque ligne du registre est scellée par une empreinte qui contient celle de la ligne
+            précédente.</p>
+        </div>
+        <p class="demo-status" data-status>Chaîne SHA-256 — non vérifiée pour l’instant.</p>
+      </div>
+      <p class="demo-note">
+        Registre d’exemple, à des fins d’illustration&nbsp;: les entrées ci-dessus ne proviennent d’aucun
+        utilisateur. Le calcul des empreintes, lui, est le vrai&nbsp;: SHA-256, exécuté dans cette page.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="section-label">Les quatre garanties</p>
+      <h2>Ce que vous contrôlez, et où.</h2>
+      <div class="grid grid-2" style="margin-top:24px">
+        <div class="card">
+          <h3>Le consentement, type par type</h3>
+          <p>Rien ne quitte votre ordinateur sans un accord donné pour ce type de donnée précis&nbsp;: texte de
+            vos demandes, audio brut du micro, images jointes, captures d’écran, extraits de mémoire.</p>
+          <p class="small muted">Chaque interrupteur est réversible, et son changement est inscrit au registre
+            avec sa date.</p>
+        </div>
+        <div class="card">
+          <h3>L’indicateur de capture</h3>
+          <p>Dès que le micro, l’écran ou une caméra de l’ordinateur sont utilisés, une pastille flottante s’affiche par-dessus
+            tout le reste. Elle ne peut pas être fermée ni désactivée&nbsp;: c’est une décision de conception,
+            pas une option.</p>
+        </div>
+        <div class="card">
+          <h3>Le mode confidentiel et le mode 100&nbsp;% local</h3>
+          <p>Le mode confidentiel coupe le micro immédiatement et empêche toute écoute ou relance tant qu’il
+            est actif. Le mode 100&nbsp;% local, lui, bloque tout envoi externe&nbsp;: seul un modèle installé
+            chez vous peut encore répondre.</p>
+          <p class="small muted">Les deux sont accessibles depuis la barre latérale et l’icône de la barre
+            système, sans chercher dans les réglages.</p>
+        </div>
+        <div class="card">
+          <h3>Le chiffrement et la durée de conservation</h3>
+          <p>Vos souvenirs, messages et journaux sont chiffrés en AES-256-GCM sur votre disque. Vos clés
+            d’API vont dans le coffre du système&nbsp;: l’interface ne les affiche jamais, même à vous.</p>
+          <p class="small muted">Vous fixez la durée de conservation (24&nbsp;heures, 7, 30 ou 90&nbsp;jours,
+            ou illimitée) et pouvez lancer une purge immédiate, elle aussi inscrite au registre.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap narrow">
+      <h2>Et l’écoute permanente, alors&nbsp;?</h2>
+      <p>
+        Pour entendre «&nbsp;Dis-moi Iris&nbsp;», il faut bien écouter. La question honnête n’est donc pas
+        «&nbsp;est-ce qu’elle écoute&nbsp;?&nbsp;» mais «&nbsp;où va ce qu’elle entend&nbsp;?&nbsp;».
+      </p>
+      <p>
+        La réponse d’IRIS&nbsp;: la reconnaissance vocale peut tourner entièrement sur votre appareil, grâce à
+        un modèle français à télécharger une fois depuis l’application. Dans ce cas, aucun son ne part. La
+        reconnaissance dans le nuage n’est utilisée qu’en dernier recours, et seulement si vous avez accordé
+        le consentement «&nbsp;audio brut du micro&nbsp;».
+      </p>
+      <p>
+        Ensuite, pour qu’un agent d’IA réponde, il faut lui transmettre le texte de votre demande. Cet envoi
+        est soumis à votre consentement, et il est inscrit au registre à chaque fois. C’est exactement ce que
+        la démonstration ci-dessus vous laisse contrôler.
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="installer.html">Installer IRIS</a>
+        <a class="btn" href="fonctionnalites.html">Ce qu’IRIS sait faire</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA">
+            <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Vois. Souviens-toi. Fais.<br>Une IA. Toute ta vie. Rien à taper.</p>
+      </div>
+      <div>
+        <h4>Le produit</h4>
+        <ul>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Nous joindre</h4>
+        <ul>
+          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

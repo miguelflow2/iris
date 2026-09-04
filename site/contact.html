@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact — VELA</title>
+<meta name="description" content="Écrire à VELA : questions sur IRIS, demande de clé d’abonnement, essai, partenariat.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M 72 24 A 36 36 0 1 0 84 62' fill='none' stroke='%2317c793' stroke-width='10' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA : un anneau volontairement ouvert">
+        <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="index.html">Accueil</a>
+      <a href="confidentialite.html">Confidentialité</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="plans.html">Plans</a>
+      <a href="installer.html">Installer</a>
+      <a href="contact.html" class="nav-cta" aria-current="page">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <section class="hero">
+    <svg class="hero-ring-bg" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="M 72 24 A 36 36 0 1 0 84 62"/></svg>
+    <div class="wrap narrow">
+      <p class="eyebrow">Contact</p>
+      <h1>Écrivez-nous.</h1>
+      <p class="lead">
+        Une question sur IRIS, une demande de clé d’abonnement, un essai à organiser&nbsp;: on répond nous-mêmes,
+        il n’y a pas de service à traverser.
+      </p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="wrap narrow">
+      <div class="grid grid-2" style="margin-bottom:26px">
+        <div class="card">
+          <h3>Par courriel</h3>
+          <p class="coord"><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></p>
+          <p class="small muted">Précisez votre version de Windows et ce que vous cherchez à faire&nbsp;: cela
+            nous évite un aller-retour.</p>
+        </div>
+        <div class="card">
+          <h3>Par téléphone</h3>
+          <p class="coord"><a href="tel:+18195242804">819&nbsp;524-2804</a></p>
+          <p class="small muted">Pour une question rapide ou un dépannage à l’installation.</p>
+        </div>
+      </div>
+
+      <h2>Ou par ce formulaire</h2>
+      <p class="small muted" style="margin-bottom:18px">
+        Remplissez les champs&nbsp;: votre logiciel de courriel s’ouvre avec le message déjà rédigé, il ne vous
+        reste qu’à l’envoyer. Rien n’est transmis à un service intermédiaire, et rien n’est enregistré ici.
+      </p>
+
+      <form id="form-contact" novalidate>
+        <div class="field">
+          <label for="nom">Votre nom</label>
+          <input type="text" id="nom" name="nom" autocomplete="name" placeholder="Prénom et nom"
+                 required aria-describedby="err-nom">
+          <span class="err-msg" id="err-nom" hidden>Indiquez votre nom.</span>
+        </div>
+        <div class="field">
+          <label for="courriel">Votre courriel</label>
+          <input type="email" id="courriel" name="courriel" autocomplete="email" placeholder="vous@exemple.ca"
+                 required aria-describedby="err-courriel">
+          <span class="err-msg" id="err-courriel" hidden>Indiquez un courriel valide, pour qu’on puisse vous répondre.</span>
+        </div>
+        <div class="field">
+          <label for="sujet">Sujet</label>
+          <select id="sujet" name="sujet">
+            <option>Question sur IRIS</option>
+            <option>Demande de clé d’abonnement</option>
+            <option>Offre groupée lunettes VELA + Pro</option>
+            <option>Problème à l’installation</option>
+            <option>Autre</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="message">Votre message</label>
+          <textarea id="message" name="message" placeholder="Dites-nous ce dont vous avez besoin."
+                    required aria-describedby="err-message"></textarea>
+          <span class="err-msg" id="err-message" hidden>Écrivez quelques mots sur ce dont vous avez besoin.</span>
+        </div>
+        <p class="actions">
+          <button class="btn primary" type="submit">Ouvrir mon logiciel de courriel</button>
+          <span class="small muted">ou écrivez directement à
+            <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></span>
+        </p>
+        <p id="reponse" class="form-reponse" role="status" aria-live="polite" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap narrow">
+      <h2>Quelques réponses tout de suite</h2>
+      <div class="grid" style="gap:12px">
+        <div class="card">
+          <h3>Est-ce qu’IRIS fonctionne sans les lunettes&nbsp;?</h3>
+          <p class="small">Oui. IRIS est une application Windows complète&nbsp;: elle s’utilise au micro de
+            l’ordinateur, avec ou sans matériel VELA.</p>
+        </div>
+        <div class="card">
+          <h3>Faut-il payer pour essayer&nbsp;?</h3>
+          <p class="small">Non. Le plan Gratuit donne la voix, le contrôle de l’ordinateur, les routines, les
+            rappels et toute la partie confidentialité, avec 300&nbsp;requêtes par mois.</p>
+        </div>
+        <div class="card">
+          <h3>Mes données partent-elles chez VELA&nbsp;?</h3>
+          <p class="small">Non. Tout est gardé sur votre ordinateur, chiffré. Ce qui sort part vers l’agent
+            d’IA que vous avez choisi, seulement avec votre consentement, et l’envoi est inscrit dans un
+            registre que vous pouvez vérifier. <a href="confidentialite.html">Voir comment</a>.</p>
+        </div>
+        <div class="card">
+          <h3>Comment obtenir une clé d’abonnement&nbsp;?</h3>
+          <p class="small">Vous payez par PayPal depuis la <a href="plans.html#acheter">page des plans</a>, vous
+            nous faites suivre le reçu, et nous vous renvoyons une clé <span class="mono">IRIS-…</span> à coller
+            dans l’écran «&nbsp;Abonnement&nbsp;» de l’application. Le paiement n’active rien tout seul&nbsp;:
+            c’est la clé qui débloque le plan.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA">
+            <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Vois. Souviens-toi. Fais.<br>Une IA. Toute ta vie. Rien à taper.</p>
+      </div>
+      <div>
+        <h4>Le produit</h4>
+        <ul>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Nous joindre</h4>
+        <ul>
+          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

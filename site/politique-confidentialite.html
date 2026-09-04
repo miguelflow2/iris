@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Politique de confidentialité — VELA</title>
+<meta name="description" content="Ce qu’IRIS fait de vos données : traitement local par défaut, chiffrement AES-256-GCM, consentement par type de donnée, registre vérifiable, et la liste exacte des tiers qui reçoivent quoi.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M 72 24 A 36 36 0 1 0 84 62' fill='none' stroke='%2317c793' stroke-width='10' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA : un anneau volontairement ouvert">
+        <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="index.html">Accueil</a>
+      <a href="confidentialite.html">Confidentialité</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="plans.html">Plans</a>
+      <a href="installer.html">Installer</a>
+      <a href="contact.html" class="nav-cta">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+  <section class="hero">
+    <div class="wrap narrow">
+      <p class="eyebrow">Document</p>
+      <h1>Politique de confidentialité</h1>
+      <p class="lead">
+        Ce document décrit ce que le logiciel IRIS fait réellement de vos données. Il suit le code de
+        l’application, pas une intention. La page <a href="confidentialite.html">Confidentialité</a>
+        explique les mêmes mécanismes en langage courant.
+      </p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="wrap narrow doc">
+
+      <p class="doc-avis">
+        <span aria-hidden="true">⚠</span>
+        <span><strong>Ce document a été rédigé sans avis juridique professionnel.</strong>
+        Faites-le relire par un juriste avant la mise en vente.</span>
+      </p>
+
+      <p class="doc-maj">Version du 4 septembre 2026, correspondant à IRIS 0.1.0.</p>
+
+      <nav class="doc-sommaire" aria-label="Sommaire">
+        <h2>Sommaire</h2>
+        <ol>
+          <li><a href="#principe">Le principe</a></li>
+          <li><a href="#responsable">Qui est responsable</a></li>
+          <li><a href="#local">Ce qui reste sur votre ordinateur</a></li>
+          <li><a href="#consentement">Le consentement, type par type</a></li>
+          <li><a href="#tiers">Les tiers : qui reçoit quoi, et quand</a></li>
+          <li><a href="#registre">Le registre de transparence</a></li>
+          <li><a href="#conservation">Durée de conservation et purge</a></li>
+          <li><a href="#securite">Sécurité</a></li>
+          <li><a href="#droits">Vos droits, et comment les exercer</a></li>
+          <li><a href="#site">Le site web lui-même</a></li>
+          <li><a href="#paiement">Paiement et facturation</a></li>
+          <li><a href="#enfants">Âge minimal</a></li>
+          <li><a href="#modifications">Modifications</a></li>
+          <li><a href="#contact-doc">Nous joindre</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="principe">1. Le principe</h2>
+      <p>
+        IRIS s’exécute sur votre ordinateur. Vos conversations, vos souvenirs, votre journal et vos
+        réglages sont enregistrés dans un fichier de base de données local, chiffré, sous
+        <span class="mono">%APPDATA%\IRIS</span>. VELA n’en reçoit aucune copie&nbsp;: l’application ne
+        comporte ni télémétrie, ni statistiques d’usage, ni service d’envoi automatique vers nos serveurs.
+      </p>
+      <p>
+        Des données quittent votre ordinateur dans un seul cas&nbsp;: lorsqu’un traitement que vous avez
+        demandé exige un service extérieur — répondre à une question avec un modèle d’intelligence
+        artificielle, lire un texte à voix haute, ou transcrire votre voix quand la reconnaissance hors
+        ligne n’est pas disponible. Chacun de ces envois est soumis à un consentement que vous accordez par
+        type de donnée, et chacun est inscrit dans un registre que vous pouvez vérifier.
+      </p>
+
+      <h2 id="responsable">2. Qui est responsable du traitement</h2>
+      <p>
+        VELA, éditeur du logiciel IRIS. Coordonnées et forme juridique&nbsp;:
+        voir les <a href="mentions-legales.html">mentions légales</a>. Pour toute question relative à vos
+        données&nbsp;: <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a> ou
+        <a href="tel:+18195242804">819&nbsp;524-2804</a>.
+      </p>
+      <p>
+        Pour les données traitées sur votre appareil, vous restez maître du support&nbsp;: nous n’y avons
+        aucun accès, ni à distance ni autrement. Pour les données que vous choisissez d’envoyer à un
+        fournisseur d’intelligence artificielle, ce fournisseur devient à son tour responsable de ce qu’il
+        en fait, selon ses propres conditions (section 5).
+      </p>
+
+      <h2 id="local">3. Ce qui reste sur votre ordinateur</h2>
+      <p>Sont enregistrés localement, et uniquement localement&nbsp;:</p>
+      <ul>
+        <li>vos conversations avec IRIS, écrites comme dictées&nbsp;;</li>
+        <li>vos souvenirs, c’est-à-dire les informations qu’IRIS retient à votre demande ou parce qu’elle
+          les juge utiles (préférences, décisions, promesses, chiffres)&nbsp;;</li>
+        <li>vos routines vocales, vos rappels et vos tâches&nbsp;;</li>
+        <li>vos réglages, votre mot d’activation, la liste de vos agents et de vos sites enregistrés&nbsp;;</li>
+        <li>le registre de transparence (section 6)&nbsp;;</li>
+        <li>le modèle de reconnaissance vocale hors ligne, une fois téléchargé.</li>
+      </ul>
+      <p>
+        Les captures d’écran et l’audio du micro ne sont pas conservés comme fichiers&nbsp;: ils sont
+        utilisés pour la demande en cours, puis abandonnés. Ce qui subsiste est le texte transcrit et la
+        ligne correspondante dans le registre.
+      </p>
+      <p>
+        Le service local d’IRIS écoute sur l’adresse <span class="mono">127.0.0.1</span>, protégée par un
+        jeton de session régénéré à chaque démarrage&nbsp;: il n’est pas joignable depuis votre réseau, ni
+        depuis Internet.
+      </p>
+
+      <h2 id="consentement">4. Le consentement, type par type</h2>
+      <p>
+        Rien ne quitte votre ordinateur sans un accord donné pour le type de donnée concerné. Ces
+        interrupteurs se trouvent dans <strong>Confidentialité</strong>, et l’assistant de démarrage vous
+        les présente à la première ouverture. Ils sont tous réversibles à tout moment, et chaque
+        changement est daté dans le registre.
+      </p>
+      <dl>
+        <dt>Texte de vos demandes</dt>
+        <dd>Ce que vous tapez ou dictez, envoyé à l’agent d’intelligence artificielle que vous avez
+          choisi. Sans ce consentement, aucun agent externe ne peut répondre.</dd>
+        <dt>Audio brut du micro</dt>
+        <dd>Uniquement si la reconnaissance vocale hors ligne n’est pas disponible et que vous activez la
+          reconnaissance en ligne. Voir la section 5.</dd>
+        <dt>Images jointes</dt>
+        <dd>Les fichiers image que vous joignez vous-même à une demande.</dd>
+        <dt>Captures d’écran</dt>
+        <dd>Une capture de votre écran, demandée par vous ou par un agent au cours d’une tâche que vous
+          lui avez confiée. Toujours signalée par l’indicateur de capture.</dd>
+        <dt>Extraits de mémoire</dt>
+        <dd>Les souvenirs pertinents ajoutés au contexte d’une demande pour que la réponse tienne compte
+          de ce qu’IRIS sait de vous.</dd>
+      </dl>
+      <p>
+        Deux réglages priment sur tout le reste. Le <strong>mode 100&nbsp;% local</strong> bloque tout
+        envoi externe&nbsp;: seul un modèle installé sur votre machine peut encore répondre. Le
+        <strong>mode confidentiel</strong> coupe le micro et empêche toute écoute ou capture tant qu’il est
+        actif. Un agent que vous avez déclaré local n’est jamais soumis au consentement d’envoi externe,
+        puisque rien ne sort de l’appareil.
+      </p>
+
+      <h2 id="tiers">5. Les tiers : qui reçoit quoi, et quand</h2>
+      <p>
+        IRIS ne s’adresse qu’aux services que vous avez configurés, avec les clés que vous fournissez. Nous
+        ne sommes pas intermédiaires de ces échanges&nbsp;: votre ordinateur parle directement au
+        fournisseur.
+      </p>
+      <dl>
+        <dt>OpenRouter — <span class="mono">openrouter.ai</span></dt>
+        <dd>Service par défaut, qui achemine vos demandes vers le modèle choisi. Reçoit le texte de vos
+          demandes, et selon vos consentements, les images jointes, les captures d’écran et les extraits de
+          mémoire. Un en-tête identifie l’application (« IRIS (VELA) »)&nbsp;; il ne contient aucune
+          donnée personnelle.</dd>
+        <dt>Anthropic, OpenAI, Google — modèles Claude, GPT, Gemini</dt>
+        <dd>Uniquement si vous configurez l’un de ces agents directement, avec votre propre clé. Reçoivent
+          les mêmes catégories de données que ci-dessus, selon vos consentements.</dd>
+        <dt>ElevenLabs — <span class="mono">api.elevenlabs.io</span></dt>
+        <dd>Reçoit le texte qu’IRIS s’apprête à prononcer, afin d’en produire la voix. Uniquement si une
+          clé ElevenLabs est configurée. Sans clé, la synthèse vocale de Windows est utilisée et rien ne
+          sort de l’appareil.</dd>
+        <dt>Reconnaissance vocale en ligne de Google</dt>
+        <dd>Reçoit de courts extraits d’audio brut du micro, uniquement en renfort&nbsp;: si le modèle
+          hors ligne n’est pas installé et que vous avez accordé le consentement « audio brut du micro ».
+          Chaque envoi est inscrit au registre avec sa durée en millisecondes.</dd>
+        <dt>Alphacephei — <span class="mono">alphacephei.com</span></dt>
+        <dd>Hébergeur du modèle de reconnaissance vocale hors ligne. Un simple téléchargement de fichier,
+          une seule fois, à votre demande. Aucune donnée personnelle n’est transmise.</dd>
+        <dt>Sites que vous enregistrez vous-même</dt>
+        <dd>Quand vous demandez à IRIS de se connecter à l’un de vos comptes, elle remplit le formulaire du
+          site concerné avec l’identifiant et le mot de passe rangés dans le coffre du système. Ces
+          identifiants ne sont transmis qu’à ce site, jamais à un agent d’intelligence artificielle ni à
+          VELA.</dd>
+        <dt>Modèles installés chez vous — Ollama, LM Studio</dt>
+        <dd>Ne reçoivent rien qui sorte de votre machine&nbsp;: le traitement est local.</dd>
+      </dl>
+      <p>
+        Ce que ces fournisseurs conservent, et pour combien de temps, relève de leurs propres politiques.
+        Nous ne pouvons ni le garantir ni l’influencer, et nous ne prétendons pas le faire. Si ce point
+        vous importe, le mode 100&nbsp;% local existe précisément pour ça.
+      </p>
+
+      <h2 id="registre">6. Le registre de transparence</h2>
+      <p>
+        Chaque envoi externe, chaque capture, chaque commande exécutée, chaque fichier écrit et chaque
+        changement de consentement ou de mode est inscrit dans un registre local. Chaque entrée porte une
+        empreinte SHA-256 calculée à partir de son contenu <em>et</em> de l’empreinte de l’entrée
+        précédente&nbsp;: modifier ou retirer une ligne rompt la chaîne, et la vérification le détecte.
+      </p>
+      <p>
+        Dans <strong>Confidentialité</strong>, le bouton « Vérifier l’intégrité » recalcule toute la chaîne
+        devant vous et indique la première entrée fautive s’il y en a une. « Exporter JSON » et « Exporter
+        CSV » vous en remettent une copie complète. « Vider » l’efface. Ce registre vous appartient&nbsp;:
+        il ne nous est jamais transmis.
+      </p>
+
+      <h2 id="conservation">7. Durée de conservation et purge</h2>
+      <p>
+        Par défaut, la durée de conservation est <strong>illimitée</strong>&nbsp;: rien n’est supprimé tant
+        que vous ne le demandez pas. Dans <strong>Confidentialité › Rétention</strong>, vous pouvez la
+        fixer à 24&nbsp;heures, 7, 30 ou 90&nbsp;jours. Les souvenirs, messages et entrées de journal plus
+        anciens que ce délai sont alors effacés automatiquement.
+      </p>
+      <p>
+        Le bouton « Purger maintenant » déclenche la même opération immédiatement. La suppression est
+        physique&nbsp;: les lignes sont retirées de la base, puis celle-ci est compactée pour ne pas
+        laisser de résidus récupérables. Le nombre d’éléments supprimés vous est indiqué, et la purge
+        elle-même est inscrite au registre.
+      </p>
+      <p>
+        Désinstaller IRIS ne supprime pas automatiquement vos données&nbsp;: elles restent dans
+        <span class="mono">%APPDATA%\IRIS</span> pour que vous puissiez réinstaller sans rien perdre.
+        Supprimez ce dossier pour tout effacer.
+      </p>
+
+      <h2 id="securite">8. Sécurité</h2>
+      <ul>
+        <li><strong>Chiffrement au repos&nbsp;: AES-256-GCM.</strong> La clé maîtresse est rangée dans le
+          gestionnaire d’identifiants de Windows. Si ce coffre est indisponible, elle est écrite dans un
+          fichier local à permissions restreintes, et l’application vous indique laquelle des deux sources
+          est utilisée.</li>
+        <li><strong>Clés d’API.</strong> Rangées dans le coffre du système, ou à défaut dans un fichier
+          chiffré en AES-256-GCM. L’interface ne les affiche jamais en clair, même à vous&nbsp;: elle
+          n’en montre qu’une version masquée. La clé ElevenLabs fait exception de forme&nbsp;: elle est
+          conservée dans un fichier <span class="mono">.env</span> de votre dossier de données, jamais dans
+          le code.</li>
+        <li><strong>Mots de passe de vos sites.</strong> Rangés dans le coffre du système. IRIS les utilise
+          pour remplir un formulaire&nbsp;; ils ne transitent par aucun modèle d’intelligence
+          artificielle.</li>
+        <li><strong>Indicateur de capture.</strong> Une pastille s’affiche par-dessus toutes les fenêtres
+          dès que le micro, l’écran ou une caméra de l’ordinateur sont utilisés. Elle n’est pas
+          désactivable. Les lunettes VELA, elles, n’ont pas de caméra.</li>
+        <li><strong>Confirmation des commandes sensibles.</strong> IRIS demande votre accord avant
+          d’exécuter une commande jugée dangereuse.</li>
+      </ul>
+      <p>
+        Aucun système n’est infaillible et nous ne prétendons à aucune certification. Nous décrivons ici
+        les mesures réellement en place, vérifiables dans l’application.
+      </p>
+
+      <h2 id="droits">9. Vos droits, et comment les exercer</h2>
+      <p>
+        Vos données étant sur votre machine, ces droits s’exercent directement, sans passer par nous et
+        sans délai&nbsp;:
+      </p>
+      <ul>
+        <li><strong>Accès.</strong> Vue <strong>Mémoire</strong> pour vos souvenirs,
+          <strong>Chat</strong> pour l’historique de vos conversations,
+          <strong>Confidentialité › Exporter JSON / CSV</strong> pour le registre complet.</li>
+        <li><strong>Rectification.</strong> Les souvenirs se modifient et se suppriment un par un dans la
+          vue Mémoire. Vos réglages et vos comptes enregistrés se changent dans Paramètres.</li>
+        <li><strong>Suppression.</strong> « Purger maintenant » dans Confidentialité, « Vider » pour le
+          registre, ou la suppression du dossier <span class="mono">%APPDATA%\IRIS</span> pour tout
+          effacer. Une conversation se supprime individuellement depuis la liste des conversations.</li>
+        <li><strong>Retrait du consentement.</strong> Chaque interrupteur de consentement se désactive
+          à tout moment, avec effet immédiat.</li>
+        <li><strong>Portabilité.</strong> L’export JSON du registre est un fichier lisible et réutilisable.</li>
+      </ul>
+      <p>
+        Pour les rares données que nous détenons réellement — le courriel que vous nous envoyez, et la
+        trace d’un paiement — écrivez-nous&nbsp;: nous les supprimons sur demande, sous réserve des
+        obligations comptables applicables.
+      </p>
+
+      <h2 id="site">10. Le site web lui-même</h2>
+      <p>
+        Ce site est constitué de fichiers statiques. Il ne dépose <strong>aucun témoin</strong> (cookie),
+        n’utilise <strong>aucun outil de mesure d’audience</strong> et ne charge aucune ressource depuis un
+        service tiers&nbsp;: polices, styles et scripts sont servis par le site lui-même. Aucun compte
+        n’est créé, aucun formulaire n’est enregistré.
+      </p>
+      <p>
+        Le formulaire de contact ne transmet rien à un service intermédiaire&nbsp;: il ouvre votre propre
+        logiciel de courriel avec un message pré-rempli, que vous envoyez vous-même. Nous ne recevons donc
+        que ce que vous décidez d’envoyer.
+      </p>
+      <p>
+        Deux exceptions à signaler. Les boutons de paiement mènent à <strong>PayPal</strong>, qui applique
+        ses propres règles dès que vous y arrivez. Et notre hébergeur conserve des journaux techniques de
+        connexion (adresse IP, page demandée), comme tout serveur web&nbsp;; voir les
+        <a href="mentions-legales.html">mentions légales</a> pour son identité.
+      </p>
+
+      <h2 id="paiement">11. Paiement et facturation</h2>
+      <p>
+        Les paiements passent par PayPal. Nous ne voyons ni ne conservons vos coordonnées bancaires&nbsp;:
+        nous recevons de PayPal la confirmation du versement, avec le nom et le courriel associés au
+        compte payeur. Ces informations servent à émettre votre clé d’abonnement et à assurer le suivi de
+        votre compte.
+      </p>
+      <p>
+        La clé d’abonnement contient le nom du plan, sa date d’expiration et le courriel auquel elle a été
+        émise, le tout signé. Elle est vérifiée sur votre appareil&nbsp;: son activation ne nous est pas
+        signalée et ne déclenche aucune connexion.
+      </p>
+
+      <h2 id="enfants">12. Âge minimal</h2>
+      <p>
+        IRIS n’est pas destinée aux enfants. Si vous avez moins de 14&nbsp;ans, n’utilisez pas le logiciel
+        sans l’accord et la supervision d’un parent ou d’un tuteur.
+      </p>
+
+      <h2 id="modifications">13. Modifications</h2>
+      <p>
+        Cette politique évolue avec le logiciel. La date de version figure en haut de la page. Un changement
+        important vous sera signalé dans l’application ou par courriel si vous êtes abonné.
+      </p>
+
+      <h2 id="contact-doc">14. Nous joindre</h2>
+      <p>
+        <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a> ·
+        <a href="tel:+18195242804">819&nbsp;524-2804</a> ·
+        <a href="contact.html">formulaire de contact</a>.
+        Nous répondons nous-mêmes, il n’y a pas de service à traverser.
+      </p>
+      <p class="small muted">
+        Le présent document est régi par le droit applicable au Québec et au Canada. Il ne constitue pas un
+        avis juridique.
+      </p>
+
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA">
+            <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Vois. Souviens-toi. Fais.<br>Une IA. Toute ta vie. Rien à taper.</p>
+      </div>
+      <div>
+        <h4>Le produit</h4>
+        <ul>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Nous joindre</h4>
+        <ul>
+          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

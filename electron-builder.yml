@@ -1,0 +1,41 @@
+appId: com.vela.iris
+productName: IRIS
+copyright: © VELA
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - build/icon.png
+  - package.json
+extraResources:
+  - from: backend/dist/iris-backend
+    to: backend
+    filter:
+      - "**/*"
+asar: true
+compression: normal
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: IRIS-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: IRIS
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+mac:
+  target: dmg
+  icon: build/icon.png
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  icon: build/icon.png
+  category: Utility
+publish: null

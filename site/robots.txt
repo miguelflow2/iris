@@ -1,0 +1,11 @@
+# Site public de VELA — https://vela-iris.netlify.app
+# Tout est indexable : il n'y a ni espace privé, ni compte, ni contenu payant.
+
+User-agent: *
+Allow: /
+
+# Le fichier d'installation n'a aucun intérêt pour un moteur de recherche,
+# et son exploration consommerait 246 Mo de bande passante à chaque passage.
+Disallow: /telechargement/
+
+Sitemap: https://vela-iris.netlify.app/sitemap.xml

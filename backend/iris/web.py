@@ -1,0 +1,309 @@
+"""Navigateur piloté (Chrome installé via Playwright) : ouvrir, lire, cliquer, remplir, se connecter à un site
+enregistré. Le mot de passe est rempli par l'outil lui-même : le modèle d'IA ne le voit jamais."""
+from __future__ import annotations
+
+import base64
+import logging
+import queue
+import re
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from .config import Settings
+from .events import EventHub
+from .security.secrets import SecretStore
+
+log = logging.getLogger("iris.web")
+
+MAX_TEXT = 6000
+
+# Profils de connexion connus (sélecteurs stables) ; les autres sites passent par des heuristiques.
+SITE_PROFILES: dict[str, dict] = {
+    "omnivox": {
+        "match": "omnivox",
+        "user": "#Identifiant",
+        "password": "#Password",
+        "submit": "#formLogin button[type=submit]",
+        "logged_in": lambda url: "/intr" in url.lower() and "/login" not in url.lower(),
+    },
+}
+
+
+class WebAgent:
+    """Toutes les opérations Playwright (API synchrone) s'exécutent sur un thread dédié."""
+
+    def __init__(self, settings: Settings, hub: EventHub, secrets: SecretStore):
+        self.settings = settings
+        self.hub = hub
+        self.secrets = secrets
+        self.profile_dir = Path(settings.data_dir) / "browser-profile"
+        self._jobs: "queue.Queue[tuple[Callable[[], Any], queue.Queue]]" = queue.Queue()
+        self._thread: threading.Thread | None = None
+        self._pw = None
+        self._ctx = None
+        self._page = None
+        self.error: str | None = None
+        self.last_url = ""
+
+    # ------------------------------------------------------------------ thread + navigateur
+    def _ensure_thread(self) -> None:
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = threading.Thread(target=self._worker, name="iris-web", daemon=True)
+            self._thread.start()
+
+    def _worker(self) -> None:
+        while True:
+            fn, out = self._jobs.get()
+            try:
+                out.put((True, fn()))
+            except Exception as exc:  # noqa: BLE001
+                out.put((False, exc))
+
+    def _run(self, fn: Callable[[], Any], timeout: float = 180.0) -> Any:
+        self._ensure_thread()
+        out: queue.Queue = queue.Queue()
+        self._jobs.put((fn, out))
+        ok, value = out.get(timeout=timeout)
+        if not ok:
+            raise value
+        return value
+
+    def _browser(self):
+        """Contexte Chrome persistant (cookies et sessions conservés), fenêtre visible."""
+        if self._ctx is not None:
+            try:
+                if self._page is None or self._page.is_closed():
+                    self._page = self._ctx.new_page()
+                return self._page
+            except Exception:
+                self._ctx = None
+        from playwright.sync_api import sync_playwright
+
+        if self._pw is None:
+            self._pw = sync_playwright().start()
+        self.profile_dir.mkdir(parents=True, exist_ok=True)
+        last_exc: Exception | None = None
+        for channel in ("chrome", "msedge", None):
+            try:
+                kwargs = dict(headless=False, viewport={"width": 1280, "height": 860}, args=["--disable-blink-features=AutomationControlled"])
+                if channel:
+                    kwargs["channel"] = channel
+                self._ctx = self._pw.chromium.launch_persistent_context(str(self.profile_dir), **kwargs)
+                break
+            except Exception as exc:  # navigateur absent
+                last_exc = exc
+                self._ctx = None
+        if self._ctx is None:
+            raise RuntimeError(f"Aucun navigateur pilotable (Chrome ou Edge requis) : {last_exc}")
+        pages = self._ctx.pages
+        self._page = pages[0] if pages else self._ctx.new_page()
+        self._page.set_default_timeout(15000)
+        return self._page
+
+    # ------------------------------------------------------------------ opérations
+    @staticmethod
+    def _clean(text: str) -> str:
+        return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", text or "")).strip()
+
+    def open(self, url: str) -> dict:
+        url = (url or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            url = "https://" + url
+
+        def job():
+            page = self._browser()
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(800)
+            self.last_url = page.url
+            return {"url": page.url, "title": page.title()}
+
+        result = self._run(job)
+        self.hub.publish("web.navigated", **result)
+        return result
+
+    def read(self, max_chars: int = MAX_TEXT) -> dict:
+        def job():
+            page = self._browser()
+            text = self._clean(page.inner_text("body"))
+            links = []
+            for el in page.query_selector_all("a[href], button, [role=button], [role=link], input[type=submit]")[:120]:
+                try:
+                    if not el.is_visible():
+                        continue
+                    label = self._clean(el.inner_text() or el.get_attribute("value") or el.get_attribute("aria-label") or "")
+                    if label:
+                        links.append(label[:60])
+                except Exception:
+                    continue
+            self.last_url = page.url
+            return {"url": page.url, "title": page.title(), "text": text[:max_chars] + ("…" if len(text) > max_chars else ""), "clickable": list(dict.fromkeys(links))[:60]}
+
+        return self._run(job)
+
+    def click(self, target: str) -> dict:
+        target = (target or "").strip()
+
+        def job():
+            page = self._browser()
+            loc = self._locate(page, target)
+            loc.first.click(timeout=10000)
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(600)
+            self.last_url = page.url
+            return {"clicked": target, "url": page.url, "title": page.title()}
+
+        return self._run(job)
+
+    def fill(self, target: str, value: str, submit: bool = False) -> dict:
+        def job():
+            page = self._browser()
+            loc = self._locate(page, target, fields=True)
+            loc.first.fill(value)
+            if submit:
+                loc.first.press("Enter")
+                page.wait_for_load_state("domcontentloaded")
+                page.wait_for_timeout(600)
+            self.last_url = page.url
+            return {"filled": target, "url": page.url}
+
+        return self._run(job)
+
+    def press(self, key: str) -> dict:
+        def job():
+            page = self._browser()
+            page.keyboard.press(key)
+            page.wait_for_timeout(400)
+            return {"pressed": key, "url": page.url}
+
+        return self._run(job)
+
+    def back(self) -> dict:
+        def job():
+            page = self._browser()
+            page.go_back(wait_until="domcontentloaded")
+            self.last_url = page.url
+            return {"url": page.url, "title": page.title()}
+
+        return self._run(job)
+
+    def screenshot(self) -> dict:
+        def job():
+            page = self._browser()
+            data = page.screenshot(type="jpeg", quality=70, full_page=False)
+            return {"media_type": "image/jpeg", "data": base64.b64encode(data).decode("ascii"), "url": page.url}
+
+        return self._run(job)
+
+    def close(self) -> None:
+        def job():
+            try:
+                if self._ctx is not None:
+                    self._ctx.close()
+            finally:
+                self._ctx = None
+                self._page = None
+                if self._pw is not None:
+                    self._pw.stop()
+                    self._pw = None
+            return True
+
+        try:
+            self._run(job, timeout=20)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ localisation
+    def _locate(self, page, target: str, fields: bool = False):
+        t = target.strip()
+        if t.startswith(("#", ".", "//", "[")) or re.match(r"^[a-z]+\[", t):
+            return page.locator(t)
+        if fields:
+            for finder in (lambda: page.get_by_label(t, exact=False), lambda: page.get_by_placeholder(t, exact=False), lambda: page.locator(f"[name='{t}']"), lambda: page.get_by_role("textbox", name=re.compile(re.escape(t), re.I))):
+                try:
+                    loc = finder()
+                    if loc.count() > 0:
+                        return loc
+                except Exception:
+                    continue
+            return page.locator("input:visible, textarea:visible").first
+        for finder in (
+            lambda: page.get_by_role("link", name=re.compile(re.escape(t), re.I)),
+            lambda: page.get_by_role("button", name=re.compile(re.escape(t), re.I)),
+            lambda: page.get_by_text(t, exact=False),
+        ):
+            try:
+                loc = finder()
+                if loc.count() > 0:
+                    return loc
+            except Exception:
+                continue
+        raise RuntimeError(f"« {target} » introuvable sur la page. Utilise web_read pour voir les éléments cliquables.")
+
+    # ------------------------------------------------------------------ connexion à un site enregistré
+    def site_names(self) -> list[str]:
+        return list((self.settings.user.sites or {}).keys())
+
+    def resolve_site(self, name: str) -> tuple[str, dict] | None:
+        sites = self.settings.user.sites or {}
+        n = (name or "").strip().lower()
+        for key, site in sites.items():
+            url = (getattr(site, "url", None) or (site.get("url") if isinstance(site, dict) else "") or "").lower()
+            if key.lower() == n or n in key.lower() or (n and n in url):
+                return key, site
+        return None
+
+    def login(self, name: str) -> dict:
+        found = self.resolve_site(name)
+        if not found:
+            known = ", ".join(self.site_names()) or "aucun"
+            raise RuntimeError(f"Site « {name} » inconnu. Sites enregistrés : {known}. Ajoute-le dans Paramètres › Comptes web.")
+        key, site = found
+        creds = self.secrets.get_site(key)
+        if not creds or not creds.get("password"):
+            raise RuntimeError(f"Mot de passe absent pour « {key} » : l'utilisateur doit le saisir dans Paramètres › Comptes web.")
+        site_url = getattr(site, "url", None) or (site.get("url") if isinstance(site, dict) else "") or ""
+        site_user = getattr(site, "username", None) or (site.get("username") if isinstance(site, dict) else "") or ""
+        username = site_user or creds.get("username") or ""
+        url = site_url
+        profile = next((p for p in SITE_PROFILES.values() if p["match"] in url.lower() or p["match"] in key.lower()), None)
+
+        def job():
+            page = self._browser()
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(800)
+            if profile and profile["logged_in"](page.url):
+                return {"status": "already_logged_in", "url": page.url, "title": page.title()}
+            user_sel = profile["user"] if profile else "input[type=text]:visible, input[type=email]:visible, input:not([type]):visible"
+            pass_sel = profile["password"] if profile else "input[type=password]:visible"
+            if page.locator(pass_sel).count() == 0:
+                return {"status": "no_login_form", "url": page.url, "title": page.title()}
+            page.locator(user_sel).first.fill(username)
+            page.locator(pass_sel).first.fill(creds["password"])
+            if profile and profile.get("submit"):
+                page.locator(profile["submit"]).first.click()
+            else:
+                page.locator(pass_sel).first.press("Enter")
+            # contrôle de sécurité (reCAPTCHA) : jamais contourné, l'utilisateur le résout dans la fenêtre
+            deadline = time.time() + 150
+            notified = False
+            while time.time() < deadline:
+                page.wait_for_timeout(700)
+                current = page.url
+                if profile and profile["logged_in"](current):
+                    break
+                if not profile and page.locator(pass_sel).count() == 0:
+                    break
+                captcha = page.locator("iframe[src*='recaptcha'], iframe[src*='captcha'], #captcha, .g-recaptcha").count() > 0
+                if captcha and not notified:
+                    notified = True
+                    self.hub.publish("web.captcha", url=current)
+            page.wait_for_timeout(500)
+            ok = profile["logged_in"](page.url) if profile else page.locator(pass_sel).count() == 0
+            self.last_url = page.url
+            return {"status": "logged_in" if ok else "login_failed", "url": page.url, "title": page.title(), "captcha": notified}
+
+        result = self._run(job, timeout=200)
+        self.hub.publish("web.login", site=key, status=result["status"])
+        return {"site": key, **result}

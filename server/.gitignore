@@ -1,0 +1,21 @@
+# Secrets — ne jamais versionner
+.env
+.env.*
+!.env.exemple
+
+# Base de données (contient les courriels des clients et leurs clés)
+*.db
+*.db-wal
+*.db-shm
+licences.db*
+
+# Courriels déposés quand SMTP n'est pas configuré (contiennent des clés valides)
+sortie/
+
+# Environnement virtuel et caches Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/

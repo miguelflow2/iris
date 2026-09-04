@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installer IRIS — VELA</title>
+<meta name="description" content="Marche à suivre pour installer IRIS sur Windows 10 ou 11 : télécharger IRIS-Setup-0.1.0.exe, l’exécuter, suivre l’assistant de démarrage, puis dire « Dis-moi Iris ».">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M 72 24 A 36 36 0 1 0 84 62' fill='none' stroke='%2317c793' stroke-width='10' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA : un anneau volontairement ouvert">
+        <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="index.html">Accueil</a>
+      <a href="confidentialite.html">Confidentialité</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="plans.html">Plans</a>
+      <a href="installer.html" aria-current="page">Installer</a>
+      <a href="contact.html" class="nav-cta">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <section class="hero">
+    <svg class="hero-ring-bg" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><path d="M 72 24 A 36 36 0 1 0 84 62"/></svg>
+    <div class="wrap">
+      <p class="eyebrow">Installation</p>
+      <h1>Installer IRIS, étape par étape.</h1>
+      <p class="lead">
+        Cette page est écrite pour quelqu’un qui n’a jamais installé ce genre de logiciel. Il y a un seul
+        fichier à télécharger et rien d’autre à préparer&nbsp;: ni Python, ni Node, ni compte à créer.
+        Comptez une dizaine de minutes, téléchargement compris.
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="#telecharger">Télécharger IRIS</a>
+        <a class="btn" href="#marche-a-suivre">La marche à suivre</a>
+        <a class="btn" href="#developpeurs">Je suis développeur</a>
+      </p>
+    </div>
+  </section>
+
+  <section id="telecharger" class="band">
+    <div class="wrap">
+      <p class="section-label">Téléchargement</p>
+      <h2>Choisissez votre système.</h2>
+      <p class="lead" style="margin-bottom:26px">
+        IRIS est publiée pour Windows. Les versions pour macOS et Linux sont en préparation&nbsp;: le service
+        d’IRIS n’est empaqueté que pour Windows, et la connexion Bluetooth aux lunettes comme le contrôle de
+        l’ordinateur s’appuient sur des interfaces propres à Windows. Nous préférons le dire plutôt que de
+        laisser un bouton qui ne mène nulle part.
+      </p>
+
+      <div class="grid grid-3">
+        <div class="card os-card dispo">
+          <div class="os-head">
+            <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Windows">
+              <path d="M3 5.5 10.2 4.5v6.6H3V5.5Zm8.4-1.2L21 3v8.1h-9.6V4.3ZM3 12.3h7.2v6.6L3 17.9v-5.6Zm8.4 0H21V21l-9.6-1.3v-7.4Z"/>
+            </svg>
+            <h3>Windows</h3>
+            <span class="pill ok">disponible</span>
+          </div>
+          <p class="small">Windows 10 ou 11, en 64&nbsp;bits. Rien d’autre à installer sur la machine&nbsp;:
+            ni Python, ni Node, ni compte à créer. Le service d’IRIS est embarqué dans l’installeur.</p>
+          <p class="os-actions">
+            <a class="btn primary" href="telechargement/IRIS-Setup-0.1.0.exe" download>Télécharger pour Windows</a>
+          </p>
+          <p class="small muted" style="margin:10px 0 0">246&nbsp;Mo · version 0.1.0 du 3 septembre 2026 ·
+            <code>IRIS-Setup-0.1.0.exe</code></p>
+        </div>
+
+        <div class="card os-card prepa">
+          <div class="os-head">
+            <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="macOS">
+              <path d="M16.2 12.7c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.6 2.2-1.6 2.7-.4 6.7 1.1 8.9.7 1.1 1.6 2.3 2.8 2.2 1.1 0 1.5-.7 2.9-.7 1.3 0 1.7.7 2.9.7 1.2 0 2-1.1 2.7-2.1.8-1.2 1.2-2.4 1.2-2.4s-2.3-.9-2.4-3.8ZM14 5.9c.6-.8 1-1.8.9-2.9-.9 0-2 .6-2.7 1.4-.6.7-1.1 1.8-.9 2.8 1 .1 2-.5 2.7-1.3Z"/>
+            </svg>
+            <h3>macOS</h3>
+            <span class="pill warn">en préparation</span>
+          </div>
+          <p class="small">Aucune version pour Mac n’existe aujourd’hui, et aucune date n’est promise. Laissez-nous
+            votre courriel&nbsp;: vous serez prévenu le jour où elle sort, et pas pour autre chose.</p>
+          <p class="os-actions">
+            <a class="btn" href="mailto:miguelfreddy65@gmail.com?subject=IRIS%20pour%20macOS%20%E2%80%94%20pr%C3%A9venez-moi&body=Bonjour%2C%0D%0A%0D%0AJe%20souhaite%20%C3%AAtre%20pr%C3%A9venu%20quand%20IRIS%20sera%20disponible%20pour%20macOS.%0D%0A%0D%0AMerci%20!">Me prévenir</a>
+          </p>
+        </div>
+
+        <div class="card os-card prepa">
+          <div class="os-head">
+            <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Linux">
+              <path d="M12 2c-2.2 0-3.3 1.9-3.2 4.1.1 1.6-.1 2.5-.7 3.5-.8 1.3-1.9 2.6-2.4 4.3-.4 1.4-.2 2.3.3 2.6.4.3.6.7.6 1.3 0 .9.7 1.5 1.9 1.7 1.1.2 1.8.6 2.4 1 .7.5 1.5.5 2.2 0 .6-.4 1.3-.8 2.4-1 1.2-.2 1.9-.8 1.9-1.7 0-.6.2-1 .6-1.3.5-.3.7-1.2.3-2.6-.5-1.7-1.6-3-2.4-4.3-.6-1-.8-1.9-.7-3.5C15.3 3.9 14.2 2 12 2Zm-1.4 3.3c.4 0 .7.4.7 1s-.3 1-.7 1-.7-.4-.7-1 .3-1 .7-1Zm2.8 0c.4 0 .7.4.7 1s-.3 1-.7 1-.7-.4-.7-1 .3-1 .7-1Zm-1.4 2.9c.8 0 1.7.4 1.7.8 0 .3-.9.9-1.7.9s-1.7-.6-1.7-.9c0-.4.9-.8 1.7-.8Z"/>
+            </svg>
+            <h3>Linux</h3>
+            <span class="pill warn">en préparation</span>
+          </div>
+          <p class="small">Même chose du côté de Linux&nbsp;: rien n’est publié pour l’instant. Le bouton
+            ci-dessous prépare un courriel&nbsp;; nous vous écrirons quand une version sera prête.</p>
+          <p class="os-actions">
+            <a class="btn" href="mailto:miguelfreddy65@gmail.com?subject=IRIS%20pour%20Linux%20%E2%80%94%20pr%C3%A9venez-moi&body=Bonjour%2C%0D%0A%0D%0AJe%20souhaite%20%C3%AAtre%20pr%C3%A9venu%20quand%20IRIS%20sera%20disponible%20pour%20Linux.%0D%0A%0D%0AMerci%20!">Me prévenir</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="wrap">
+      <p class="section-label">Avant de commencer</p>
+      <div class="grid grid-4">
+        <div class="card">
+          <h3>Windows 10 ou 11</h3>
+          <p class="small muted">En 64&nbsp;bits. Les versions pour Mac et Linux ne sont pas publiées.</p>
+        </div>
+        <div class="card">
+          <h3>Environ 1&nbsp;Go d’espace</h3>
+          <p class="small muted">L’installeur pèse environ 246&nbsp;Mo et l’application installée environ
+            780&nbsp;Mo.</p>
+        </div>
+        <div class="card">
+          <h3>Un micro</h3>
+          <p class="small muted">Celui de l’ordinateur suffit, et il est même préférable à celui d’un casque
+            Bluetooth.</p>
+        </div>
+        <div class="card">
+          <h3>Une connexion Internet</h3>
+          <p class="small muted">Pour le téléchargement et pour les modèles en ligne. Une fois le modèle de
+            reconnaissance vocale installé, l’écoute, elle, fonctionne hors ligne.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="marche-a-suivre">
+    <div class="wrap">
+      <p class="section-label">La marche à suivre</p>
+      <h2>Cinq étapes, dans l’ordre.</h2>
+
+      <ol class="steps-list" style="margin-top:28px">
+        <li>
+          <h3>Télécharger le fichier d’installation</h3>
+          <p>Le fichier s’appelle <code>IRIS-Setup-0.1.0.exe</code>. Il atterrit normalement dans votre
+            dossier <strong>Téléchargements</strong>.</p>
+          <p class="actions">
+            <a class="btn primary" href="telechargement/IRIS-Setup-0.1.0.exe" download>Télécharger IRIS pour Windows</a>
+            <span class="dl-meta">Windows 10 et 11, 64&nbsp;bits · 246&nbsp;Mo<br>
+              <span class="muted">Version 0.1.0 du 3 septembre 2026</span></span>
+          </p>
+        </li>
+
+        <li>
+          <h3>Lancer l’installation</h3>
+          <p>Double-cliquez sur le fichier téléchargé. L’assistant vous laisse choisir le dossier
+            d’installation&nbsp;; si vous ne savez pas, gardez celui qui est proposé. IRIS crée un raccourci sur
+            le bureau et dans le menu Démarrer, puis se lance toute seule à la fin.</p>
+          <div class="callout warn">
+            <p><strong>Si Windows affiche «&nbsp;Windows a protégé votre ordinateur&nbsp;»&nbsp;:</strong>
+            cliquez sur <em>Informations complémentaires</em>, puis sur <em>Exécuter quand même</em>. Ce message
+            apparaît parce que l’installeur n’est pas encore signé par un certificat d’éditeur&nbsp;; il ne dit
+            rien sur le contenu du fichier.</p>
+          </div>
+        </li>
+
+        <li>
+          <h3>Suivre l’assistant de démarrage</h3>
+          <p>Au premier lancement, IRIS pose cinq questions. Chacune se change plus tard dans les réglages,
+            rien n’est définitif.</p>
+          <div class="grid grid-2" style="margin-top:14px">
+            <div class="card">
+              <h3>1. Bienvenue</h3>
+              <p class="small">Votre prénom, pour qu’IRIS sache comment vous appeler.</p>
+            </div>
+            <div class="card">
+              <h3>2. Clé OpenRouter</h3>
+              <p class="small">OpenRouter est le service qui donne accès aux modèles d’IA. Créez-y un compte,
+                copiez votre clé et collez-la&nbsp;: IRIS la vérifie tout de suite et la range dans le coffre
+                de Windows, sans jamais la réafficher. Les modèles utilisés par défaut sont gratuits.</p>
+              <p class="small muted">La page des clés OpenRouter s’ouvre depuis l’assistant lui-même, par le
+                bouton «&nbsp;Obtenir une clé&nbsp;».</p>
+            </div>
+            <div class="card">
+              <h3>3. Consentements</h3>
+              <p class="small">Vous décidez, type de donnée par type de donnée, ce qui a le droit de quitter
+                l’ordinateur. Pour qu’un agent réponde, il faut au minimum autoriser le
+                «&nbsp;texte de vos demandes&nbsp;». Tout le reste peut rester fermé.</p>
+            </div>
+            <div class="card">
+              <h3>4. Micro et sortie audio</h3>
+              <p class="small">Choisissez par quel micro IRIS vous entend et par quel haut-parleur elle parle.
+                Conseil&nbsp;: gardez le micro de l’ordinateur. Le micro «&nbsp;Hands-Free&nbsp;» d’un casque
+                ou de lunettes Bluetooth est en qualité téléphone et se comprend beaucoup moins bien.</p>
+            </div>
+            <div class="card">
+              <h3>5. Mot d’activation</h3>
+              <p class="small">«&nbsp;Dis-moi Iris&nbsp;» par défaut&nbsp;; vous pouvez le remplacer. C’est aussi
+                ici que se télécharge le modèle de reconnaissance vocale hors ligne, 41&nbsp;Mo, pour que votre
+                voix ne quitte pas l’appareil.</p>
+            </div>
+          </div>
+        </li>
+
+        <li>
+          <h3>Dire votre première phrase</h3>
+          <p>Parlez normalement, à voix haute&nbsp;:</p>
+          <p class="mono" style="color:var(--accent-3);font-size:17px">«&nbsp;Dis-moi Iris, ouvre mon navigateur.&nbsp;»</p>
+          <p>IRIS répond de vive voix et agit. Si elle a besoin d’une précision, elle vous pose la question et
+            vous pouvez répondre directement, sans répéter le mot d’activation.</p>
+          <p class="small muted">Vous préférez taper&nbsp;? Le fil de conversation est là pour ça. Raccourcis
+            utiles&nbsp;: <kbd>Ctrl</kbd>&nbsp;+&nbsp;<kbd>Maj</kbd>&nbsp;+&nbsp;<kbd>Espace</kbd> pour parler,
+            <kbd>Ctrl</kbd>&nbsp;+&nbsp;<kbd>Maj</kbd>&nbsp;+&nbsp;<kbd>I</kbd> pour afficher IRIS,
+            <kbd>Ctrl</kbd>&nbsp;+&nbsp;<kbd>Maj</kbd>&nbsp;+&nbsp;<kbd>M</kbd> pour couper le micro.</p>
+        </li>
+
+        <li>
+          <h3>Faire le tour du propriétaire</h3>
+          <p>Deux endroits valent le détour tout de suite&nbsp;:</p>
+          <ul class="check">
+            <li><strong>Confidentialité</strong>&nbsp;: le registre de transparence et son bouton
+              «&nbsp;Vérifier&nbsp;». C’est là que vous contrôlez ce qu’IRIS a capté et envoyé.</li>
+            <li><strong>Abonnement</strong>&nbsp;: votre plan, votre quota du mois, et le champ où saisir une
+              clé d’abonnement si vous en avez une.</li>
+          </ul>
+          <p class="small muted">Pour une voix française plus naturelle, ajoutez votre clé ElevenLabs dans
+            Paramètres&nbsp;› Voix. Sans clé, IRIS parle avec une voix installée sur Windows&nbsp;; installez
+            une voix française dans les réglages de Windows si la voix par défaut est anglaise.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap narrow">
+      <h2>Si quelque chose cloche</h2>
+      <div class="grid" style="gap:12px">
+        <div class="card">
+          <h3>IRIS ne réagit pas à mon mot d’activation</h3>
+          <p class="small">Vérifiez le micro choisi dans les réglages&nbsp;: s’il s’appelle
+            «&nbsp;Hands-Free&nbsp;», passez au micro de l’ordinateur. Regardez aussi l’indicateur de niveau
+            dans la barre du bas&nbsp;: s’il ne bouge pas quand vous parlez, Windows n’envoie rien à IRIS.</p>
+        </div>
+        <div class="card">
+          <h3>La voix est en anglais</h3>
+          <p class="small">C’est la voix Windows de repli. Installez une voix française dans Windows
+            (Heure et langue&nbsp;› Voix), puis choisissez-la dans Paramètres&nbsp;› Voix, ou ajoutez une clé
+            ElevenLabs.</p>
+        </div>
+        <div class="card">
+          <h3>IRIS dit qu’elle n’a pas le droit d’envoyer quelque chose</h3>
+          <p class="small">C’est la porte de consentement qui fait son travail. Ouvrez Confidentialité et
+            activez le type de donnée concerné, ou vérifiez que le mode 100&nbsp;% local n’est pas actif.</p>
+        </div>
+        <div class="card">
+          <h3>Le quota du mois est atteint</h3>
+          <p class="small">IRIS le dit et cesse d’envoyer. Vous pouvez attendre le mois suivant, changer de
+            plan, ou brancher votre propre clé OpenRouter&nbsp;: ce que votre clé paie n’est pas compté dans
+            le quota.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="developpeurs">
+    <div class="wrap">
+      <p class="section-label">Pour les développeurs</p>
+      <h2>Compiler IRIS depuis les sources.</h2>
+      <p class="lead">
+        Ces commandes sont celles du dépôt, à lancer depuis sa racine. Prérequis&nbsp;: Windows 10 ou 11,
+        Node&nbsp;20 ou plus récent, et Python&nbsp;3.11 ou plus récent (3.13 est la version testée).
+      </p>
+
+      <h3 style="margin-top:26px">Préparer l’environnement</h3>
+<pre><code><span class="c"># dépendances Python, dans un environnement virtuel local</span>
+cd backend
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+cd ..
+
+<span class="c"># dépendances de l'application</span>
+npm install</code></pre>
+
+      <h3>Développer</h3>
+<pre><code><span class="c"># Electron + Vite avec rechargement à chaud ; lance le backend depuis backend/.venv</span>
+npm run dev
+
+<span class="c"># vérification des types TypeScript</span>
+npm run typecheck
+
+<span class="c"># tests du backend</span>
+cd backend
+.venv/Scripts/python -m pytest tests -q</code></pre>
+
+      <h3>Compiler</h3>
+<pre><code><span class="c"># compile electron/ et renderer/ dans out/</span>
+npm run build
+
+<span class="c"># empaquette le service Python en exécutable autonome (PyInstaller)</span>
+<span class="c"># → backend/dist/iris-backend ; les tests et un autotest des bibliothèques</span>
+<span class="c">#   natives doivent passer, sinon la compilation s'arrête</span>
+npm run backend:build
+
+<span class="c"># tout d'un coup : backend + installeur Windows</span>
+npm run dist:full</code></pre>
+
+      <div class="callout">
+        <p><strong>Où atterrit l’installeur&nbsp;:</strong> <code>release/IRIS-Setup-0.1.0.exe</code>, à la
+        racine du dépôt (le numéro de version suit celui de <code>package.json</code>). Le dossier
+        <code>release/win-unpacked/</code> contient l’application décompressée, pratique pour essayer sans
+        installer.</p>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px">
+        <div class="card">
+          <h3>Rien à installer sur la machine cible</h3>
+          <p class="small">Le service Python est empaqueté dans l’installeur&nbsp;: la machine qui reçoit IRIS
+            n’a besoin ni de Python, ni de Node, ni d’aucun environnement de développement. Windows 10 ou 11
+            en 64&nbsp;bits suffit.</p>
+        </div>
+        <div class="card">
+          <h3>Clés et fichiers de configuration</h3>
+          <p class="small">La clé ElevenLabs se met dans un fichier <code>.env</code>&nbsp;:
+            <code>backend/.env</code> en développement (partez de <code>backend/.env.example</code>), ou
+            <code>%APPDATA%\IRIS\iris-data\.env</code> pour l’application installée. Elle peut aussi se saisir
+            dans Paramètres&nbsp;› Voix, qui l’écrit dans ce même fichier. Aucune clé n’est jamais écrite dans
+            le code.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="ring" viewBox="0 0 100 100" fill="none" role="img" aria-label="Symbole VELA">
+            <path d="M 72 24 A 36 36 0 1 0 84 62" stroke="#17c793" stroke-width="10" stroke-linecap="round"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Vois. Souviens-toi. Fais.<br>Une IA. Toute ta vie. Rien à taper.</p>
+      </div>
+      <div>
+        <h4>Le produit</h4>
+        <ul>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Nous joindre</h4>
+        <ul>
+          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

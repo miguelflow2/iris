@@ -1,0 +1,168 @@
+"""Capture guidée : associer chaque geste physique à son code dans le protocole des lunettes.
+
+STRICTEMENT PASSIF, comme l'écoute simple : rien n'est envoyé aux lunettes.
+
+Le principe : le script vous dit quoi faire et quand, puis étiquette lui-même les trames reçues
+pendant chaque fenêtre. À la fin, il affiche la correspondance geste → code. C'est ce tableau
+qui permettra ensuite à IRIS de réagir aux boutons et aux mouvements de tête.
+
+Format de trame observé le 2026-09-04 :
+    bc <type> <longueur sur 2 octets, petit-boutiste> <données> <2 octets de contrôle>
+  · type 0x59 : flux continu à haute fréquence (télémétrie), ignoré ici, il noierait le reste ;
+  · type 0x73 : événements rares — ce sont eux qui portent les gestes.
+
+Usage : backend/.venv/Scripts/python scripts/decoder-gestes-lunettes.py
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+
+ADRESSE_DEFAUT = "65:A2:9F:5C:F4:44"
+CANAL_EVENEMENTS = "de5bf729-d711-4e47-af26-65e3012a5dc7"
+TYPE_TELEMETRIE = 0x59  # flux continu : écarté du relevé des gestes
+
+# Chaque geste est présenté, puis on écoute pendant `duree` secondes.
+GESTES = [
+    ("Repos — ne touchez à rien", 6.0),
+    ("Appui COURT sur le bouton principal", 6.0),
+    ("Appui LONG sur le bouton principal (2 secondes)", 7.0),
+    ("DOUBLE appui sur le bouton principal", 6.0),
+    ("Montez le VOLUME", 6.0),
+    ("Baissez le VOLUME", 6.0),
+    ("METTEZ les lunettes sur votre tête", 6.0),
+    ("HOCHEZ la tête (oui), trois fois", 7.0),
+    ("SECOUEZ la tête (non), trois fois", 7.0),
+    ("RETIREZ les lunettes et posez-les", 6.0),
+]
+
+
+def adresse() -> str:
+    fichier = Path(os.path.expandvars(r"%APPDATA%\IRIS\iris-data\settings.json"))
+    try:
+        data = json.loads(fichier.read_text(encoding="utf-8"))
+        return (data.get("glasses") or {}).get("address") or ADRESSE_DEFAUT
+    except Exception:
+        return ADRESSE_DEFAUT
+
+
+def decoupe(donnees: bytes) -> list[bytes]:
+    """Sépare les trames collées dans un même paquet BLE."""
+    trames, i = [], 0
+    while i + 4 <= len(donnees):
+        if donnees[i] != 0xBC:
+            i += 1
+            continue
+        longueur = int.from_bytes(donnees[i + 2 : i + 4], "little")
+        fin = i + 4 + longueur + 2
+        if fin > len(donnees):
+            trames.append(donnees[i:])
+            break
+        trames.append(donnees[i:fin])
+        i = fin
+    return trames or [donnees]
+
+
+def signature(trame: bytes) -> str:
+    """Ce qui identifie l'événement : le type et les premiers octets de données."""
+    if len(trame) < 6 or trame[0] != 0xBC:
+        return trame.hex(" ")[:32]
+    return f"type 0x{trame[1]:02x} · {trame[4:8].hex(' ')}"
+
+
+async def main() -> int:
+    try:
+        from bleak import BleakClient
+    except ImportError:
+        print("bleak absent : lancez avec backend/.venv/Scripts/python")
+        return 1
+
+    cible = adresse()
+    releve: dict[str, list[bytes]] = defaultdict(list)
+    geste_courant = {"nom": "(préparation)"}
+
+    def au_signal(_sender, data: bytearray) -> None:
+        for trame in decoupe(bytes(data)):
+            if len(trame) > 1 and trame[1] == TYPE_TELEMETRIE:
+                continue  # flux continu, sans rapport avec les gestes
+            releve[geste_courant["nom"]].append(trame)
+
+    print(f"Capture guidée des gestes — lunettes {cible}")
+    print("Rien n'est envoyé aux lunettes : écoute seule.\n")
+    print("Préparez-vous : le script vous dira quoi faire, un geste à la fois.")
+    print("Faites le geste UNE SEULE FOIS, au début de la fenêtre, puis ne touchez plus à rien.\n")
+
+    try:
+        async with BleakClient(cible, timeout=30.0) as client:
+            if not client.is_connected:
+                print("Connexion refusée.")
+                return 1
+            await client.start_notify(CANAL_EVENEMENTS, au_signal)
+            print("Connecté et à l'écoute.\n")
+            await asyncio.sleep(2.0)
+
+            for numero, (nom, duree) in enumerate(GESTES, 1):
+                for compte in (3, 2, 1):
+                    print(f"\r  {numero}/{len(GESTES)} — {nom} … dans {compte}   ", end="", flush=True)
+                    await asyncio.sleep(1.0)
+                geste_courant["nom"] = nom
+                print(f"\r  {numero}/{len(GESTES)} — {nom} : MAINTENANT" + " " * 20)
+                await asyncio.sleep(duree)
+                recues = len(releve[nom])
+                print(f"      → {recues} trame(s) reçue(s)")
+                geste_courant["nom"] = "(entre deux gestes)"
+                await asyncio.sleep(1.5)
+
+            await client.stop_notify(CANAL_EVENEMENTS)
+    except Exception as exc:
+        print(f"\nÉchec : {type(exc).__name__}: {exc}")
+        return 1
+
+    # ------------------------------------------------------------------ résultat
+    print("\n" + "=" * 78)
+    print("  CORRESPONDANCE GESTE → CODE")
+    print("=" * 78)
+
+    bruit = {signature(t) for t in releve.get("Repos — ne touchez à rien", [])}
+    bruit |= {signature(t) for t in releve.get("(entre deux gestes)", [])}
+
+    lignes_doc = []
+    for nom, _duree in GESTES:
+        trames = releve.get(nom, [])
+        signatures = sorted({signature(t) for t in trames} - bruit)
+        if nom.startswith("Repos"):
+            print(f"\n  {nom}")
+            print(f"     bruit de fond : {len(bruit)} signature(s) écartée(s) de l'analyse")
+            continue
+        print(f"\n  {nom}")
+        if not signatures:
+            print("     aucun code propre à ce geste")
+            continue
+        for s in signatures:
+            exemple = next(t for t in trames if signature(t) == s)
+            print(f"     {s}")
+            print(f"        trame complète : {exemple.hex(' ')}")
+            lignes_doc.append(f"| {nom} | `{s}` | `{exemple.hex(' ')}` |")
+
+    sortie = Path("release") / "lunettes-gestes.md"
+    sortie.parent.mkdir(exist_ok=True)
+    sortie.write_text(
+        "# Lunettes M01 Pro — correspondance geste → code\n\n"
+        f"Relevé du {datetime.now():%Y-%m-%d %H:%M}. Canal `{CANAL_EVENEMENTS}`.\n"
+        "Format : `bc <type> <longueur 2 octets> <données> <2 octets de contrôle>`.\n\n"
+        "| Geste | Signature | Trame complète |\n|---|---|---|\n" + "\n".join(lignes_doc) + "\n",
+        encoding="utf-8",
+    )
+    print(f"\n\nTableau enregistré dans {sortie}")
+    print("\nUn geste sans code propre passe probablement par le Bluetooth classique")
+    print("(profil AVRCP ou port série COM4) plutôt que par ce canal.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

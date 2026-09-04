@@ -1,0 +1,27 @@
+# dépendances et environnements, réinstallables
+node_modules/
+backend/.venv/
+server/.venv/
+__pycache__/
+*.pyc
+
+# constructions, régénérables
+dist/
+out/
+release/
+backend/build/
+backend/dist/
+renderer/dist/
+site/telechargement/
+
+# secrets et données locales : ne doivent JAMAIS être versionnés
+.env
+*.env
+server/.env
+*.db
+*.sqlite*
+
+# journaux et fichiers de travail
+*.log
+vite-dev.log
+release/
