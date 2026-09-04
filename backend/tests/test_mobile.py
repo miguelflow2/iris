@@ -64,3 +64,36 @@ def test_urls_locales_ecarte_le_bouclage():
     for u in urls_locales(8123, "jeton"):
         assert not u["ip"].startswith("127.")
         assert u["url"] == f"http://{u['ip']}:8123/m?token=jeton"
+
+
+# --------------------------------------------------------------------------- adresse stable
+def test_le_port_reste_le_meme(tmp_path):
+    """Sans port fixe, l'adresse mise en favori sur le téléphone serait morte au redémarrage."""
+    from iris.__main__ import PORT_MOBILE, port_stable
+
+    a = port_stable("127.0.0.1")
+    b = port_stable("127.0.0.1")
+    assert a == b == PORT_MOBILE or (a == b and a > PORT_MOBILE)
+
+
+def test_le_jeton_survit_au_redemarrage(tmp_path):
+    """Même raison : un jeton régénéré à chaque lancement casserait le favori."""
+    from iris.__main__ import jeton_persistant
+
+    premier = jeton_persistant(tmp_path)
+    assert len(premier) >= 20
+    assert jeton_persistant(tmp_path) == premier
+
+    (tmp_path / "remote-token").unlink()  # supprimer le fichier révoque les appareils
+    assert jeton_persistant(tmp_path) != premier
+
+
+def test_les_reglages_bruts_ne_plantent_jamais(tmp_path):
+    from iris.__main__ import reglages_bruts
+
+    assert reglages_bruts(None) == {}
+    assert reglages_bruts(tmp_path) == {}
+    (tmp_path / "settings.json").write_text('{"remote_access": true}', encoding="utf-8")
+    assert reglages_bruts(tmp_path)["remote_access"] is True
+    (tmp_path / "settings.json").write_text("pas du json", encoding="utf-8")
+    assert reglages_bruts(tmp_path) == {}

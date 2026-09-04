@@ -61,10 +61,59 @@ def selftest() -> int:
     return 0 if ok else 1
 
 
+PORT_MOBILE = 8765  # port fixe quand l'accès téléphone est actif, pour que l'adresse reste valable
+
+
 def free_port(host: str) -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, 0))
         return s.getsockname()[1]
+
+
+def port_stable(host: str, depart: int = PORT_MOBILE) -> int:
+    """Premier port libre à partir de `depart`. L'adresse enregistrée sur le téléphone doit
+    rester la même d'un démarrage à l'autre, sinon le favori ne marche plus le lendemain."""
+    for candidat in range(depart, depart + 20):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((host, candidat))
+                return candidat
+        except OSError:
+            continue
+    return free_port(host)
+
+
+def reglages_bruts(data_dir: Path | None) -> dict:
+    """Lecture minimale des réglages, avant la construction de l'application."""
+    if data_dir is None:
+        return {}
+    try:
+        return json.loads((Path(data_dir) / "settings.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def jeton_persistant(data_dir: Path) -> str:
+    """Jeton conservé entre deux démarrages, pour que l'adresse du téléphone reste valable.
+    Supprimer ce fichier révoque immédiatement tous les appareils qui l'utilisaient."""
+    fichier = Path(data_dir) / "remote-token"
+    try:
+        existant = fichier.read_text(encoding="utf-8").strip()
+        if len(existant) >= 20:
+            return existant
+    except Exception:
+        pass
+    nouveau = secrets.token_urlsafe(32)
+    try:
+        fichier.parent.mkdir(parents=True, exist_ok=True)
+        fichier.write_text(nouveau, encoding="utf-8")
+        try:  # lisible par le seul propriétaire, quand le système le permet
+            fichier.chmod(0o600)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return nouveau
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,9 +141,19 @@ def main(argv: list[str] | None = None) -> int:
 
     from .main import create_app
 
-    token = None if args.no_token else (args.token or secrets.token_urlsafe(32))
-    port = args.port or free_port(args.host)
     data_dir = Path(args.data_dir) if args.data_dir else None
+    # Quand l'accès téléphone est actif, l'adresse doit rester la même d'un jour à l'autre :
+    # port fixe et jeton conservé sur le disque. Sinon le favori du téléphone serait mort au réveil.
+    mobile = bool(reglages_bruts(data_dir).get("remote_access"))
+    if args.no_token:
+        token = None
+    elif args.token:
+        token = args.token
+    elif mobile and data_dir is not None:
+        token = jeton_persistant(data_dir)
+    else:
+        token = secrets.token_urlsafe(32)
+    port = args.port or (port_stable(args.host) if mobile else free_port(args.host))
     app = create_app(data_dir=data_dir, token=token, use_keyring=not args.no_keyring)
 
     # Accès mobile : on écoute aussi sur le réseau local quand l'utilisateur l'a autorisé.
