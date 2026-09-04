@@ -4,6 +4,7 @@ import { api, type IrisEvent } from '../lib/api'
 import { useStore } from '../lib/store'
 
 export function SettingsView(): JSX.Element {
+  const [remote, setRemote] = useState<any>(null)
   const { settings, updateSettings, voice, toast, appInfo, status } = useStore()
   const [voices, setVoices] = useState<any[]>([])
   const [eleven, setEleven] = useState<any>(null)
@@ -18,6 +19,8 @@ export function SettingsView(): JSX.Element {
   const loadSites = () => api.get('/api/sites').then((r) => setSites(r.sites)).catch(() => undefined)
 
   useEffect(() => setDraft(settings), [settings])
+  useEffect(() => { api.get('/api/remote').then(setRemote).catch(() => undefined) }, [settings?.remote_access])
+
   useEffect(() => {
     api.get('/api/voice/voices').then((r) => setVoices(r.voices)).catch(() => undefined)
     api.get('/api/voice/elevenlabs').then(setEleven).catch(() => undefined)
@@ -259,6 +262,58 @@ export function SettingsView(): JSX.Element {
           <Toggle on={Boolean(draft.daily_summary_enabled)} onChange={(v) => set({ daily_summary_enabled: v })} />
         </SettingRow>
       </div>
+      <h2>Téléphone</h2>
+      <div className="card col">
+        <div className="row between wrap">
+          <div style={{ maxWidth: 520 }}>
+            <strong>Parler à IRIS depuis mon téléphone</strong>
+            <div className="small muted">
+              Ouvre IRIS aux appareils de votre réseau WiFi. Vos lunettes se connectent au téléphone,
+              le téléphone parle à cet ordinateur : vous commandez IRIS même en étant ailleurs dans la maison.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={Boolean(settings?.remote_access)}
+              onChange={async (e) => {
+                await updateSettings({ remote_access: e.target.checked })
+                toast(e.target.checked
+                  ? 'Accès téléphone activé. Redémarrez IRIS pour qu’il prenne effet.'
+                  : 'Accès téléphone désactivé.', 'success')
+                api.get('/api/remote').then(setRemote).catch(() => undefined)
+              }}
+            />
+            <span />
+          </label>
+        </div>
+
+        {settings?.remote_access ? (
+          <>
+            <div className="small" style={{ color: 'var(--warn)' }}>
+              IRIS exécute des commandes sur cet ordinateur. N’activez ceci que sur un réseau de confiance,
+              et <strong>n’ouvrez jamais de port sur votre routeur</strong> : pour y accéder de l’extérieur,
+              il faut un tunnel privé.
+            </div>
+            {remote?.urls?.length ? (
+              <div className="col" style={{ gap: 6 }}>
+                <div className="small muted">Ouvrez cette adresse dans le navigateur de votre téléphone :</div>
+                {remote.urls.map((u: any) => (
+                  <div className="row between" key={u.ip}>
+                    <code className="mono small" style={{ wordBreak: 'break-all' }}>{u.url}</code>
+                    <button className="btn sm" onClick={() => { navigator.clipboard?.writeText(u.url); toast('Adresse copiée.', 'success') }}>Copier</button>
+                  </div>
+                ))}
+                <div className="small muted">Le téléphone doit être sur le même WiFi. L’adresse contient votre jeton : ne la partagez pas.</div>
+              </div>
+            ) : (
+              <div className="small muted">Redémarrez IRIS pour que l’accès réseau prenne effet.</div>
+            )}
+          </>
+        ) : null}
+      </div>
+
+
 
       <h2>Stockage</h2>
       <div className="card">

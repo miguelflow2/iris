@@ -33,3 +33,12 @@ def client(app):
 
     with TestClient(app, headers={"Authorization": "Bearer test-token"}) as c:
         yield c
+
+
+@pytest.fixture()
+def client_sans_jeton(app):
+    """Client sans jeton : sert à vérifier que les accès restent bien refusés."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as c:
+        yield c

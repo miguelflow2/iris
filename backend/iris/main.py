@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -27,6 +27,7 @@ from .glasses import GlassesService
 from .memory import MemoryService
 from .plans import PLANS, PlanService
 from .licence import LicenceSync
+from .mobile import PAGE as PAGE_MOBILE, urls_locales
 from .presence import Presence
 from .watch import WatchService
 from .reminders import ReminderService
@@ -1001,6 +1002,29 @@ def create_app(
     @app.delete("/api/watches/{watch_id}", dependencies=auth)
     def watch_delete(watch_id: str):
         return {"ok": ctx.watch.delete(watch_id)}
+
+    # ------------------------------------------------------------------ accès mobile
+    @app.get("/m", response_class=HTMLResponse)
+    def page_mobile(request: Request):
+        """Interface pour le téléphone. Le jeton passe en paramètre d'adresse, comme pour le WebSocket."""
+        require_token(request)
+        return HTMLResponse(PAGE_MOBILE)
+
+    @app.get("/api/remote", dependencies=auth)
+    def remote_info(request: Request):
+        """Adresses à ouvrir sur le téléphone, et état de l'accès réseau."""
+        actif = bool(ctx.settings.user.remote_access)
+        port = request.url.port or 0
+        return {
+            "enabled": actif,
+            "port": port,
+            "urls": urls_locales(port, token or "") if actif else [],
+            "note": (
+                "Le téléphone doit être sur le même réseau WiFi que cet ordinateur. "
+                "Pour y accéder depuis l'extérieur, utilisez un tunnel privé (Tailscale) : "
+                "n'ouvrez jamais de port sur votre routeur."
+            ),
+        }
 
     @app.get("/api/presence", dependencies=auth)
     def presence_info():

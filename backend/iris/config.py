@@ -144,6 +144,10 @@ class UserSettings(BaseModel):
     voice_model: str = ""  # modèle rapide pour la voix ("" = même modèle que l'agent)
     reasoning_model: str = ""  # modèle pour la création, les tâches longues et les demandes complexes ("" = agent)
     vision_model: str = ""  # modèle qui voit l'écran pour le contrôle d'écran ("" = agent, doit accepter les images)
+    # Accès depuis le téléphone, sur le réseau local. DÉSACTIVÉ par défaut : IRIS exécute des
+    # commandes sur l'ordinateur, l'ouvrir au réseau est une décision qui se prend sciemment.
+    # Le jeton de session reste exigé dans tous les cas.
+    remote_access: bool = False
     # IRIS démarre avec la session Windows : elle est présente en continu, pas seulement quand on y pense.
     start_with_windows: bool = True
     # Commandes courantes exécutées sans modèle (heure, ouvrir une application ou un site, lancer une vidéo).

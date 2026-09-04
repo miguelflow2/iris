@@ -97,11 +97,21 @@ def main(argv: list[str] | None = None) -> int:
     data_dir = Path(args.data_dir) if args.data_dir else None
     app = create_app(data_dir=data_dir, token=token, use_keyring=not args.no_keyring)
 
+    # Accès mobile : on écoute aussi sur le réseau local quand l'utilisateur l'a autorisé.
+    # 127.0.0.1 reste joignable, donc Electron n'est pas affecté.
+    host = args.host
+    try:
+        if app.state.ctx.settings.user.remote_access and host in ("127.0.0.1", "localhost"):
+            host = "0.0.0.0"  # noqa: S104 - réseau local uniquement, jamais exposé par un routeur
+            logging.getLogger("iris").info("accès mobile activé : écoute sur le réseau local")
+    except Exception:
+        pass
+
     ready = {"port": port, "host": args.host, "token": token, "data_dir": str(app.state.ctx.settings.data_dir)}
     sys.stdout.write("IRIS_READY " + json.dumps(ready) + "\n")
     sys.stdout.flush()
 
-    uvicorn.run(app, host=args.host, port=port, log_level=args.log_level.lower(), access_log=False)
+    uvicorn.run(app, host=host, port=port, log_level=args.log_level.lower(), access_log=False)
     return 0
 
 
