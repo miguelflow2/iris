@@ -1,15 +1,23 @@
 # Autorise le téléphone à joindre IRIS sur le WiFi de la maison.
 #
-# À exécuter EN ADMINISTRATEUR une seule fois. Windows bloque par défaut toute connexion
-# entrante ; sans cette règle, la page mobile est injoignable depuis le téléphone même si
-# IRIS écoute correctement.
+# À exécuter EN ADMINISTRATEUR. Deux choses peuvent bloquer, et il faut souvent traiter les deux :
 #
-# Portée volontairement étroite : un seul port, protocole TCP, et uniquement sur les réseaux
-# marqués « privé » (votre maison). Sur un WiFi public, la règle ne s'applique pas.
+#   1. Aucune règle de pare-feu n'ouvre le port : Windows refuse toute connexion entrante.
+#   2. Le réseau est classé « public » : même avec la règle, elle ne s'applique pas, parce qu'une
+#      règle de profil privé est ignorée sur un réseau public.
 #
-# Pour tout annuler : .\autoriser-telephone.ps1 -Retirer
+# Le point 2 demande votre accord explicite, parce que classer un réseau « privé » rend votre
+# ordinateur visible aux autres appareils qui s'y trouvent. C'est ce qu'on veut chez soi. Ce n'est
+# PAS ce qu'on veut sur le WiFi d'une école, d'un café ou d'un aéroport.
+#
+#   Chez vous :   .\autoriser-telephone.ps1 -ReseauPrive
+#   Ailleurs :    .\autoriser-telephone.ps1              (la règle est créée, sans toucher au réseau)
+#   Tout annuler : .\autoriser-telephone.ps1 -Retirer
 
-param([switch]$Retirer)
+param(
+    [switch]$Retirer,
+    [switch]$ReseauPrive
+)
 
 $NOM = "IRIS - acces telephone (reseau prive)"
 $PORT = 8765
@@ -28,33 +36,54 @@ if ($Retirer) {
     exit 0
 }
 
+# ---------------------------------------------------------------- 1. la regle de pare-feu
 Get-NetFirewallRule -DisplayName $NOM -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-
 New-NetFirewallRule -DisplayName $NOM -Direction Inbound -Action Allow -Protocol TCP `
     -LocalPort $PORT -Profile Private `
     -Description "Permet au telephone de joindre IRIS sur le reseau local. Reseau prive uniquement." | Out-Null
+Write-Host "1. Regle de pare-feu creee : port $PORT, reseau prive uniquement." -ForegroundColor Green
 
-Write-Host "Regle creee : port $PORT autorise, reseau prive uniquement." -ForegroundColor Green
-
-# Le profil du WiFi doit etre « prive », sinon la regle ne s'applique pas.
-$publics = Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -eq 'Public' }
-if ($publics) {
-    Write-Host ""
-    Write-Host "ATTENTION : votre reseau est classe PUBLIC, la regle ne s'appliquera pas." -ForegroundColor Yellow
-    foreach ($p in $publics) { Write-Host "   - $($p.Name)" }
-    Write-Host "Pour le passer en prive (a ne faire que chez vous) :"
+# ---------------------------------------------------------------- 2. le profil du reseau
+$publics = @(Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -eq 'Public' })
+if ($publics.Count -eq 0) {
+    Write-Host "2. Le reseau est deja classe prive : la regle s'applique." -ForegroundColor Green
+}
+elseif ($ReseauPrive) {
     foreach ($p in $publics) {
-        Write-Host "   Set-NetConnectionProfile -InterfaceIndex $($p.InterfaceIndex) -NetworkCategory Private"
+        Set-NetConnectionProfile -InterfaceIndex $p.InterfaceIndex -NetworkCategory Private
+        Write-Host "2. Reseau '$($p.Name)' passe en PRIVE." -ForegroundColor Green
     }
+    Write-Host "   (pour revenir en arriere : Set-NetConnectionProfile -InterfaceIndex <n> -NetworkCategory Public)"
+}
+else {
+    Write-Host ""
+    Write-Host "2. BLOQUANT : votre reseau est classe PUBLIC, la regle ne s'appliquera pas." -ForegroundColor Yellow
+    foreach ($p in $publics) { Write-Host "      - $($p.Name)" }
+    Write-Host "   Si c'est votre reseau a la maison, relancez avec -ReseauPrive :" -ForegroundColor Yellow
+    Write-Host "      .\scripts\autoriser-telephone.ps1 -ReseauPrive"
+    Write-Host "   Ne le faites PAS sur le WiFi d'une ecole, d'un cafe ou d'un aeroport." -ForegroundColor Yellow
 }
 
+# ---------------------------------------------------------------- 3. verification et adresse
 Write-Host ""
-Write-Host "Adresse a ouvrir sur le telephone :" -ForegroundColor Cyan
+$regle = Get-NetFirewallPortFilter -ErrorAction SilentlyContinue |
+         Where-Object { $_.LocalPort -eq $PORT } |
+         ForEach-Object { $_ | Get-NetFirewallRule -ErrorAction SilentlyContinue } |
+         Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' }
+$prive = @(Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -eq 'Private' }).Count -gt 0
+if ($regle -and $prive) { Write-Host "Tout est en place." -ForegroundColor Green }
+else { Write-Host "Il manque encore quelque chose (regle: $([bool]$regle), reseau prive: $prive)." -ForegroundColor Yellow }
+
+$ecoute = (netstat -ano | Select-String ":$PORT.*LISTENING").Count -gt 0
+if (-not $ecoute) { Write-Host "IRIS n'ecoute pas sur le port $PORT : lancez-la, et activez l'acces telephone." -ForegroundColor Yellow }
+
+Write-Host ""
+Write-Host "Adresse a ouvrir dans SAFARI sur l'iPhone :" -ForegroundColor Cyan
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
         $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*'
       } | Select-Object -First 1).IPAddress
+
 # En mode administrateur, $env:APPDATA peut viser un autre profil que celui de l'utilisateur.
-# On cherche donc le jeton dans le profil qui le possede reellement.
 $chemin = "$env:APPDATA\IRIS\iris-data\remote-token"
 if (-not (Test-Path $chemin)) {
     $trouve = Get-ChildItem "C:\Users" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
@@ -64,8 +93,5 @@ if (-not (Test-Path $chemin)) {
     if ($trouve) { $chemin = $trouve }
 }
 $jeton = (Get-Content $chemin -Raw -ErrorAction SilentlyContinue)
-if ($jeton) {
-    Write-Host ("   http://{0}:{1}/m?token={2}" -f $ip, $PORT, $jeton.Trim())
-} else {
-    Write-Host "   Activez d'abord l'acces telephone dans IRIS (Parametres > Telephone)."
-}
+if ($jeton) { Write-Host ("   http://{0}:{1}/m?token={2}" -f $ip, $PORT, $jeton.Trim()) }
+else { Write-Host "   Activez d'abord l'acces telephone dans IRIS (Parametres > Telephone)." }
