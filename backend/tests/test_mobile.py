@@ -141,3 +141,35 @@ def test_un_mot_de_passe_faible_est_refuse(client):
 def test_la_page_contient_lecran_de_connexion():
     for attendu in ("verrou", "mot de passe", "/api/compte/connexion", "iris_session"):
         assert attendu in PAGE, f"manque : {attendu}"
+
+
+# --------------------------------------------------------------------------- installable sur le téléphone
+def test_le_manifeste_permet_linstallation(client_sans_jeton):
+    """Sans manifeste conforme, Android ne propose qu'un raccourci, pas une application."""
+    r = client_sans_jeton.get("/manifest.webmanifest")
+    assert r.status_code == 200
+    m = r.json()
+    assert m["display"] == "standalone", "sinon la barre du navigateur reste visible"
+    assert m["start_url"] == "/m"
+    tailles = {i["sizes"] for i in m["icons"]}
+    assert {"192x192", "512x512"} <= tailles, "Android exige ces deux tailles"
+
+
+def test_les_icones_sont_servies(client_sans_jeton):
+    for taille in (192, 512):
+        r = client_sans_jeton.get(f"/icone-{taille}.png")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+        assert r.content[:8] == b"\x89PNG\r\n\x1a\n", "ce n'est pas un vrai PNG"
+    assert client_sans_jeton.get("/icone-999.png").status_code == 404
+
+
+def test_lagent_de_service_ne_met_jamais_lapi_en_cache(client_sans_jeton):
+    """Une réponse d'IRIS servie depuis un cache périmé serait pire que pas de réponse."""
+    r = client_sans_jeton.get("/sw.js")
+    assert r.status_code == 200 and "javascript" in r.headers["content-type"]
+    assert "/api/" in r.text and "return" in r.text, "l'API doit être explicitement écartée du cache"
+    assert "addEventListener('fetch'" in r.text, "Android exige un gestionnaire fetch"
+
+
+def test_la_page_declare_le_manifeste():
+    assert 'rel="manifest"' in PAGE and "serviceWorker" in PAGE

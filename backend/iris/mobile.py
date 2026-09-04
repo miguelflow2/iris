@@ -18,6 +18,13 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d0c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IRIS">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icone-192.png">
+<link rel="apple-touch-icon" href="/icone-192.png">
 <title>IRIS</title>
 <style>
   :root { --bg:#0b0d0c; --surface:#14181a; --line:#232a2c; --text:#e8efec; --text-2:#94a3a0;
@@ -263,9 +270,66 @@ document.getElementById('envoyer').addEventListener('click', () => { envoyer(cha
 champ.addEventListener('keydown', (e) => { if (e.key === 'Enter') { envoyer(champ.value); champ.value = ''; } });
 
 demarrer().then(verifier); setInterval(verifier, 20000);
+
+// Agent de service : c'est lui qui permet à Android de proposer « Installer l'application ».
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => { /* sans lui, la page marche quand même */ });
+}
 </script>
 </body>
 </html>"""
+
+
+MANIFESTE = {
+    "name": "IRIS",
+    "short_name": "IRIS",
+    "description": "Commandez votre ordinateur à la voix, où que vous soyez.",
+    "start_url": "/m",
+    "scope": "/",
+    "display": "standalone",   # plein écran, sans barre de navigateur
+    "orientation": "portrait",
+    "background_color": "#0b0d0c",
+    "theme_color": "#0b0d0c",
+    "lang": "fr-CA",
+    "icons": [
+        {"src": "/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+        {"src": "/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+    ],
+}
+
+# Agent de service minimal. Android exige un gestionnaire `fetch` pour proposer l'installation.
+# On ne met JAMAIS l'API en cache : les réponses d'IRIS sont des données vivantes, et une réponse
+# périmée servie hors ligne serait pire que pas de réponse du tout.
+AGENT_SERVICE = """
+const CACHE = 'iris-coquille-v1';
+const COQUILLE = ['/m', '/icone-192.png', '/icone-512.png'];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(COQUILLE)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(caches.keys()
+    .then((noms) => Promise.all(noms.filter((n) => n !== CACHE).map((n) => caches.delete(n))))
+    .then(() => self.clients.claim()));
+});
+
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+  if (url.pathname.startsWith('/api/') || e.request.method !== 'GET') return;  // jamais de cache sur les données
+  e.respondWith(
+    fetch(e.request)
+      .then((r) => {
+        if (r.ok && COQUILLE.some((c) => url.pathname === c)) {
+          const copie = r.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copie));
+        }
+        return r;
+      })
+      .catch(() => caches.match(e.request).then((r) => r || caches.match('/m')))
+  );
+});
+"""
 
 
 def urls_locales(port: int, token: str) -> list[dict]:

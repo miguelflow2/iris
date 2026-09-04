@@ -42,6 +42,9 @@ hiddenimports += ["pyttsx3.drivers", "pyttsx3.drivers.sapi5", "pyttsx3.drivers.n
 hiddenimports += ["uvicorn.logging", "uvicorn.loops.auto", "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets.auto", "uvicorn.lifespan.on"]
 hiddenimports += ["PIL.Image", "PIL.JpegImagePlugin", "PIL.PngImagePlugin", "psutil", "numpy"]
 
+# Icônes de l'application téléphone : sans elles, Android ne propose pas l'installation.
+datas += [("iris/assets/icone-192.png", "iris/assets"), ("iris/assets/icone-512.png", "iris/assets")]
+
 a = Analysis(
     ["run_backend.py"],
     pathex=["."],

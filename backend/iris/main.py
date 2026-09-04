@@ -28,7 +28,7 @@ from .memory import MemoryService
 from .plans import PLANS, PlanService
 from .licence import LicenceSync
 from .comptes import Comptes
-from .mobile import PAGE as PAGE_MOBILE, urls_locales
+from .mobile import AGENT_SERVICE, MANIFESTE, PAGE as PAGE_MOBILE, urls_locales
 from .presence import Presence
 from .watch import WatchService
 from .reminders import ReminderService
@@ -1016,6 +1016,24 @@ def create_app(
         return {"ok": ctx.watch.delete(watch_id)}
 
     # ------------------------------------------------------------------ accès mobile
+    @app.get("/manifest.webmanifest")
+    def manifeste():
+        """Décrit l'application au téléphone : nom, icônes, plein écran."""
+        return JSONResponse(MANIFESTE, media_type="application/manifest+json")
+
+    @app.get("/sw.js")
+    def agent_service():
+        """Agent de service : Android l'exige pour proposer l'installation."""
+        return Response(AGENT_SERVICE, media_type="application/javascript")
+
+    @app.get("/icone-{taille}.png")
+    def icone(taille: int):
+        fichier = Path(__file__).parent / "assets" / f"icone-{taille}.png"
+        if taille not in (192, 512) or not fichier.exists():
+            raise HTTPException(404, "icône introuvable")
+        return Response(fichier.read_bytes(), media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
     @app.get("/m", response_class=HTMLResponse)
     def page_mobile():
         """Coquille de l'interface téléphone. Volontairement publique : elle ne contient aucune
