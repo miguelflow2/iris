@@ -53,7 +53,17 @@ Write-Host "Adresse a ouvrir sur le telephone :" -ForegroundColor Cyan
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
         $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*'
       } | Select-Object -First 1).IPAddress
-$jeton = (Get-Content "$env:APPDATA\IRIS\iris-data\remote-token" -Raw -ErrorAction SilentlyContinue)
+# En mode administrateur, $env:APPDATA peut viser un autre profil que celui de l'utilisateur.
+# On cherche donc le jeton dans le profil qui le possede reellement.
+$chemin = "$env:APPDATA\IRIS\iris-data\remote-token"
+if (-not (Test-Path $chemin)) {
+    $trouve = Get-ChildItem "C:\Users" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $c = Join-Path $_.FullName "AppData\Roaming\IRIS\iris-data\remote-token"
+        if (Test-Path $c) { $c }
+    } | Select-Object -First 1
+    if ($trouve) { $chemin = $trouve }
+}
+$jeton = (Get-Content $chemin -Raw -ErrorAction SilentlyContinue)
 if ($jeton) {
     Write-Host ("   http://{0}:{1}/m?token={2}" -f $ip, $PORT, $jeton.Trim())
 } else {
