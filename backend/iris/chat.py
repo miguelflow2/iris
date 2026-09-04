@@ -566,13 +566,15 @@ class ChatService:
         parts.append(
             "MÉMOIRE : tu ne disposes que des souvenirs listés ci-dessous, enregistrés à partir de ce que "
             "l'utilisateur a réellement dit. N'invente jamais un souvenir et ne déduis jamais un fait personnel "
-            "qui n'y figure pas. Si tu n'as pas l'information, dis simplement que tu ne l'as pas et propose de la retenir. "
+            "qui n'y figure pas. Si on te demande ce que tu sais de lui, ÉNUMÈRE ce qui est listé : ne réponds "
+            "jamais que tu ne sais rien alors que des souvenirs figurent ci-dessous. Si une information précise "
+            "manque, dis que celle-là tu ne l'as pas, et propose de la retenir. "
             "Quand tu cites un souvenir, tu peux préciser sa date."
         )
         if memory_ctx:
             parts.append("Souvenirs enregistrés sur cet appareil, utiles à cette demande :\n" + memory_ctx)
         else:
-            parts.append("Aucun souvenir enregistré ne correspond à cette demande.")
+            parts.append("Aucun souvenir n'est encore enregistré pour cet utilisateur.")
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------ confirmations
@@ -721,9 +723,10 @@ class ChatService:
             # La mémoire appartient à l'utilisateur et vit sur sa machine : elle est toujours consultée.
             # Le consentement ne conditionne que l'ENVOI de souvenirs à un agent externe.
             memory_ctx = ""
-            hits = self.memory.search(text, limit=5)
+            hits = self.memory.context(text, limit=5)
             if hits and (self.consent.is_granted("memory") or is_local):
-                memory_ctx = "\n".join(f"- [{h['created_at'][:10]}] {h['text']}" for h in hits)
+                # chaque souvenir est borné : un résumé de journée entier noierait le reste
+                memory_ctx = "\n".join(f"- [{h['created_at'][:10]}] {h['text'][:500]}" for h in hits)
                 self.memory.touch([h["id"] for h in hits])
                 if not is_local:
                     self.consent.log("external_send", data_type="memory", agent=agent_name, detail=f"{len(hits)} souvenirs")

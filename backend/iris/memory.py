@@ -148,6 +148,26 @@ class MemoryService:
         scored.sort(key=lambda s: (-s[0], s[1]["created_at"]))
         return [{**item, "score": round(score, 3)} for score, item in scored[:limit]]
 
+    def context(self, query: str, limit: int = 5, baseline: int = 4) -> list[dict]:
+        """Souvenirs à donner à l'agent pour cette demande.
+
+        La recherche par mots-clés ne suffit pas : « dis-moi tout ce que tu sais à mon sujet »
+        ne partage aucun mot avec « Couleur préférée : violet », et IRIS répondait alors
+        qu'elle ne savait rien alors qu'elle savait. On ajoute donc toujours les souvenirs
+        épinglés et les plus récents, que la question les mentionne ou non."""
+        retenus: dict[str, dict] = {}
+        recents = self.list(limit=200)
+        for item in recents:  # épinglés : toujours présents
+            if item.get("pinned"):
+                retenus[item["id"]] = item
+        for item in self.search(query, limit=limit):  # pertinents pour la demande
+            retenus.setdefault(item["id"], item)
+        for item in recents:  # socle général, pour qu'IRIS sache toujours ce qu'elle sait
+            if len(retenus) >= limit + baseline:
+                break
+            retenus.setdefault(item["id"], item)
+        return list(retenus.values())
+
     def delete(self, memory_id: str) -> bool:
         cur = self.db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return cur.rowcount > 0

@@ -17,6 +17,11 @@ import unicodedata
 _MOTIFS: list[tuple[str, str]] = [
     # demande explicite de mémorisation
     (r"\b(?:souviens[- ]toi|rappelle[- ]toi|retiens|note|n'oublie pas)\s+(?:bien\s+)?(?:que\s+|de\s+|:\s*)?(?P<fait>.{4,220})", "consigne"),
+    # âge : très demandé, et jamais retenu jusqu'ici
+    (r"\b(?:j'ai|je vais avoir|j'aurai)\s+(?P<fait>\d{1,3}\s*ans\b.{0,40})", "identite"),
+    # argent : montants, budget, dettes, revenus — l'utilisateur s'attend à ce qu'ils soient retenus
+    (r"\b(?:mon budget est|j'ai un budget de|je peux mettre|il me reste|j'ai)\s+(?P<fait>(?:de\s+)?\d[\d\s.,]{0,12}\s*(?:\$|dollars?|euros?|k\b).{0,80})", "argent"),
+    (r"\b(?:j'ai pay[ée]|[cç]a m'a co[uû]t[ée]|j'ai d[ée]pens[ée]|je gagne|on me doit|je dois payer|j'ai investi)\s+(?P<fait>.{0,10}\d[\d\s.,]{0,12}\s*(?:\$|dollars?|euros?|k\b).{0,90})", "argent"),
     # identité et rattachements
     (r"\b(?:je m'appelle|mon nom est|moi c'est)\s+(?P<fait>.{2,60})", "identite"),
     (r"\b(?:j'habite|je vis|je reste)\s+(?P<fait>(?:à|au|en|dans|sur)\s+.{2,80})", "identite"),

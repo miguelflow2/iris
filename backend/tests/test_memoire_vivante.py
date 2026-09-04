@@ -139,3 +139,47 @@ def test_presence_retient_le_dernier_echange(data_dir: Path):
 )
 def test_ecart_en_francais_parle(secondes, attendu):
     assert humanize_gap(secondes) == attendu
+
+
+# --------------------------------------------------------------------------- rappel sans mot commun
+def test_iris_sait_ce_quelle_sait_meme_sans_mot_commun(memoire: MemoryService):
+    """Bug réel constaté le 2026-09-04 : à « dis-moi tout ce que tu sais à mon sujet », IRIS
+    répondait « je n'ai rien d'enregistré » alors qu'elle avait des souvenirs. La recherche par
+    mots-clés ne trouvait rien, faute de mot partagé. Le contexte doit toujours en fournir."""
+    memoire.add("Couleur préférée : violet.", source="user")
+    memoire.add("Mon entrevue VELA est le mardi 8 septembre 2026.", source="user")
+
+    assert memoire.search("dis moi tout ce que tu sais a mon sujet") == []
+    contexte = memoire.context("dis moi tout ce que tu sais a mon sujet")
+    assert len(contexte) == 2, "IRIS doit voir ses souvenirs même sans mot commun"
+
+
+def test_le_contexte_priorise_le_pertinent_et_lepingle(memoire: MemoryService):
+    a = memoire.add("réunion fournisseur le jeudi", source="user")
+    memoire.add("couleur préférée : violet", source="user")
+    memoire.pin(a["id"])
+    ids = [i["id"] for i in memoire.context("couleur")]
+    assert ids[0] == a["id"], "un souvenir épinglé passe en premier"
+    assert len(ids) == 2, "le souvenir pertinent reste présent"
+
+
+def test_contexte_vide_quand_la_memoire_est_vide(memoire: MemoryService):
+    assert memoire.context("n'importe quoi") == []
+
+
+# --------------------------------------------------------------------------- argent et âge
+@pytest.mark.parametrize(
+    "phrase, attendu, genre",
+    [
+        ("J'ai 17 ans.", "17 ans", "identite"),
+        ("J'ai payé 250 $ pour les lunettes.", "250 $ pour les lunettes", "argent"),
+        ("Mon budget est de 800 dollars pour le matériel.", "de 800 dollars pour le matériel", "argent"),
+        ("On me doit 300 $ pour le travail fait.", "300 $ pour le travail fait", "argent"),
+        ("Je gagne 15 $ de l'heure.", "15 $ de l'heure", "argent"),
+    ],
+)
+def test_largent_et_lage_sont_retenus(phrase, attendu, genre):
+    """L'utilisateur s'attend à ce qu'un montant dit à voix haute soit retenu ; ça ne l'était pas."""
+    trouves = extraire(phrase)
+    assert trouves, f"rien retenu de {phrase!r}"
+    assert trouves[0]["fait"] == attendu and trouves[0]["kind"] == genre
