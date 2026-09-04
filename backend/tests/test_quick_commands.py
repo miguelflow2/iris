@@ -102,3 +102,38 @@ def test_applications(phrase, app):
 )
 def test_ne_se_declenche_pas(phrase):
     assert match(phrase, app_resolver=resolveur) is None, f"déclenchement à tort : {phrase!r}"
+
+
+# --------------------------------------------------------------------------- ne pas détourner
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        # Constat réel : « ouvre Spotify et mets ma liste aimée » ouvrait YouTube.
+        "ouvre mon application spotify et mets la musique dans ma liste de musique aimee",
+        "mets ma liste de musique aimee sur spotify",
+        "mets de la musique sur spotify",
+        "joue mes chansons aimees",
+        "ouvre spotify et joue ma playlist",
+        "mets un film sur netflix",
+        "lance ma playlist sur deezer",
+        "joue mes favoris",
+    ],
+)
+def test_une_autre_application_ou_sa_bibliotheque_nest_jamais_detournee(phrase):
+    """Une recherche YouTube n'a aucun accès à la bibliothèque de l'utilisateur.
+    Ces demandes doivent revenir à l'agent, qui saura piloter l'application à l'écran."""
+    assert match(phrase, app_resolver=resolveur) is None, f"détourné : {phrase!r}"
+
+
+@pytest.mark.parametrize(
+    "phrase, attendu",
+    [
+        ("mets de la musique de daft punk", "play_youtube"),
+        ("ouvre youtube et lance une video de mrbeast", "play_youtube"),
+        ("ouvre spotify", "open_application"),
+    ],
+)
+def test_les_cas_simples_restent_instantanes(phrase, attendu):
+    """Le filet local garde son intérêt : ces demandes-là n'ont pas besoin d'un modèle."""
+    cmd = match(phrase, app_resolver=resolveur)
+    assert cmd is not None and cmd.tool == attendu

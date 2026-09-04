@@ -33,6 +33,7 @@ python -m http.server 8080
 | `robots.txt`, `sitemap.xml` | Indexation. **Contiennent l'adresse du site : à corriger si le domaine change.** |
 | `assets/style.css` | Système visuel, repris de `renderer/src/styles.css` (mêmes variables, même palette : crème, encre, terracotta) |
 | `assets/site.js` | Menu sur téléphone + démonstration du registre : SHA-256 implémenté dans la page |
+| `assets/photos/` | Les six photos du produit, en 900 px et en 450 px (suffixe `-450`). **Droits à régler : voir plus bas.** |
 | `telechargement/` | L'installeur `IRIS-Setup-0.1.0.exe` servi par le bouton de `installer.html` (voir plus bas) |
 
 Le logo est la voile de VELA, reprise en SVG en ligne dans chaque page — **exactement les deux mêmes
@@ -45,24 +46,61 @@ Le site est sur fond sombre, donc c'est la variante **grand-voile crème + foc t
 (entête, pied, hero, filigranes, favicon). La variante grand-voile encre est réservée aux fonds
 clairs : posée ici, elle disparaîtrait.
 
-### Les visuels : tout est dessiné, rien n'est importé
+### Les visuels : dessinés, sauf les photos du produit
 
-Il n'existe aucune photo du produit. Les illustrations du site sont donc **fabriquées en SVG et en CSS**,
-dans les fichiers eux-mêmes : aucune image, aucune police distante, aucun CDN. Le site reste identique
-ouvert en `file://` et hors ligne.
+Les schémas et les pictogrammes du site sont **fabriqués en SVG et en CSS**, dans les fichiers
+eux-mêmes : aucune police distante, aucun CDN. Les seules images importées sont les six photos des
+lunettes, dans `assets/photos/`, servies depuis le site lui-même. Le site reste donc identique ouvert
+en `file://` et hors ligne.
 
 | Visuel | Où | Comment |
 |---|---|---|
 | Voile qui se hisse | `index.html`, classe `.hero-mark` | Le mât se trace du pied vers la tête (`stroke-dasharray: 158`), puis les deux voiles montent le long : un `clip-path: inset()` qui remonte du pied vers la tête. Ensuite la grand-voile se remplit de vent, très légèrement (`scaleX` 1 → 1,022 sur 9 s) |
 | Registre chaîné animé | `index.html`, `.viz-chain` | Cinq blocs, quatre liens. Une boucle CSS de 9 s : la 2ᵉ entrée est réécrite, la cassure descend la chaîne bloc par bloc (`animation-delay: calc(var(--i) * 0.32s)`) |
 | Commande vocale animée | `index.html`, `.viz-voice` | Boucle de 8 s : onde sonore, phrase dévoilée de gauche à droite (`clip-path`), action, puis inscription au registre |
-| Lunettes au trait | `index.html`, `.viz-glasses` | Deux verres ronds tracés au chargement, pont, branches, annotations « micro », « son » et « aucune caméra » |
+| Photos des lunettes | `index.html` (`.pv`, `.pv-grappe`), `fonctionnalites.html` (`.pv-vignette`) | Vraies photos du produit. Elles ont remplacé le dessin au trait qui occupait la place ; voir la section suivante |
 | Pictogrammes | `index.html`, `<symbol>` en haut du fichier, appelés par `<use href="#…">` | Douze icônes au trait. Même document, donc aucune requête réseau |
 
 **`prefers-reduced-motion` coupe tout.** La règle en haut de `style.css` ramène la durée à 0,001 ms **et
 force `animation-iteration-count: 1`** : sans ça, une boucle infinie clignoterait mille fois par seconde.
 Chaque visuel est donc écrit pour que son **état de repos** soit celui qu'on veut montrer à l'arrêt :
-voile entièrement hissée, chaîne intacte, phrase entière, lunettes dessinées.
+voile entièrement hissée, chaîne intacte, phrase entière. Les photos, elles, ne sont pas animées.
+
+### Les photos du produit
+
+Six photos, chacune en deux tailles — 900 px, et 450 px avec le suffixe `-450`. Toutes carrées, servies
+par un `srcset`/`sizes` qui donne la petite aux téléphones et la grande au-delà. Chaque `<img>` porte un
+`width` et un `height` explicites pour que rien ne saute au chargement, et `loading="lazy"` partout sauf
+sur la première image de chaque page.
+
+| Fichier | Où il est utilisé |
+|---|---|
+| `lunettes-trois-quarts.jpg` | `index.html`, section « Pourquoi VELA existe » — remplace le dessin au trait |
+| `lunettes-fond-sombre.jpg` | `index.html`, section « Les lunettes VELA » — la grande photo de gauche |
+| `lunettes-et-etuis.jpg` | `index.html`, même section, en haut à droite |
+| `lunettes-en-charge.jpg` | `index.html`, même section, en bas à droite |
+| `lunettes-face.jpg` | `fonctionnalites.html`, carte « Lunettes VELA » |
+| `lunettes-solaires.jpg` | Pas utilisée. Gardée en réserve : trois photos suffisaient |
+
+**Le fond blanc sur un site sombre.** Cinq des six photos sont détourées sur blanc ou sur gris très
+clair. Plutôt que de les découper, on les pose sur une **plaque crème** (`.pv-plaque`) et on passe
+l'image en `mix-blend-mode: multiply` : blanc × crème = crème, donc le fond de la photo se fond
+exactement dans la plaque pendant que la monture noire reste noire. `isolation: isolate` enferme le
+mélange dans la plaque, sinon le `multiply` irait chercher le fond sombre de la section et noircirait
+tout. Si un navigateur ignore `mix-blend-mode`, l'image reste blanche sur crème : à peine visible,
+jamais cassé. `lunettes-fond-sombre.jpg`, déjà photographiée sur fond noir, garde une plaque noire
+(`.est-sombre`) et aucun mélange.
+
+> **⚠ Ces photos viennent du fabricant du matériel. Elles ne sont pas les nôtres.**
+>
+> Elles ont été fournies pour la présentation du produit, et **rien n'autorise aujourd'hui leur usage
+> commercial**. Avant toute publicité, toute campagne, toute fiche de vente ou toute publication payante,
+> il faut **l'accord écrit du fabricant** — ou, mieux, **les remplacer par des photos prises par VELA**,
+> dont les droits nous appartiendraient. Le nom du fabricant n'apparaît nulle part sur le site et ne doit
+> pas y apparaître ; l'autorisation se règle par écrit, en dehors du site.
+>
+> Tant que ce n'est pas réglé, ces photos sont à considérer comme **provisoires**. Les remplacer ne
+> demande aucun changement de code : mêmes noms de fichiers, mêmes deux tailles, format carré.
 
 ### Ce qu'on dit des lunettes
 
@@ -176,6 +214,10 @@ disparaître une fois rempli.**
 7. **Versions macOS et Linux** — les cartes de la page Installer disent « en préparation » et
    recueillent les courriels intéressés. À remplacer par un vrai bouton le jour où ces versions
    existent.
+8. **Droits sur les photos du produit** — les six images de `assets/photos/` sont celles du fabricant
+   du matériel, pas les nôtres. Obtenir son **accord écrit** pour l'usage commercial, ou faire
+   photographier les lunettes par VELA et remplacer les fichiers, **avant toute campagne ou publicité**.
+   Voir la section « Les photos du produit » ci-dessus.
 
 ## Publier
 

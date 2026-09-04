@@ -75,6 +75,59 @@ SCREEN_KEYWORDS = [
     "dans la fenetre", "bouton", "souris", "glisse", "fais défiler", "fais defiler", "scroll", "regarde l'écran", "regarde mon écran",
     "que vois-tu", "qu'est-ce que tu vois", "sélectionne", "selectionne", "menu", "onglet", "coche", "case",
 ]
+# Applications que l'on pilote en regardant l'écran : ouvrir ne suffit pas, il faut ensuite cliquer.
+APPLICATIONS_PILOTABLES = (
+    "spotify", "deezer", "apple music", "soundcloud", "tidal", "amazon music", "youtube music",
+    "netflix", "disney", "prime video", "crave", "vlc", "plex", "itunes", "twitch", "audible",
+    "word", "excel", "powerpoint", "outlook", "teams", "discord", "slack", "notion", "obsidian",
+    "photoshop", "premiere", "capcut", "steam", "epic games", "explorateur", "parametres",
+    "calculatrice", "bloc-notes", "bloc notes", "paint", "navigateur", "chrome", "edge", "firefox",
+)
+# Verbes qui demandent d'agir DANS l'application, une fois ouverte.
+VERBES_DANS_APP = (
+    "joue", "jouer", "lance", "lancer", "mets", "met", "ecoute", "écoute", "cherche", "trouve",
+    "ouvre le", "ouvre la", "ouvre mon", "ouvre ma", "ouvre mes", "connecte", "envoie", "ecris",
+    "écris", "tape", "supprime", "renomme", "telecharge", "télécharge", "partage", "modifie",
+    "ajoute", "coche", "choisis", "selectionne", "sélectionne", "monte", "baisse", "passe",
+)
+# Ce qui appartient à l'utilisateur et ne se trouve que DANS son application.
+DONNEES_PERSONNELLES = (
+    "ma liste", "mes listes", "ma playlist", "mes playlists", "mes chansons", "mes musiques",
+    "mes favoris", "mes titres", "mes morceaux", "ma bibliotheque", "ma bibliothèque",
+    "mes aimes", "aimée", "aimees", "aimées", "mon historique", "mes fichiers", "mes documents",
+    "mes photos", "mes courriels", "mes messages", "mon compte", "mon profil",
+)
+
+
+def besoin_de_piloter(texte: str) -> bool:
+    """Faut-il donner à IRIS les yeux et les mains ?
+
+    Oui dès qu'on lui demande d'agir DANS une application, et pas seulement de l'ouvrir. Sans
+    cela elle ouvre Spotify et reste plantée devant, incapable de cliquer sur quoi que ce soit."""
+    app_nommee = any(a in texte for a in APPLICATIONS_PILOTABLES)
+    if not app_nommee:
+        return any(d in texte for d in DONNEES_PERSONNELLES)
+    # Une application est nommée : est-ce qu'on lui demande plus que de s'ouvrir ?
+    if any(d in texte for d in DONNEES_PERSONNELLES):
+        return True
+    if " et " in texte or " puis " in texte or " ensuite " in texte:
+        return True
+    return sum(1 for v in VERBES_DANS_APP if v in texte) >= 2
+
+
+CONSIGNE_PILOTAGE = """PILOTER UNE APPLICATION. Tu peux voir l'écran et t'en servir comme l'utilisateur le ferait.
+La marche à suivre, dans cet ordre, sans la brûler :
+1. Ouvre l'application avec open_application, puis attends qu'elle soit là.
+2. take_screenshot pour VOIR où tu en es. Ne clique jamais sans avoir regardé.
+3. find_on_screen ou click_text pour viser un élément par son texte. C'est plus sûr que des coordonnées.
+4. press_keys pour ce qui a un raccourci : c'est plus fiable qu'un clic. Beaucoup d'applications
+   ont une recherche interne (souvent Ctrl+L, Ctrl+F ou Ctrl+K) : sers-t'en plutôt que de fouiller.
+5. Reprends une capture pour VÉRIFIER que ton action a fait ce que tu croyais.
+6. Si deux tentatives échouent, arrête-toi et dis à l'utilisateur ce que tu vois et ce qui bloque.
+   Ne clique jamais au hasard en espérant tomber juste.
+Ce que l'utilisateur te demande dans SA bibliothèque (sa liste, ses favoris, ses fichiers) n'existe
+que dans son application : ne le remplace jamais par une recherche sur le web."""
+
 ACTION_FAILED_TEXT = "Je n'ai pas réussi à exécuter cette demande : aucune action n'a été faite sur l'ordinateur. Reformule-la, par exemple : « ouvre Google », « lance YouTube » ou « crée un jeu de morpion dans un fichier HTML »."
 
 
@@ -733,7 +786,10 @@ class ChatService:
 
             low_text = re.sub(r"\s+", " ", text.lower())
             is_build = connector.supports_tools and _has(low_text, STRICT_BUILD)
-            is_screen = connector.supports_tools and u.computer_use and _has(low_text, SCREEN_KEYWORDS)
+            # L'écran s'ouvre aussi quand il faut PILOTER une application, pas seulement quand
+            # l'utilisateur emploie le mot « clique » ou « regarde ».
+            pilotage = besoin_de_piloter(low_text)
+            is_screen = connector.supports_tools and u.computer_use and (_has(low_text, SCREEN_KEYWORDS) or pilotage)
             if is_screen and self.plans is not None and not self.plans.feature_allowed("screen"):
                 is_screen = False
                 self.hub.publish("chat.info", conversation_id=conv_id, message_id=assistant_id, text="Le contrôle complet de l'écran est inclus à partir du plan Pro.")
@@ -743,6 +799,8 @@ class ChatService:
                 is_action = False
             history = self._history(conv_id, for_action=is_action or is_screen)
             system = self._system_prompt(agent_name, connector.supports_tools, memory_ctx, source)
+            if is_screen:
+                system += "\n\n" + CONSIGNE_PILOTAGE
             is_web = connector.supports_tools and (_has(low_text, WEB_KEYWORDS) or (self.web is not None and any(n in low_text for n in self.web.site_names())))
             if is_web:
                 sites = ", ".join(self.web.site_names()) if self.web is not None else ""

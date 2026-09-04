@@ -63,6 +63,25 @@ PLAY_VERBS = ("joue", "jouer", "ecoute", "ecouter", "fais jouer", "fait jouer", 
 OPEN_VERBS = ("ouvre", "ouvres", "ouvrir", "lance", "lances", "lancer", "demarre", "demarres", "demarrer", "affiche", "va sur", "vas sur")
 SET_VERBS = ("mets", "met", "mais", "mettre")
 
+# Applications de lecture autres que YouTube. Si l'utilisateur en nomme une, c'est elle qu'il veut :
+# le raccourci YouTube n'a rien à faire là, et l'agent saura piloter l'application à l'écran.
+AUTRES_LECTEURS = (
+    "spotify", "deezer", "apple music", "soundcloud", "tidal", "amazon music", "napster",
+    "netflix", "disney", "prime video", "crave", "tou tv", "vlc", "plex", "itunes",
+    "windows media", "groove", "twitch", "audible",
+)
+# Références à la bibliothèque personnelle : une recherche YouTube n'y a aucun accès.
+PERSONNEL = (
+    "ma liste", "mes listes", "ma playlist", "mes playlists", "mes chansons", "mes musiques",
+    "mes favoris", "mes titres", "mes morceaux", "ma bibliotheque", "mes aimes", "aimee", "aimees",
+    "mon historique", "ma selection", "mes videos", "mon album", "mes albums",
+)
+
+
+def _demande_composee(texte: str) -> bool:
+    """Deux ordres enchaînés : le filet local n'en exécuterait qu'un."""
+    return " et " in texte or " puis " in texte or " ensuite " in texte
+
 _FILLERS = (
     "moi", "nous", "s il te plait", "s il vous plait", "stp", "svp", "merci", "maintenant", "tout de suite",
     "pour moi", "un peu", "de la", "du", "des", "le", "la", "les", "l", "un", "une", "mon", "ma", "mes", "sur",
@@ -145,6 +164,15 @@ def match(text: str, app_resolver=None, now: datetime | None = None) -> QuickCom
 
     # ------------------------------------------------------------------ musique / vidéo
     if has_media and (has_open or has_set or any(v in raw for v in PLAY_VERBS)):
+        # Une autre application de lecture est nommée : c'est elle qu'il faut piloter.
+        if any(app in raw for app in AUTRES_LECTEURS):
+            return None
+        # L'utilisateur parle de SA bibliothèque : YouTube ne peut pas y accéder.
+        if any(ref in raw for ref in PERSONNEL):
+            return None
+        # Demande en plusieurs étapes, sauf si tout se joue sur YouTube.
+        if _demande_composee(raw) and "youtube" not in raw and "you tube" not in raw:
+            return None
         query = _media_query(raw)
         if query is None:
             return None
@@ -163,8 +191,10 @@ def match(text: str, app_resolver=None, now: datetime | None = None) -> QuickCom
         cible = _strip_words(cible, ("mon", "ma", "mes", "le", "la", "les", "l", "un", "une", "s il te plait", "stp"))
         if not cible or len(cible.split()) > 4:
             return None
-        if " et " in cible or " puis " in cible:
+        if _demande_composee(" " + cible + " "):
             return None  # demande composée : le modèle gère mieux
+        if any(ref in raw for ref in PERSONNEL):
+            return None  # « ouvre mes photos de vacances » demande de chercher, pas d'ouvrir
         if cible in SITES:
             return QuickCommand(tool="open_url", args={"url": SITES[cible]}, reply=f"J'ouvre {cible}.", kind="site")
         if app_resolver is not None:

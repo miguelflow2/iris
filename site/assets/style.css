@@ -712,21 +712,55 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 .vs-badge .ico { width: 18px; height: 18px; }
 .vs-log p { color: var(--text-2); }
 
-/* ------------------------------------------------- visuel 3 : lunettes au trait */
-.viz-glasses svg { display: block; width: 100%; height: auto; }
-.gl-line {
-  stroke: var(--accent-3); fill: none; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 260; stroke-dashoffset: 260;
-  animation: trace-gl 2.2s cubic-bezier(0.25, 0.75, 0.25, 1) forwards;
-  animation-delay: calc(var(--d, 0) * 1s);
+/* -------------------------------------------------- visuel 3 : photos du produit
+   Les photos des lunettes sont carrées (900 px, et 450 px pour les petits
+   écrans). Cinq d'entre elles sont détourées sur fond blanc ou gris très
+   clair : posées telles quelles sur nos fonds sombres, elles feraient une
+   tache lumineuse à angles nets. On les pose donc sur une PLAQUE crème — la
+   couleur de la grand-voile — et on passe l'image en `mix-blend-mode:
+   multiply` : le blanc de la photo se fond exactement dans la plaque
+   (blanc x crème = crème) pendant que la monture noire reste noire. Le
+   raccord est invisible, sans détourage ni PNG transparent.
+
+   `isolation: isolate` enferme le mélange dans la plaque : sans ça, le
+   multiply irait chercher le fond sombre de la section derrière et
+   noircirait tout. Si un navigateur ignore mix-blend-mode, l'image reste
+   simplement blanche sur crème : à peine visible, jamais cassé. */
+.pv { margin: 0; }
+.pv-plaque {
+  position: relative; overflow: hidden; isolation: isolate;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-2);
+  background: linear-gradient(168deg, #FBF6F0, #ECDFD0);
+  box-shadow: var(--shadow-2);
 }
-@keyframes trace-gl { to { stroke-dashoffset: 0; } }
-.gl-dot { fill: var(--accent-3); }
-.gl-pulse { animation: gl-bat 2.6s ease-in-out infinite; }
-@keyframes gl-bat { 0%, 100% { opacity: 1; } 50% { opacity: 0.28; } }
-.gl-txt { font-family: var(--font); font-size: 8px; fill: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
-/* Le symbole « aucune caméra » : gris, net, assumé — ni alarme ni excuse. */
-.gl-none { stroke: var(--muted); fill: none; stroke-width: 1.5; opacity: 0.8; stroke-linecap: round; }
+.pv-plaque img { display: block; width: 100%; height: auto; mix-blend-mode: multiply; }
+
+/* `lunettes-fond-sombre.jpg` est déjà photographiée sur fond noir : elle garde
+   une plaque noire et aucun mélange. Un liseré intérieur terracotta très faible
+   tient le bord, sinon le noir de la photo et le noir de la page se touchent
+   sans transition et le cadre disparaît. */
+.pv-plaque.est-sombre { background: #000; border-color: var(--border); }
+.pv-plaque.est-sombre img { mix-blend-mode: normal; }
+.pv-plaque.est-sombre::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(208, 138, 85, 0.16);
+}
+
+/* La grappe de l'accueil : la photo la plus élégante en grand à gauche, sur
+   deux rangées ; les deux autres empilées à droite. Les rangées sont dimensionnées
+   par les petites (4/3), donc la grande prend exactement leur hauteur cumulée
+   et le rectangle obtenu reste proche du carré de la source : le recadrage ne
+   mord que sur la marge vide. */
+.pv-grappe { display: grid; grid-template-columns: 1.5fr 1fr; gap: 14px; }
+.pv-grappe .pv-plaque img { height: 100%; object-fit: cover; }
+.pv-grappe .pv-petite { aspect-ratio: 4 / 3; }
+.pv-vedette { grid-row: span 2; }
+
+/* Vignette de carte (page Fonctionnalités) : recadrée en 16/9 pour que la carte
+   reste de la hauteur de ses voisines dans la grille. */
+.pv-vignette { border-radius: var(--radius); margin-bottom: 14px; box-shadow: var(--shadow-1); }
+.pv-vignette img { aspect-ratio: 16 / 9; object-fit: cover; }
 
 /* ------------------------------------------------------------- recit fondateur */
 .story { display: grid; grid-template-columns: 1.12fr 1fr; gap: 44px; align-items: center; }
@@ -798,4 +832,8 @@ details.plus .plus-body p:last-child, details.plus .plus-body ul:last-child { ma
   .vs-ask .vs-said { flex: 1 0 100%; }
   .ico-wrap { width: 54px; height: 54px; }
   .ico { width: 34px; height: 34px; }
+  /* Les trois photos passent l'une sous l'autre. La grande reprend le carré de
+     la source, les deux autres gardent leur recadrage 4/3. */
+  .pv-grappe { grid-template-columns: 1fr; }
+  .pv-vedette { grid-row: auto; aspect-ratio: 1 / 1; }
 }

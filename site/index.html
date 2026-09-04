@@ -290,32 +290,18 @@
           <p class="story-sign">— <b>Miguel</b>, fondateur de VELA</p>
         </div>
 
-        <figure class="viz viz-glasses">
-          <svg viewBox="0 0 320 132" role="img" aria-label="Illustration au trait des lunettes VELA : deux verres ronds reliés par un pont, un micro d’un côté, le son de l’autre, et aucune caméra.">
-            <!-- verres : deux cercles pleins, tracés au chargement comme le reste du dessin -->
-            <circle class="gl-line" style="--d:0" stroke-width="3" cx="101.2" cy="52" r="34"/>
-            <circle class="gl-line" style="--d:.18" stroke-width="3" cx="218.8" cy="52" r="34"/>
-            <!-- pont : il passe par les deux ouvertures -->
-            <path class="gl-line" style="--d:.42" stroke-width="2.6" d="M 133 52 Q 160 41 187 52"/>
-            <!-- branches -->
-            <path class="gl-line" style="--d:.56" stroke-width="2.6" d="M 67.2 51.2 L 30 43 Q 18 40.5 16 50"/>
-            <path class="gl-line" style="--d:.56" stroke-width="2.6" d="M 252.8 51.2 L 290 43 Q 302 40.5 304 50"/>
-
-            <!-- micro (gauche) -->
-            <circle class="gl-dot gl-pulse" cx="44" cy="47.5" r="3.4"/>
-            <text class="gl-txt" x="44" y="112" text-anchor="middle">micro</text>
-            <path class="gl-line" style="--d:.9" stroke-width="1.2" stroke-dasharray="3 3" d="M 44 53 L 44 100"/>
-
-            <!-- son (droite) -->
-            <circle class="gl-dot gl-pulse" cx="276" cy="47.5" r="3.4"/>
-            <text class="gl-txt" x="276" y="112" text-anchor="middle">son</text>
-            <path class="gl-line" style="--d:.9" stroke-width="1.2" stroke-dasharray="3 3" d="M 276 53 L 276 100"/>
-
-            <!-- l'absence de caméra, dite plutôt que cachée -->
-            <circle class="gl-none" cx="160" cy="88" r="7"/>
-            <path class="gl-none" d="M 155 93 L 165 83"/>
-            <text class="gl-txt" x="160" y="112" text-anchor="middle">aucune caméra</text>
-          </svg>
+        <!-- Photo du fournisseur, posée sur une plaque crème : voir .pv-plaque dans
+             style.css. Première image du document, donc chargée sans délai ; toutes
+             les suivantes sont en loading="lazy". -->
+        <figure class="viz pv">
+          <div class="pv-plaque">
+            <img src="assets/photos/lunettes-trois-quarts.jpg"
+                 srcset="assets/photos/lunettes-trois-quarts-450.jpg 450w,
+                         assets/photos/lunettes-trois-quarts.jpg 900w"
+                 sizes="(max-width: 900px) calc(100vw - 96px), 440px"
+                 width="900" height="900" loading="eager" decoding="async"
+                 alt="Les lunettes VELA de trois quarts, branches ouvertes : une monture noire épaisse à verres transparents, sans aucune caméra.">
+          </div>
           <figcaption>
             Les lunettes portent le micro et le son. Le modèle actuel n'a pas de caméra. IRIS n'en dépend
             pas&nbsp;: elle lit l'écran de votre ordinateur, et elle fonctionne aussi très bien sans lunettes.
@@ -323,6 +309,55 @@
         </figure>
 
       </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== le produit -->
+  <section id="lunettes">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Les lunettes VELA</p>
+        <h2>Une monture ordinaire, qui porte le micro et le son.</h2>
+        <p>Rien à porter d’autre, rien à montrer. L’application fonctionne aussi très bien
+          sans les lunettes&nbsp;: elles ajoutent la voix, elles ne la remplacent pas.</p>
+      </div>
+
+      <figure class="viz pv">
+        <div class="pv-grappe">
+          <div class="pv-plaque est-sombre pv-vedette">
+            <img src="assets/photos/lunettes-fond-sombre.jpg"
+                 srcset="assets/photos/lunettes-fond-sombre-450.jpg 450w,
+                         assets/photos/lunettes-fond-sombre.jpg 900w"
+                 sizes="(max-width: 720px) calc(100vw - 80px), 600px"
+                 width="900" height="900" loading="lazy" decoding="async"
+                 alt="Les lunettes VELA en version teintée, de trois quarts sur fond noir, prises en lumière rasante.">
+          </div>
+          <div class="pv-plaque pv-petite">
+            <img src="assets/photos/lunettes-et-etuis.jpg"
+                 srcset="assets/photos/lunettes-et-etuis-450.jpg 450w,
+                         assets/photos/lunettes-et-etuis.jpg 900w"
+                 sizes="(max-width: 720px) calc(100vw - 80px), 400px"
+                 width="900" height="900" loading="lazy" decoding="async"
+                 alt="Les lunettes VELA posées devant deux étuis rigides, l’un noir, l’autre brun clair.">
+          </div>
+          <div class="pv-plaque pv-petite">
+            <img src="assets/photos/lunettes-en-charge.jpg"
+                 srcset="assets/photos/lunettes-en-charge-450.jpg 450w,
+                         assets/photos/lunettes-en-charge.jpg 900w"
+                 sizes="(max-width: 720px) calc(100vw - 80px), 400px"
+                 width="900" height="900" loading="lazy" decoding="async"
+                 alt="Les lunettes VELA rangées dans leur étui de charge brun clair, relié à un câble.">
+          </div>
+        </div>
+        <figcaption>
+          La monture teintée, les étuis, et l’étui qui recharge les lunettes.
+          Aucun de ces modèles ne porte de caméra&nbsp;: le micro et le son, rien d’autre.
+        </figcaption>
+      </figure>
+
+      <p class="actions" style="margin-top:26px;justify-content:center">
+        <a class="btn" href="plans.html#acheter">Voir l’offre groupée</a>
+      </p>
     </div>
   </section>
 

@@ -192,3 +192,41 @@ def test_calibration_stoppee_par_arret_du_micro(app):
     voice.calibrate(3)
     voice.stop(by_user=True)
     assert voice.calibrating == 0
+
+
+# --------------------------------------------------------------------------- piloter une application
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "ouvre spotify et joue ma playlist",
+        "ouvre mon application spotify et mets ma liste de musique aimee",
+        "ouvre word et ecris une lettre",
+        "trouve mes documents de cegep",
+        "joue mes chansons aimees",
+    ],
+)
+def test_iris_recoit_les_yeux_et_les_mains(phrase):
+    """Sans outils d'écran, IRIS ouvrait l'application puis restait plantée devant, incapable
+    de cliquer. Ces demandes doivent lui donner de quoi regarder et agir."""
+    from iris.chat import besoin_de_piloter
+
+    assert besoin_de_piloter(phrase), f"aucun outil d'écran pour : {phrase!r}"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["ouvre spotify", "quelle heure est-il", "crée un jeu de morpion", "explique-moi git status"],
+)
+def test_lecran_reste_ferme_quand_il_ne_sert_a_rien(phrase):
+    """Offrir l'écran à tout va, c'est ce qui provoquait les boucles de clics à l'aveugle."""
+    from iris.chat import besoin_de_piloter
+
+    assert not besoin_de_piloter(phrase), f"écran ouvert inutilement pour : {phrase!r}"
+
+
+def test_la_consigne_de_pilotage_interdit_le_clic_a_laveugle():
+    from iris.chat import CONSIGNE_PILOTAGE
+
+    assert "take_screenshot" in CONSIGNE_PILOTAGE and "VÉRIFIER" in CONSIGNE_PILOTAGE
+    assert "jamais au hasard" in CONSIGNE_PILOTAGE
+    assert "recherche sur le web" in CONSIGNE_PILOTAGE, "sa bibliothèque n'est pas sur le web"
