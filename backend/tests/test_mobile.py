@@ -271,3 +271,18 @@ def test_le_stockage_local_ne_fait_jamais_planter_la_page():
     """Safari en navigation privée fait lever localStorage : la page doit survivre."""
     assert "function memoire" in PAGE and "function retenir" in PAGE
     assert "localStorage.getItem" in PAGE[PAGE.index("function memoire"):PAGE.index("function memoire") + 200]
+
+
+# --------------------------------------------------------------------------- Safari iOS
+def test_aucun_mandataire_comme_en_tetes():
+    """Safari lève une TypeError à chaque requête si les en-têtes de fetch sont un Proxy.
+    Bug réel : la page plantait en boucle sur iPhone (« un problème s'est produit à plusieurs fois »)."""
+    assert "new Proxy" not in PAGE, "un mandataire en en-têtes casse Safari"
+    assert "headers: EN_TETES" not in PAGE
+    assert PAGE.count("headers: enTetes()") >= 4, "chaque appel doit construire ses en-têtes"
+
+
+def test_le_jeton_est_relu_a_chaque_requete():
+    """Après la connexion, le jeton change : des en-têtes figées enverraient l'ancien."""
+    assert "function enTetes()" in PAGE
+    assert "'Bearer ' + JETON" in PAGE

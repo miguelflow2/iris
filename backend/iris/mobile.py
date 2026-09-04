@@ -154,9 +154,9 @@ const params = new URLSearchParams(location.search);
 let JETON = memoire('iris_session') || params.get('token') || memoire('iris_token') || '';
 if (params.get('token')) retenir('iris_token', params.get('token'));
 const BASE = location.origin;
+// Un objet neuf à chaque appel : le jeton change après la connexion, et surtout Safari refuse
+// un mandataire comme en-têtes de `fetch` (TypeError sur le descripteur, à chaque requête).
 function enTetes() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + JETON }; }
-const EN_TETES = new Proxy({}, { get: (_t, k) => enTetes()[k], ownKeys: () => Reflect.ownKeys(enTetes()),
-  getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) });
 
 // Safari en navigation privée fait lever localStorage : on ne laisse jamais ça casser la page.
 function memoire(cle) { try { return localStorage.getItem(cle); } catch (e) { return null; } }
@@ -286,7 +286,7 @@ function dire(texte) {
 
 async function verifier() {
   try {
-    const r = await fetch(BASE + '/api/status', { headers: EN_TETES });
+    const r = await fetch(BASE + '/api/status', { headers: enTetes() });
     if (r.status === 401) {
       marquer(false, 'session expirée');
       if (compte.configure) { oublier('iris_session'); verrouiller(true, 'IRIS', 'Session expirée. Entrez votre mot de passe.'); }
@@ -305,17 +305,17 @@ async function envoyer(texte) {
   bulle('moi', texte);
   try {
     if (!conversation) {
-      const c = await fetch(BASE + '/api/conversations', { method:'POST', headers: EN_TETES,
+      const c = await fetch(BASE + '/api/conversations', { method:'POST', headers: enTetes(),
         body: JSON.stringify({ title: texte.slice(0, 40), agent: 'auto' }) }).then(r => r.json());
       conversation = c.id; retenir('iris_conv', conversation);
     }
-    await fetch(BASE + '/api/conversations/' + conversation + '/messages', { method:'POST', headers: EN_TETES,
+    await fetch(BASE + '/api/conversations/' + conversation + '/messages', { method:'POST', headers: enTetes(),
       body: JSON.stringify({ text: texte, agent: 'auto', images: [] }) });
 
     const debut = Date.now(); let reponse = null;
     while (Date.now() - debut < 120000) {
       await new Promise(r => setTimeout(r, 1200));
-      const d = await fetch(BASE + '/api/conversations/' + conversation, { headers: EN_TETES }).then(r => r.json());
+      const d = await fetch(BASE + '/api/conversations/' + conversation, { headers: enTetes() }).then(r => r.json());
       const dernier = (d.messages || []).filter(m => m.role === 'assistant').pop();
       if (dernier && (dernier.text || (dernier.meta || {}).error)) { reponse = dernier.text || dernier.meta.error; break; }
     }
@@ -481,7 +481,7 @@ MANIFESTE = {
 # On ne met JAMAIS l'API en cache : les réponses d'IRIS sont des données vivantes, et une réponse
 # périmée servie hors ligne serait pire que pas de réponse du tout.
 AGENT_SERVICE = """
-const CACHE = 'iris-coquille-v1';
+const CACHE = 'iris-coquille-v2';
 const COQUILLE = ['/m', '/icone-192.png', '/icone-512.png'];
 
 self.addEventListener('install', (e) => {
