@@ -20,7 +20,7 @@ python -m http.server 8080
 
 | Fichier | Page |
 |---|---|
-| `index.html` | Accueil : la promesse, les trois piliers, exemples de commandes, aperçu de la confidentialité et des plans |
+| `index.html` | Accueil : hero plein écran avec l'anneau animé, registre chaîné animé, commande vocale animée, trois piliers, « Pourquoi VELA existe », garanties, aperçu des plans |
 | `confidentialite.html` | La confidentialité vérifiable expliquée simplement + démonstration interactive du registre chaîné |
 | `fonctionnalites.html` | Tableau complet de ce qu'IRIS sait faire, avec le plan requis, et ce qui n'existe pas encore |
 | `plans.html` | Plans et prix exacts, boutons de paiement PayPal, offre groupée, comportement du quota |
@@ -37,6 +37,34 @@ python -m http.server 8080
 
 Le logo est le symbole VELA de l'application (anneau volontairement ouvert), redessiné en SVG en ligne
 dans chaque page — même tracé que `renderer/src/components/Ring.tsx`.
+
+### Les visuels : tout est dessiné, rien n'est importé
+
+Il n'existe aucune photo du produit. Les illustrations du site sont donc **fabriquées en SVG et en CSS**,
+dans les fichiers eux-mêmes : aucune image, aucune police distante, aucun CDN. Le site reste identique
+ouvert en `file://` et hors ligne.
+
+| Visuel | Où | Comment |
+|---|---|---|
+| Anneau du hero | `index.html`, classe `.hero-mark` | Le tracé se dessine au chargement (`stroke-dasharray: 184`, la longueur d'arc réelle du chemin), avec un cercle pointillé qui tourne et un point sur l'ouverture |
+| Registre chaîné animé | `index.html`, `.viz-chain` | Cinq blocs, quatre liens. Une boucle CSS de 9 s : la 2ᵉ entrée est réécrite, la cassure descend la chaîne bloc par bloc (`animation-delay: calc(var(--i) * 0.32s)`) |
+| Commande vocale animée | `index.html`, `.viz-voice` | Boucle de 8 s : onde sonore, phrase dévoilée de gauche à droite (`clip-path`), action, puis inscription au registre |
+| Lunettes au trait | `index.html`, `.viz-glasses` | Deux anneaux ouverts du logo, ouverture tournée vers le pont, branches, annotations « micro », « son » et « aucune caméra » |
+| Pictogrammes | `index.html`, `<symbol>` en haut du fichier, appelés par `<use href="#…">` | Douze icônes au trait. Même document, donc aucune requête réseau |
+
+**`prefers-reduced-motion` coupe tout.** La règle en haut de `style.css` ramène la durée à 0,001 ms **et
+force `animation-iteration-count: 1`** : sans ça, une boucle infinie clignoterait mille fois par seconde.
+Chaque visuel est donc écrit pour que son **état de repos** soit celui qu'on veut montrer à l'arrêt :
+anneau tracé, chaîne intacte, phrase entière, lunettes dessinées.
+
+### Ce qu'on dit des lunettes
+
+Les lunettes VELA portent le micro et le son. **Elles n'ont pas de caméra, et le site n'en promet
+aucune** — ni sur l'accueil, ni dans `fonctionnalites.html`, ni dans les pages légales. C'est assumé
+plutôt que caché : à ce prix, la catégorie entière est faite de micros et de haut-parleurs, et la
+différence se joue dans le logiciel. Toute formulation qui laisserait croire à une caméra des lunettes
+doit être corrigée. (L'indicateur de capture du logiciel, lui, couvre bien un état « caméra » : c'est la
+caméra **de l'ordinateur**, et les pages le précisent.)
 
 ### Pourquoi une implémentation de SHA-256 dans `site.js`
 
@@ -167,3 +195,7 @@ sous-dossier.
 - Les prix et quotas viennent de `backend/iris/plans.py` et de `docs/PLANS.md` : si le code change,
   mettre `plans.html` à jour.
 - Le nom du fournisseur du matériel n'apparaît nulle part.
+- La section « Pourquoi VELA existe » de l'accueil raconte le parcours de Miguel à la première personne.
+  Elle ne nomme **aucune entreprise, aucune personne**, ne raconte aucun conflit et n'accuse personne :
+  elle parle de ce qu'il a voulu construire, jamais de ce que d'autres auraient mal fait. Toute
+  réécriture doit garder cette règle.

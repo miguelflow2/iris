@@ -102,7 +102,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 .head-inner { display: flex; align-items: center; gap: 18px; min-height: 64px; }
 
 .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--text); flex: none; }
-.ring { width: 30px; height: 30px; flex: none; filter: drop-shadow(0 0 12px rgba(23, 199, 147, 0.35)); }
+.ring { width: 34px; height: 34px; flex: none; filter: drop-shadow(0 0 12px rgba(23, 199, 147, 0.35)); }
 .brand-txt { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-txt b { font-weight: 700; letter-spacing: 0.2em; font-size: 15px; }
 .brand-txt i { font-style: normal; font-size: 9.5px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; }
@@ -697,7 +697,9 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 
 /* ------------------------------------------------------------- recit fondateur */
 .story { display: grid; grid-template-columns: 1.12fr 1fr; gap: 44px; align-items: center; }
-.story-txt p { font-size: clamp(15.5px, 1.8vw, 17.5px); line-height: 1.64; color: var(--text-2); max-width: 56ch; }
+/* Ne vise que les paragraphes du récit : l'intertitre, la citation et la
+   signature ont leur propre classe et doivent garder leur taille. */
+.story-txt > p:not([class]) { font-size: clamp(15.5px, 1.8vw, 17.5px); line-height: 1.64; color: var(--text-2); max-width: 56ch; }
 .story-sign { font-size: 14px; color: var(--muted); margin: 22px 0 0 !important; }
 .story-sign b { color: var(--text-2); font-weight: 600; }
 .story-quote {
