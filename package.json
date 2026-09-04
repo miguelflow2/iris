@@ -13,8 +13,9 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "backend:build": "powershell -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
-    "dist": "npm run build && electron-builder --win",
-    "dist:full": "npm run backend:build && npm run dist"
+    "dist": "npm run build && electron-builder --win --dir && powershell -ExecutionPolicy Bypass -File scripts/appliquer-icone.ps1 && electron-builder --win --prepackaged release/win-unpacked",
+    "dist:full": "npm run backend:build && npm run dist",
+    "icone": "powershell -ExecutionPolicy Bypass -File scripts/appliquer-icone.ps1"
   },
   "dependencies": {
     "react": "^18.3.1",
