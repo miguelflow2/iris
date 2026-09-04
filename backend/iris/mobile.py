@@ -54,9 +54,32 @@ PAGE = """<!doctype html>
   #envoyer { border:none; border-radius:14px; padding:0 18px; background:var(--surface);
              border:1px solid var(--line); color:var(--text); font-size:15px; }
   @media (prefers-reduced-motion: reduce) { *{animation:none!important; transition:none!important} }
+
+  /* Écran de connexion : l'adresse seule ne doit jamais suffire à commander l'ordinateur. */
+  #verrou { position:fixed; inset:0; background:var(--bg); z-index:20; display:none;
+            flex-direction:column; align-items:center; justify-content:center; padding:28px; gap:16px; }
+  #verrou.visible { display:flex; }
+  #verrou h1 { font-size:21px; margin:0; font-weight:600; }
+  #verrou p { margin:0; color:var(--text-2); font-size:14px; text-align:center; max-width:320px; }
+  #verrou input { width:100%; max-width:320px; background:var(--surface); border:1px solid var(--line);
+                  border-radius:14px; padding:15px; color:var(--text); font-size:17px; text-align:center; }
+  #verrou button { width:100%; max-width:320px; border:none; border-radius:14px; padding:15px;
+                   background:var(--accent); color:#04120d; font-size:17px; font-weight:600; }
+  #erreur { color:var(--danger); font-size:14px; min-height:20px; text-align:center; }
 </style>
 </head>
 <body>
+<div id="verrou">
+  <svg width="54" height="54" viewBox="0 0 120 120" aria-hidden="true">
+    <path d="M 72 24 A 36 36 0 1 0 84 62" fill="none" stroke="#17c793" stroke-width="11" stroke-linecap="round"/>
+  </svg>
+  <h1 id="verrou-titre">IRIS</h1>
+  <p id="verrou-texte">Entrez votre mot de passe pour commander votre ordinateur.</p>
+  <input id="mdp" type="password" placeholder="mot de passe" autocomplete="current-password" inputmode="text">
+  <button id="entrer">Se connecter</button>
+  <div id="erreur"></div>
+</div>
+
 <header>
   <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
     <path d="M 72 24 A 36 36 0 1 0 84 62" fill="none" stroke="#17c793" stroke-width="11" stroke-linecap="round"/>
@@ -81,10 +104,67 @@ PAGE = """<!doctype html>
 
 <script>
 const params = new URLSearchParams(location.search);
-const JETON = params.get('token') || localStorage.getItem('iris_token') || '';
-if (JETON) localStorage.setItem('iris_token', JETON);
+// Le jeton d'adresse sert au premier appairage ; ensuite c'est la session ouverte
+// avec le mot de passe qui fait foi, pour qu'une adresse retrouvée ne suffise pas.
+let JETON = localStorage.getItem('iris_session') || params.get('token') || localStorage.getItem('iris_token') || '';
+if (params.get('token')) localStorage.setItem('iris_token', params.get('token'));
 const BASE = location.origin;
-const EN_TETES = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + JETON };
+function enTetes() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + JETON }; }
+const EN_TETES = new Proxy({}, { get: (_t, k) => enTetes()[k], ownKeys: () => Reflect.ownKeys(enTetes()),
+  getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) });
+
+const verrou = document.getElementById('verrou');
+const champMdp = document.getElementById('mdp');
+const erreur = document.getElementById('erreur');
+let compte = { configure: false };
+
+function verrouiller(afficher, titre, texte) {
+  verrou.classList.toggle('visible', afficher);
+  if (titre) document.getElementById('verrou-titre').textContent = titre;
+  if (texte) document.getElementById('verrou-texte').textContent = texte;
+  if (afficher) setTimeout(() => champMdp.focus(), 200);
+}
+
+async function demarrer() {
+  try {
+    compte = await fetch(BASE + '/api/compte').then(r => r.json());
+  } catch (e) { compte = { configure: false }; }
+
+  if (!compte.configure) {
+    // Aucun mot de passe posé : on fonctionne avec le jeton d'adresse, et on le dit.
+    if (!JETON) return verrouiller(true, 'Adresse incomplète',
+      "Ouvrez l'adresse complète affichée dans IRIS, Paramètres puis Téléphone.");
+    return verrouiller(false);
+  }
+  // Un mot de passe existe : la session est obligatoire.
+  const session = localStorage.getItem('iris_session');
+  if (session) {
+    JETON = session;
+    const ok = await fetch(BASE + '/api/status', { headers: enTetes() }).then(r => r.ok).catch(() => false);
+    if (ok) return verrouiller(false);
+    localStorage.removeItem('iris_session');
+  }
+  verrouiller(true, 'IRIS', 'Entrez votre mot de passe pour commander votre ordinateur.');
+}
+
+async function connexion() {
+  const mdp = champMdp.value;
+  if (!mdp) return;
+  erreur.textContent = ''; const b = document.getElementById('entrer');
+  b.disabled = true; b.textContent = 'Connexion…';
+  try {
+    const r = await fetch(BASE + '/api/compte/connexion', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mot_de_passe: mdp }) });
+    if (!r.ok) { erreur.textContent = r.status === 401 ? 'Mot de passe incorrect.' : 'Erreur ' + r.status; return; }
+    const d = await r.json();
+    JETON = d.session; localStorage.setItem('iris_session', d.session);
+    champMdp.value = ''; verrouiller(false); verifier();
+  } catch (e) {
+    erreur.textContent = 'Ordinateur injoignable.';
+  } finally { b.disabled = false; b.textContent = 'Se connecter'; }
+}
+document.getElementById('entrer').addEventListener('click', connexion);
+champMdp.addEventListener('keydown', (e) => { if (e.key === 'Enter') connexion(); });
 
 const fil = document.getElementById('fil');
 const bouton = document.getElementById('parler');
@@ -113,7 +193,11 @@ function dire(texte) {
 async function verifier() {
   try {
     const r = await fetch(BASE + '/api/status', { headers: EN_TETES });
-    if (r.status === 401) return marquer(false, 'jeton refusé');
+    if (r.status === 401) {
+      marquer(false, 'session expirée');
+      if (compte.configure) { localStorage.removeItem('iris_session'); verrouiller(true, 'IRIS', 'Session expirée. Entrez votre mot de passe.'); }
+      return;
+    }
     if (!r.ok) return marquer(false, 'erreur ' + r.status);
     const s = await r.json();
     marquer(true, 'connectée · ' + (s.platform || ''));
@@ -178,7 +262,7 @@ bouton.addEventListener('click', () => {
 document.getElementById('envoyer').addEventListener('click', () => { envoyer(champ.value); champ.value = ''; });
 champ.addEventListener('keydown', (e) => { if (e.key === 'Enter') { envoyer(champ.value); champ.value = ''; } });
 
-verifier(); setInterval(verifier, 20000);
+demarrer().then(verifier); setInterval(verifier, 20000);
 </script>
 </body>
 </html>"""

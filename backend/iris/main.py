@@ -27,6 +27,7 @@ from .glasses import GlassesService
 from .memory import MemoryService
 from .plans import PLANS, PlanService
 from .licence import LicenceSync
+from .comptes import Comptes
 from .mobile import PAGE as PAGE_MOBILE, urls_locales
 from .presence import Presence
 from .watch import WatchService
@@ -74,6 +75,7 @@ class AppContext:
         self.chat.plans = self.plans
         self.tts.plans = self.plans
         # Présence : IRIS vit sur cet appareil et se souvient de sa propre continuité entre deux lancements.
+        self.comptes = Comptes(self.settings.data_dir)
         self.presence = Presence(self.db)
         self.chat.presence = self.presence
         # Abonnement : activation et renouvellement automatiques, sans que le client copie une clé.
@@ -242,6 +244,12 @@ class AppContext:
 
 
 # ---------------------------------------------------------------------- modèles d'entrée
+class MotDePasse(BaseModel):
+    mot_de_passe: str = ""
+    nouveau: str = ""
+    nom: str = ""
+
+
 class WatchBody(BaseModel):
     name: str
     url: str
@@ -421,6 +429,10 @@ def create_app(
             return
         header = request.headers.get("authorization", "")
         supplied = header[7:] if header.lower().startswith("bearer ") else request.query_params.get("token", "")
+        # Un jeton de session ouvert avec le mot de passe donne les mêmes droits : c'est par là
+        # que passe le téléphone, pour que l'adresse seule ne suffise jamais.
+        if supplied and supplied != token and ctx.comptes.session_valide(supplied):
+            return
         if supplied != token:
             raise HTTPException(status_code=401, detail="jeton de session invalide")
 
@@ -1005,10 +1017,44 @@ def create_app(
 
     # ------------------------------------------------------------------ accès mobile
     @app.get("/m", response_class=HTMLResponse)
-    def page_mobile(request: Request):
-        """Interface pour le téléphone. Le jeton passe en paramètre d'adresse, comme pour le WebSocket."""
-        require_token(request)
+    def page_mobile():
+        """Coquille de l'interface téléphone. Volontairement publique : elle ne contient aucune
+        donnée, seulement le formulaire de connexion. Tout ce qui suit exige une session."""
         return HTMLResponse(PAGE_MOBILE)
+
+    @app.get("/api/compte")
+    def compte_info():
+        """État du compte. Public : le téléphone doit savoir s'il faut créer ou se connecter."""
+        return ctx.comptes.info()
+
+    @app.post("/api/compte")
+    def compte_creer(body: MotDePasse, request: Request):
+        """Premier mot de passe. Exige le jeton de l'application : c'est le propriétaire qui le pose."""
+        require_token(request)
+        try:
+            return ctx.comptes.creer(body.nouveau or body.mot_de_passe, body.nom)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.patch("/api/compte", dependencies=auth)
+    def compte_changer(body: MotDePasse):
+        try:
+            return ctx.comptes.changer(body.mot_de_passe, body.nouveau)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/api/compte/connexion")
+    def compte_connexion(body: MotDePasse):
+        """Échange un mot de passe contre une session. Public par nécessité, protégé par le
+        ralentissement après plusieurs échecs."""
+        if not ctx.comptes.verifier(body.mot_de_passe):
+            raise HTTPException(401, "Mot de passe incorrect.")
+        return {"session": ctx.comptes.ouvrir_session(), "nom": ctx.comptes.info().get("nom", "")}
+
+    @app.post("/api/compte/deconnexion", dependencies=auth)
+    def compte_deconnexion():
+        ctx.comptes.revoquer_tout()
+        return {"ok": True}
 
     @app.get("/api/remote", dependencies=auth)
     def remote_info(request: Request):

@@ -9,11 +9,6 @@ from iris.mobile import PAGE, urls_locales
 
 
 # --------------------------------------------------------------------------- sécurité
-def test_la_page_mobile_exige_le_jeton(client_sans_jeton):
-    """Sans jeton, aucune page. C'est la garantie la plus importante du fichier."""
-    assert client_sans_jeton.get("/m").status_code == 401
-
-
 def test_la_page_mobile_repond_avec_le_jeton(client):
     r = client.get("/m")
     assert r.status_code == 200
@@ -97,3 +92,52 @@ def test_les_reglages_bruts_ne_plantent_jamais(tmp_path):
     assert reglages_bruts(tmp_path)["remote_access"] is True
     (tmp_path / "settings.json").write_text("pas du json", encoding="utf-8")
     assert reglages_bruts(tmp_path) == {}
+
+
+# --------------------------------------------------------------------------- connexion par mot de passe
+def test_la_page_est_publique_mais_lapi_ne_lest_pas(client_sans_jeton):
+    """La page n'est qu'un formulaire : elle peut se charger. Les données, non."""
+    assert client_sans_jeton.get("/m").status_code == 200
+    assert client_sans_jeton.get("/api/status").status_code == 401
+    assert client_sans_jeton.get("/api/memory").status_code == 401
+
+
+def test_letat_du_compte_est_consultable_sans_jeton(client_sans_jeton):
+    """Le téléphone doit savoir s'il faut se connecter, avant d'avoir quoi que ce soit."""
+    r = client_sans_jeton.get("/api/compte").json()
+    assert r["configure"] is False
+
+
+def test_connexion_puis_acces_complet(client, client_sans_jeton):
+    client.post("/api/compte", json={"nouveau": "motdepasse-solide", "nom": "Miguel"})
+
+    refus = client_sans_jeton.post("/api/compte/connexion", json={"mot_de_passe": "mauvais"})
+    assert refus.status_code == 401
+
+    ok = client_sans_jeton.post("/api/compte/connexion", json={"mot_de_passe": "motdepasse-solide"})
+    assert ok.status_code == 200
+    session = ok.json()["session"]
+
+    entetes = {"Authorization": f"Bearer {session}"}
+    assert client_sans_jeton.get("/api/status", headers=entetes).status_code == 200
+    assert client_sans_jeton.get("/api/memory", headers=entetes).status_code == 200
+
+
+def test_la_deconnexion_coupe_les_appareils(client, client_sans_jeton):
+    client.post("/api/compte", json={"nouveau": "motdepasse-solide"})
+    session = client_sans_jeton.post("/api/compte/connexion", json={"mot_de_passe": "motdepasse-solide"}).json()["session"]
+    entetes = {"Authorization": f"Bearer {session}"}
+    assert client_sans_jeton.get("/api/status", headers=entetes).status_code == 200
+
+    client.post("/api/compte/deconnexion")
+    assert client_sans_jeton.get("/api/status", headers=entetes).status_code == 401
+
+
+def test_un_mot_de_passe_faible_est_refuse(client):
+    r = client.post("/api/compte", json={"nouveau": "court"})
+    assert r.status_code == 400
+
+
+def test_la_page_contient_lecran_de_connexion():
+    for attendu in ("verrou", "mot de passe", "/api/compte/connexion", "iris_session"):
+        assert attendu in PAGE, f"manque : {attendu}"
