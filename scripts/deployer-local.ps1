@@ -16,9 +16,19 @@ $racine = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $racine "release\win-unpacked"
 $cible = Join-Path $env:LOCALAPPDATA "Programs\IRIS"
 
-if (-not (Test-Path (Join-Path $source "resources\app.asar"))) {
-    Write-Host "Rien a deployer : $source ne contient pas d'application construite." -ForegroundColor Red
+# Deux facons de deployer. Complete quand electron-builder a produit release/win-unpacked ;
+# backend seul quand on n'a reconstruit que le sidecar Python — le cas le plus frequent, et le
+# seul possible quand release a ete supprime pour liberer du disque.
+$backendSeul = Join-Path $racine "backend\dist\iris-backend"
+$complet = Test-Path (Join-Path $source "resources\app.asar")
+$backendPret = Test-Path (Join-Path $backendSeul "iris-backend.exe")
+if (-not $complet -and -not $backendPret) {
+    Write-Host "Rien a deployer : aucune construction dans release ni dans backend/dist." -ForegroundColor Red
+    Write-Host "Construisez d abord : npm run backend:build"
     exit 1
+}
+if (-not $complet) {
+    Write-Host "Interface absente de release : deploiement du BACKEND SEUL." -ForegroundColor Yellow
 }
 if (-not (Test-Path $cible)) {
     Write-Host "IRIS n'est pas installee dans $cible." -ForegroundColor Red
@@ -35,8 +45,13 @@ if ($ouverte) {
     Start-Sleep -Seconds 2
 }
 
-Write-Host "Copie de resources vers $cible ..."
-$journal = robocopy (Join-Path $source "resources") (Join-Path $cible "resources") /MIR /NFL /NDL /NJH /NJS /NP
+if ($complet) {
+    Write-Host "Copie de resources vers $cible ..."
+    $journal = robocopy (Join-Path $source "resources") (Join-Path $cible "resources") /MIR /NFL /NDL /NJH /NJS /NP
+} else {
+    Write-Host "Copie du backend seul vers $cible ..."
+    $journal = robocopy $backendSeul (Join-Path $cible "resources\backend") /MIR /NFL /NDL /NJH /NJS /NP
+}
 $code = $LASTEXITCODE
 if ($code -ge 8) {
     Write-Host "Echec de la copie (robocopy $code)." -ForegroundColor Red
