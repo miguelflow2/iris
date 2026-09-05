@@ -426,3 +426,49 @@ def test_letat_ne_laisse_filtrer_aucun_caractere_du_secret(postier):
     revele = json.dumps(postier.etat(), ensure_ascii=False)
     for morceau in ("Soleil", "2026", "SoleilDeMai", "Sole", "l2026"):
         assert morceau not in revele, "l'etat laisse filtrer : " + morceau
+
+
+# --------------------------------------------------------------------------- reellement branche
+# Constat du 5 septembre 2026 : courriel.py et telephonie.py totalisaient 81 Ko et 97 tests verts,
+# mais AUCUN code ne les appelait. IRIS ne pouvait ni ecrire ni texter, alors que tout etait la.
+# Les agents avaient interdiction de toucher tools.py pour ne pas s'ecraser entre eux, et
+# l'integration n'avait jamais ete faite. Ces tests empechent que ca se reproduise.
+def test_les_trois_outils_sont_offerts_au_modele():
+    from types import SimpleNamespace
+
+    from iris.tools import tool_specs
+
+    noms = {s.name for s in tool_specs(SimpleNamespace(create_task=None))}
+    assert {"envoyer_courriel", "envoyer_sms", "passer_un_appel"} <= noms
+
+
+def test_les_services_existent_dans_lapplication(app):
+    ctx = app.state.ctx
+    assert ctx.courriel is not None and ctx.telephonie is not None
+    assert ctx.chat.courriel is ctx.courriel
+    assert ctx.chat.telephonie is ctx.telephonie
+
+
+def test_la_description_dit_au_modele_quil_ne_peut_pas_contourner_laccord():
+    """Sans cette phrase, un modele peut croire qu'il existe un chemin direct et s'acharner."""
+    from iris.tools import TOOL_SPECS
+
+    for nom in ("envoyer_courriel", "envoyer_sms", "passer_un_appel"):
+        spec = next(s for s in TOOL_SPECS if s.name == nom)
+        assert "approuv" in spec.description.lower(), nom
+
+
+async def _refuser(_titre, _detail):
+    return False
+
+
+def test_un_refus_nenvoie_rien(app):
+    """Le chemin complet, tel que l'outil l'emprunte : refus a la confirmation, rien ne part."""
+    import asyncio
+
+    postier = app.state.ctx.courriel
+    postier.configurer("miguel@exemple.com", "motdepasse-de-test")
+    resultat = asyncio.run(postier.envoyer_apres_accord(
+        "quelquun@exemple.com", "Essai", "Bonjour.", _refuser))
+    assert resultat["envoye"] is False
+    assert "rien envoyé" in resultat["message"] or "pas confirmé" in resultat["message"]

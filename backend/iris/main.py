@@ -23,7 +23,9 @@ from .chat import ChatService
 from .config import AGENT_NAMES, Settings, write_env_value
 from .connectors import ConnectorError, agent_catalog, build_connector
 from .consent import DATA_TYPES, ConsentGate
+from .courriel import Postier
 from .db import Database
+from .telephonie import Telephoniste
 from .events import EventHub
 from .glasses import GlassesService
 from .memory import MemoryService
@@ -87,6 +89,11 @@ class AppContext:
         self.tasks = TaskService(self.db, self.crypto, self.hub, self.chat, announce=self._announce)
         self.voice = VoiceListener(self.settings, self.hub, self.consent, self.capture, self.tts, self._voice_command)
         self.glasses = GlassesService(self.settings, self.hub, self.capture)
+        # Courriel et téléphonie : construits ici, offerts au modèle par tools.py. Ils étaient
+        # écrits et testés depuis le 5 septembre, mais rien ne les appelait — IRIS ne pouvait
+        # donc ni écrire ni texter, alors que le code était là.
+        self.courriel = Postier(self.settings, self.secrets)
+        self.telephonie = Telephoniste(self.settings, self.secrets, registre=self.consent, hub=self.hub)
         # Le verrou du pilotage vocal a besoin de savoir si les lunettes sont là.
         self.voice.glasses_connected = lambda: self.glasses.connected
         self.routines = RoutineService(self.db, self.hub)
@@ -96,6 +103,8 @@ class AppContext:
         self.web = WebAgent(self.settings, self.hub, self.secrets)
         self.chat.web = self.web
         self.chat.glasses = self.glasses
+        self.chat.courriel = self.courriel
+        self.chat.telephonie = self.telephonie
         self.plans = PlanService(self.db, self.settings, self.hub, secrets=self.secrets)
         self.chat.plans = self.plans
         self.tts.plans = self.plans

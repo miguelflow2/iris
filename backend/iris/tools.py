@@ -32,6 +32,8 @@ class ToolContext:
     reminders: Any = None
     web: Any = None
     glasses: Any = None  # GlassesService : les lunettes VELA
+    courriel: Any = None  # Postier : envoi de courriels, jamais sans accord
+    telephonie: Any = None  # Telephoniste : SMS et appels, jamais sans accord
 
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:
@@ -207,6 +209,32 @@ TOOL_SPECS: list[ToolSpec] = [
         _obj({"text": {"type": "string"}, "minutes": {"type": "number"}, "at": {"type": "string"}}, ["text"]),
     ),
     ToolSpec(
+        "envoyer_courriel",
+        "Envoie un courriel au nom de l'utilisateur. Il verra le message en entier et devra l'approuver "
+        "avant tout envoi : tu ne peux pas contourner cette étape, et tu ne dois pas essayer. Écris le "
+        "message toi-même, complet et prêt à partir — pas un canevas à trous.",
+        _obj({
+            "destinataires": {"type": "string", "description": "Une ou plusieurs adresses, séparées par des virgules"},
+            "sujet": {"type": "string"},
+            "corps": {"type": "string", "description": "Le message complet, tel qu'il partira"},
+            "copie": {"type": "string", "description": "Adresses en copie, facultatif"},
+        }, ["destinataires", "sujet", "corps"]),
+    ),
+    ToolSpec(
+        "envoyer_sms",
+        "Envoie un message texte. Comme pour le courriel, l'utilisateur voit le texte et doit l'approuver. "
+        "Un SMS coûte de l'argent à chaque envoi : ne l'utilise que si on te le demande.",
+        _obj({
+            "numero": {"type": "string", "description": "Numéro du destinataire"},
+            "message": {"type": "string", "description": "Le texte complet"},
+        }, ["numero", "message"]),
+    ),
+    ToolSpec(
+        "passer_un_appel",
+        "Lance un appel téléphonique vers un numéro. L'utilisateur doit l'approuver avant que ça sonne.",
+        _obj({"numero": {"type": "string"}}, ["numero"]),
+    ),
+    ToolSpec(
         "lunettes_etat",
         "État des lunettes VELA : connectées ou non, nom, adresse, et niveau de batterie. "
         "Utilise-le dès qu'on te parle des lunettes — leur charge n'est connue que par ce moyen.",
@@ -357,6 +385,36 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
         policy = ctx.settings.user.confirm_commands
         if name in ("mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text", "screen_info") and not ctx.settings.user.computer_use:
             return _err("Le contrôle d'écran est désactivé dans Paramètres › Contrôle de l'ordinateur.")
+        # Courriel, SMS, appel : trois actions qu'on ne rattrape pas. Le module refuse
+        # structurellement d'agir sans un accord obtenu juste avant — ce n'est pas un drapeau qu'on
+        # peut oublier de poser, c'est un objet que seule la confirmation produit.
+        if name == "envoyer_courriel":
+            if ctx.courriel is None:
+                return _err("Le service de courriel n'est pas disponible.")
+            try:
+                resultat = await ctx.courriel.envoyer_apres_accord(
+                    args.get("destinataires", ""), args.get("sujet", ""), args.get("corps", ""),
+                    ctx.confirm, cc=args.get("copie") or None,
+                )
+            except Exception as exc:
+                return _err(str(exc))
+            if resultat.get("envoye"):
+                ctx.consent.log("courriel_envoye", agent=ctx.agent, detail=", ".join(resultat.get("destinataires", [])))
+            return json.dumps(resultat, ensure_ascii=False)
+
+        if name in ("envoyer_sms", "passer_un_appel"):
+            if ctx.telephonie is None:
+                return _err("Le service de téléphonie n'est pas disponible.")
+            try:
+                if name == "envoyer_sms":
+                    resultat = await ctx.telephonie.envoyer_sms_apres_accord(
+                        args.get("numero", ""), args.get("message", ""), ctx.confirm)
+                else:
+                    resultat = await ctx.telephonie.appeler_apres_accord(args.get("numero", ""), ctx.confirm)
+            except Exception as exc:
+                return _err(str(exc))
+            return json.dumps(resultat, ensure_ascii=False)
+
         if name.startswith("lunettes_"):
             if ctx.glasses is None:
                 return _err("Le service des lunettes n'est pas disponible.")
