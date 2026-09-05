@@ -308,6 +308,57 @@ class GlassesService:
         except Exception:
             self.battery = None
 
+    # Le canal par lequel les lunettes annoncent leur batterie ; c'est donc par lui qu'on répond.
+    CANAL_COMMANDE = "de5bf72a-d711-4e47-af26-65e3012a5dc7"
+    # Les caractéristiques du fabricant (ae01, ae03, ae3b) ne sont JAMAIS atteintes par ici : sur
+    # ces puces, ce sont elles qui portent la mise à jour du micrologiciel.
+    COMMANDES_CONNUES = {0x73}
+
+    async def envoyer_trame(self, commande: int, contenu: bytes = b"") -> dict:
+        """Envoie une trame aux lunettes et rapporte ce qui revient, honnêtement.
+
+        Le format est connu et vérifié (voir lunettes_trames.py). Ce qui ne l'est pas, c'est la
+        liste des commandes : aucune trame montante n'a jamais obtenu de réponse. Le rapport dit
+        donc ce qui a été envoyé et ce qui est revenu — rien de plus, pour qu'IRIS n'invente pas
+        un effet qu'elle n'a pas constaté."""
+        if not self.connected:
+            raise ValueError("Les lunettes ne sont pas connectées.")
+        if not 0 <= int(commande) <= 255:
+            raise ValueError("La commande doit tenir sur un octet (0 à 255).")
+        if int(commande) not in self.COMMANDES_CONNUES and not self.settings.user.lunettes_exploration:
+            raise ValueError(
+                "Seule la commande 0x73 est connue de ces lunettes. Les autres ne sont pas essayées : "
+                "sur cette puce, les commandes voisines portent l'écriture du micrologiciel, et une "
+                "séquence mal devinée rendrait les lunettes inutilisables. Pour explorer quand même, "
+                "il faut activer « lunettes_exploration » dans les réglages, en connaissance de cause."
+            )
+        trame = lunettes_trames.fabriquer(int(commande), contenu)
+        avant = len(self.packets)
+        await self._on_ble(self._ecrire_trame(trame))
+        await asyncio.sleep(3.0)  # laisser le temps d'une réponse éventuelle
+        revenus = [p["hex"] for p in list(self.packets)[avant:]]
+        log.info("trame envoyée aux lunettes : %s — %d réponse(s)", trame.hex(), len(revenus))
+        return {
+            "envoye": trame.hex(),
+            "commande": "0x{:02x}".format(int(commande)),
+            "reponses": revenus,
+            "constat": "Aucune réponse en 3 secondes." if not revenus else "{} paquet(s) reçus après l'envoi.".format(len(revenus)),
+        }
+
+    async def _ecrire_trame(self, trame: bytes) -> None:
+        client = self.client
+        if client is None:
+            raise ValueError("Les lunettes ne sont pas connectées.")
+        cible = None
+        for service in client.services:
+            for car in service.characteristics:
+                if str(car.uuid).lower() == self.CANAL_COMMANDE:
+                    cible = car
+        if cible is None:
+            raise ValueError("Ces lunettes n'exposent pas le canal de commande attendu.")
+        sans_reponse = "write-without-response" in cible.properties
+        await client.write_gatt_char(cible, trame, response=not sans_reponse)
+
     async def refresh_battery(self) -> int | None:
         if self.connected:
             await self._on_ble(self._read_basics(self.client))

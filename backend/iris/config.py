@@ -190,6 +190,10 @@ class UserSettings(BaseModel):
     # déconnexion Bluetooth ne doit pas faire taire IRIS. Se modifie dans settings.json ou par
     # PATCH /api/settings. À ne jamais documenter côté client.
     demo_sans_lunettes: bool = False
+    # Autorise IRIS à envoyer aux lunettes des commandes autres que celle qu'on a observée. Fermé
+    # par défaut, et ce n'est pas de la prudence excessive : sur ces puces, les commandes voisines
+    # portent l'écriture du micrologiciel. Une séquence mal devinée, et la paire est morte.
+    lunettes_exploration: bool = False
     # confirmation avant d'exécuter une commande : toujours / seulement les commandes dangereuses / jamais
     confirm_commands: Literal["always", "dangerous", "never"] = "dangerous"
     claude_effort: Literal["low", "medium", "high"] = "medium"

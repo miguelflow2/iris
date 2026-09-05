@@ -123,7 +123,10 @@ function Ecrire-FichierEnv([string]$chemin, $table) {
             $lignes.Add(("{0}={1}" -f $cle, $table[$cle]))
         }
     }
-    Set-Content -Path $chemin -Value $lignes.ToArray() -Encoding UTF8
+    # Écrit en UTF-8 SANS marque d'ordre des octets. `Set-Content -Encoding UTF8` de PowerShell 5.1
+    # en ajoute une, et cette marque invisible se retrouverait collée devant la première ligne pour
+    # tout autre lecteur que celui d'ici.
+    [System.IO.File]::WriteAllLines($chemin, $lignes.ToArray(), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 function Proteger-Fichier([string]$chemin) {
@@ -450,14 +453,15 @@ Write-Host "   $version, dependances a jour." -ForegroundColor Green
 # On verifie que relais.py s'IMPORTE avant d'en faire un service. Un service qui refuse de demarrer
 # a cause d'une faute de frappe se diagnostique dix fois plus mal qu'une erreur affichee ici.
 Push-Location $serveur
-& $python -c "import relais" 2>&1 | Out-Null
+# On ne redirige RIEN ici. Si l'import échoue, Python écrit lui-même sa trace à l'écran, et c'est
+# exactement ce qu'on veut lire. Une redirection `2>&1` serait pire qu'inutile : sous
+# $ErrorActionPreference = "Stop", PowerShell 5.1 emballe chaque ligne d'erreur d'un programme
+# externe dans un ErrorRecord, ce qui interromprait le script avant qu'il ait pu expliquer.
+& $python -c "import relais"
 $importOk = ($LASTEXITCODE -eq 0)
 Pop-Location
 if (-not $importOk) {
-    Write-Host "   relais.py ne s'importe pas avec cet interpreteur. Detail :" -ForegroundColor Red
-    Push-Location $serveur
-    & $python -c "import relais"
-    Pop-Location
+    Write-Host "   relais.py ne s'importe pas avec cet interpreteur (trace ci-dessus)." -ForegroundColor Red
     exit 1
 }
 Write-Host "   relais.py s'importe correctement." -ForegroundColor Green
@@ -531,9 +535,13 @@ if (Test-Path $gitignore) {
     $contenu = @(Get-Content $gitignore)
     $manquants = @($aAjouter | Where-Object { $contenu -notcontains $_ })
     if ($manquants.Count -gt 0) {
-        Add-Content -Path $gitignore -Value "" -Encoding UTF8
-        Add-Content -Path $gitignore -Value "# relais en service : compteurs, journaux, binaire du superviseur" -Encoding UTF8
-        foreach ($ligne in $manquants) { Add-Content -Path $gitignore -Value $ligne -Encoding UTF8 }
+        # Ajout en octets bruts plutôt qu'avec Add-Content : en PowerShell 5.1, `-Encoding UTF8`
+        # peut insérer une marque d'ordre des octets AU MILIEU du fichier, et git lirait alors ces
+        # octets invisibles comme faisant partie du motif — la règle serait silencieusement morte.
+        $texte = [Environment]::NewLine +
+                 "# relais en service : compteurs, journaux, binaire du superviseur" + [Environment]::NewLine +
+                 (($manquants -join [Environment]::NewLine)) + [Environment]::NewLine
+        [System.IO.File]::AppendAllText($gitignore, $texte, (New-Object System.Text.UTF8Encoding($false)))
         Write-Host "   .gitignore complete : $($manquants -join ', ')" -ForegroundColor Green
     }
     else { Write-Host "   .gitignore : rien a ajouter." -ForegroundColor Green }
@@ -614,6 +622,7 @@ $xmlServeur = Echapper-Xml $serveur
 $xmlJournaux = Echapper-Xml $journaux
 
 $contenuXml = @"
+<?xml version="1.0" encoding="utf-8"?>
 <!--
   Configuration du service du relais IA de VELA, lue par WinSW (relais-service.exe).
   Regeneree a chaque passage de scripts\installer-relais.ps1 : ne la modifiez pas a la main.
@@ -652,7 +661,9 @@ $contenuXml = @"
   <stoptimeout>15 sec</stoptimeout>
 </service>
 "@
-Set-Content -Path $config -Value $contenuXml -Encoding UTF8
+# Sans marque d'ordre des octets : le fichier annonce son encodage dans sa déclaration XML, et
+# une marque en tête ferait mentir cette déclaration auprès d'un analyseur strict.
+[System.IO.File]::WriteAllText($config, $contenuXml, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "   Configuration ecrite : $config" -ForegroundColor Green
 
 if ($svcExistant) {

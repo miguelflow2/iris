@@ -95,6 +95,7 @@ class AppContext:
         self.chat.reminders = self.reminders
         self.web = WebAgent(self.settings, self.hub, self.secrets)
         self.chat.web = self.web
+        self.chat.glasses = self.glasses
         self.plans = PlanService(self.db, self.settings, self.hub, secrets=self.secrets)
         self.chat.plans = self.plans
         self.tts.plans = self.plans

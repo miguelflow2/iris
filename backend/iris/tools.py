@@ -31,6 +31,7 @@ class ToolContext:
     watches: Any = None  # WatchService : surveillance d'une page dans la durée
     reminders: Any = None
     web: Any = None
+    glasses: Any = None  # GlassesService : les lunettes VELA
 
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:
@@ -206,6 +207,23 @@ TOOL_SPECS: list[ToolSpec] = [
         _obj({"text": {"type": "string"}, "minutes": {"type": "number"}, "at": {"type": "string"}}, ["text"]),
     ),
     ToolSpec(
+        "lunettes_etat",
+        "État des lunettes VELA : connectées ou non, nom, adresse, et niveau de batterie. "
+        "Utilise-le dès qu'on te parle des lunettes — leur charge n'est connue que par ce moyen.",
+        _obj({}),
+    ),
+    ToolSpec(
+        "lunettes_envoyer",
+        "Envoie une trame aux lunettes VELA sur leur canal de commande. À n'utiliser que si "
+        "l'utilisateur demande explicitement d'envoyer quelque chose aux lunettes. Le protocole est "
+        "connu (en-tête 0xBC, longueur, CRC-16/MODBUS), mais AUCUNE commande montante n'a jamais "
+        "obtenu de réponse : dis-le honnêtement plutôt que de laisser croire à un effet.",
+        _obj({
+            "commande": {"type": "integer", "description": "Octet de commande, 0-255. Seule 0x73 (115) est connue."},
+            "contenu": {"type": "string", "description": "Contenu en hexadécimal, ex. '050000'. Vide si aucun."},
+        }, ["commande"]),
+    ),
+    ToolSpec(
         "web_search",
         "Cherche sur le web et renvoie le texte des résultats. Aucune fenêtre ne s'ouvre : l'utilisateur ne voit que ta réponse. "
         "Utilise-le dès que la réponse dépend d'une information que tu n'as pas de façon certaine : actualité, prix, horaires, "
@@ -339,6 +357,30 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
         policy = ctx.settings.user.confirm_commands
         if name in ("mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text", "screen_info") and not ctx.settings.user.computer_use:
             return _err("Le contrôle d'écran est désactivé dans Paramètres › Contrôle de l'ordinateur.")
+        if name.startswith("lunettes_"):
+            if ctx.glasses is None:
+                return _err("Le service des lunettes n'est pas disponible.")
+            if name == "lunettes_etat":
+                etat = ctx.glasses.status()
+                if not etat.get("connected"):
+                    return "Les lunettes ne sont pas connectées. Dernière connue : " + str((etat.get("remembered") or {}).get("name") or "aucune")
+                appareil = etat.get("device") or {}
+                charge = etat.get("battery")
+                return "Lunettes {} ({}) connectées. Batterie : {}.".format(
+                    appareil.get("name", "?"), appareil.get("address", "?"),
+                    "{} %".format(charge) if charge is not None else "pas encore annoncée (elles l'envoient d'elles-mêmes, environ une fois par dizaine de minutes)")
+            if name == "lunettes_envoyer":
+                try:
+                    contenu = bytes.fromhex((args.get("contenu") or "").replace(" ", ""))
+                except ValueError:
+                    return _err("Le contenu doit être de l'hexadécimal, par exemple « 050000 ».")
+                try:
+                    resultat = await ctx.glasses.envoyer_trame(int(args.get("commande", 0)), contenu)
+                except ValueError as exc:
+                    return _err(str(exc))
+                except Exception as exc:
+                    return _err("Envoi impossible : {}".format(exc))
+                return json.dumps(resultat, ensure_ascii=False)
         if name.startswith("web_"):
             if ctx.web is None:
                 return _err("Navigateur piloté indisponible.")

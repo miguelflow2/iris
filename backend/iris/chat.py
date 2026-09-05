@@ -224,6 +224,7 @@ class ChatService:
         self.routines = None  # RoutineService (injecté)
         self.reminders = None  # ReminderService (injecté)
         self.web = None  # WebAgent (injecté)
+        self.glasses = None  # GlassesService (injecté)
         self.plans = None  # PlanService (injecté)
 
     # ------------------------------------------------------------------ niveaux de modèles
@@ -850,6 +851,7 @@ class ChatService:
                     reminders=self.reminders,
                     watches=self.watches,
                     web=self.web,
+                    glasses=self.glasses,
                 )
                 # On n'expose que les outils utiles à CETTE demande : le clavier et la souris ne servent qu'au
                 # contrôle d'écran, les outils web qu'à la navigation. Un modèle gratuit noyé sous 37 outils s'égare.
