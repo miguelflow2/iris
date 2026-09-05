@@ -155,20 +155,20 @@ def test_plans_quota_and_keys(monkeypatch, data_dir: Path):
     with pytest.raises(QuotaExceeded):
         svc.check_request()
     assert any(t == "plan.quota" for t, _ in events)
-    # clé d'abonnement Pro valide, puis expirée
-    key = make_key("pro", "2099-12-31", "miguel@vela.app")
+    # clé d'abonnement Premium valide, puis expirée
+    key = make_key("premium", "2099-12-31", "miguel@vela.app")
     info = svc.activate(key)
-    assert info["plan"] == "pro" and svc.feature_allowed("screen") and svc.feature_allowed("elevenlabs")
+    assert info["plan"] == "premium" and svc.feature_allowed("screen") and svc.feature_allowed("elevenlabs")
     assert svc.models()["reasoning"] == "anthropic/claude-sonnet-5"
     assert svc.usage()["requests_limit"] == 1000
     with pytest.raises(ValueError):
-        svc.activate(make_key("ultra", "2000-01-01"))
+        svc.activate(make_key("entreprise", "2000-01-01"))
     with pytest.raises(ValueError):
         svc.activate("IRIS-bidon-signature")
-    assert verify_key(key)["plan"] == "pro"
+    assert verify_key(key)["plan"] == "premium"
     # mode démo
-    assert svc.set_demo("ultra")["plan"] == "ultra" and svc.models()["reasoning"] == "anthropic/claude-opus-5"
-    s.update({"plan_expires": "2000-01-01", "plan": "pro", "plan_demo": False})
+    assert svc.set_demo("entreprise")["plan"] == "entreprise" and svc.models()["reasoning"] == "anthropic/claude-opus-5"
+    s.update({"plan_expires": "2000-01-01", "plan": "premium", "plan_demo": False})
     assert svc.plan == "gratuit", "plan expiré → gratuit"
     db.close()
 

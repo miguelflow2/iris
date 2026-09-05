@@ -112,7 +112,7 @@ def test_cle_invalide_refusee(sync: LicenceSync):
 
 
 def test_cle_expiree_ne_donne_pas_le_plan(sync: LicenceSync):
-    FauxClient.reponse = FausseReponse(200, {"key": make_key("ultra", _demain(-2), "client@exemple.ca")})
+    FauxClient.reponse = FausseReponse(200, {"key": make_key("entreprise", _demain(-2), "client@exemple.ca")})
     r = sync.sync()
     assert r["state"] == "expiré" and sync.plans.plan == "gratuit"
 
@@ -144,7 +144,7 @@ def test_non_configure(data_dir: Path):
 def test_desactive_sauf_si_force(sync: LicenceSync):
     sync.settings.update({"licence_auto": False})
     assert sync.sync()["state"] == "désactivé"
-    FauxClient.reponse = FausseReponse(200, {"key": make_key("essentiel", _demain(), "client@exemple.ca")})
+    FauxClient.reponse = FausseReponse(200, {"key": make_key("pro", _demain(), "client@exemple.ca")})
     assert sync.sync(force=True)["state"] == "activé"
 
 
@@ -167,7 +167,7 @@ def test_alerte_avant_echeance(sync: LicenceSync, monkeypatch):
 
 
 def test_mode_demo_nest_pas_retrograde(sync: LicenceSync):
-    sync.plans.set_demo("ultra")
+    sync.plans.set_demo("entreprise")
     sync.settings.update({"plan_expires": _demain(-5)})
     sync.check_expiry()
     assert sync.settings.user.plan_demo, "le mode démonstration ne doit pas être coupé par une échéance"
@@ -189,7 +189,7 @@ def test_cle_avec_tiret_dans_la_charge_utile():
 def test_cle_falsifiee_refusee():
     from iris.plans import make_key as mk, verify_key as vk
 
-    cle = mk("essentiel", _demain(), "client@exemple.ca")
+    cle = mk("pro", _demain(), "client@exemple.ca")
     # signature modifiée
     assert vk(cle[:-1] + ("0" if cle[-1] != "0" else "1")) is None
     # charge utile modifiée : la signature ne correspond plus

@@ -28,6 +28,7 @@ NO_SPEECH_TIMEOUT = 4.0  # si personne ne parle : on rend la main tout de suite 
 SILENCE_END = 0.9  # silence qui marque la fin d'une phrase
 SPEECH_PEAK = 700  # amplitude minimale considérée comme de la parole (sur 32767)
 WEAK_MIC_PEAK = 1500  # en dessous : le micro capte trop faiblement, on le signale à l'utilisateur
+POLITESSE = {"ok", "okay", "bon", "merci", "svp", "stp"}  # écartés avant de reconnaître un ordre d'arrêt
 CLOUD_TIMEOUT = 4.0  # renfort de reconnaissance cloud : au-delà, on garde la transcription locale
 
 
@@ -608,6 +609,7 @@ class VoiceListener:
         text = self._listen_command(primed=primed + b"".join(captured))
         if text.strip():
             self._process(text)
+            self._fenetre_dialogue()
         else:
             self.hub.publish("voice.transcript", text="", empty=True)
             self._say(self._no_speech_message())
@@ -760,6 +762,58 @@ class VoiceListener:
                 self._one_shot = False  # on reste en écoute continue du mot d'activation
             else:
                 self._stop.set()
+
+    def _est_arret(self, texte: str) -> bool:
+        """La phrase entière est-elle un ordre d'arrêt ?
+
+        La comparaison porte sur l'énoncé complet, et pas sur la présence d'un mot. « arrête »
+        referme la fenêtre ; « arrête la musique » est une commande adressée à une application, et
+        les confondre couperait la conversation au pire moment. Les formules de politesse en tête
+        et en fin sont écartées : « ok arrête merci » reste un arrêt."""
+        mots = [m for m in normalize(texte).split() if m not in POLITESSE]
+        if not mots:
+            return False
+        dit = " ".join(mots)
+        return any(dit == normalize(m) for m in (self.settings.user.stop_words or []) if m)
+
+    def _fenetre_dialogue(self) -> None:
+        """Après une réponse, IRIS reste ouverte un moment : on enchaîne sans redire son nom.
+
+        Répéter le mot d'activation à chaque phrase, ce n'est pas une conversation, c'est une
+        série de commandes. Pendant cette fenêtre on parle normalement ; chaque échange relance
+        le compte ; « arrête » la referme aussitôt ; le silence la referme tout seul. Prononcer
+        son nom rouvre une fenêtre, et le compte repart de zéro.
+
+        IRIS continue d'écouter dans tous les cas — c'est le mot d'activation qui redevient
+        nécessaire, pas le micro qui se coupe."""
+        secondes = int(self.settings.user.voice_conversation_seconds or 0)
+        if secondes <= 0 or self._one_shot or self._stop.is_set():
+            return
+        limite = time.time() + secondes
+        self.hub.publish("voice.conversation", open=True, seconds=secondes)
+        raison = "silence"
+        try:
+            while not self._stop.is_set() and time.time() < limite:
+                self._set_state("command", conversation=True)
+                self._drain()
+                texte = self._listen_command()
+                if self._stop.is_set():
+                    raison = "arrêt"
+                    return
+                if not texte.strip():
+                    continue  # rien dit : on laisse la fenêtre courir jusqu'à son terme
+                found, reste = contains_wake(texte, self.settings.user.wake_word, aliases=list(self.settings.user.wake_aliases or []))
+                if found:
+                    texte = reste  # le nom redit pendant la fenêtre : on ne garde que la demande
+                if self._est_arret(texte):
+                    raison = "demandé"
+                    return
+                self._process(texte)
+                limite = time.time() + secondes
+        finally:
+            self.hub.publish("voice.conversation", open=False, reason=raison)
+            if not self._stop.is_set():
+                self._set_state("wake")
 
     def _followup_cycle(self, depth: int) -> None:
         self._set_state("command", followup=True)

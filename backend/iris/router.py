@@ -50,6 +50,10 @@ class AgentRouter:
                 continue
             if meta["needs_key"] and not secrets.has_api_key(name):
                 continue
+            # « vela » ne réclame pas de clé à l'utilisateur, mais il lui faut le jeton d'appareil
+            # obtenu auprès du relais. Sans lui, router une demande ici mènerait droit à l'échec.
+            if name == "vela" and not secrets.has_api_key("vela"):
+                continue
             if name == "custom" and not cfg.base_url:
                 continue
             out.append(name)
@@ -85,19 +89,19 @@ class AgentRouter:
             return None
 
         if _has(low, PC_KEYWORDS):
-            hit = prefer(["openrouter", "claude", "gpt"], "action sur l'ordinateur : moteur avec outils système")
+            hit = prefer(["vela", "openrouter", "claude", "gpt"], "action sur l'ordinateur : moteur avec outils système")
             if hit:
                 return hit
         if _has(low, CODE_KEYWORDS):
-            hit = prefer(["openrouter", "claude", "gpt", "custom", "gemini"], "demande liée au code")
+            hit = prefer(["vela", "openrouter", "claude", "gpt", "custom", "gemini"], "demande liée au code")
             if hit:
                 return hit
         if has_images or _has(low, VISION_KEYWORDS):
-            hit = prefer(["openrouter", "claude", "gpt", "gemini"], "analyse visuelle")
+            hit = prefer(["vela", "openrouter", "claude", "gpt", "gemini"], "analyse visuelle")
             if hit:
                 return hit
         if _has(low, WEB_KEYWORDS):
-            hit = prefer(["openrouter", "gemini", "gpt", "claude"], "information récente")
+            hit = prefer(["vela", "openrouter", "gemini", "gpt", "claude"], "information récente")
             if hit:
                 return hit
         default = user.default_agent if user.default_agent in available else available[0]

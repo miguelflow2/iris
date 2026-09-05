@@ -169,14 +169,6 @@ p { margin: 0 0 14px; }
 .hero { padding: 76px 0 44px; }
 .hero h1 { max-width: 20ch; }
 .hero .lead { margin-bottom: 26px; }
-.pillars-line {
-  display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-3); font-weight: 600;
-  margin-bottom: 18px;
-}
-.pillars-line span::after { content: ""; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--accent-line); margin-left: 12px; vertical-align: middle; }
-.pillars-line span:last-child::after { display: none; }
-
 .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 8px 0 0; }
 
 /* précisions à côté d'un bouton de téléchargement : plateforme, poids, version */
@@ -270,7 +262,9 @@ td .pill { margin: 0; }
 /* bouton de paiement dans la cellule de prix : sous le montant, sur toute la largeur de la cellule */
 td.price .pay { display: flex; margin-top: 10px; font-family: var(--font); }
 
-/* offre groupée : la seule carte de la page qui vend du matériel, elle se détache */
+/* la carte des lunettes : la seule carte de la page qui vend du matériel, elle se détache.
+   (Elle portait l'offre groupée « lunettes + 12 mois », retirée en septembre 2026 quand les
+   lunettes ont pris un prix à elles.) */
 .card.offre {
   border-color: var(--accent-line);
   background:
@@ -461,25 +455,7 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
    le site reste identique hors ligne. Chaque visuel est lisible à l'arrêt.
    ========================================================================= */
 
-/* ---------------------------------------------------------- hero plein écran */
-.hero-full {
-  position: relative;
-  overflow-x: clip;
-  min-height: calc(100vh - 64px);
-  min-height: calc(100svh - 64px);
-  display: flex; align-items: center;
-  padding: 40px 0 80px;
-  text-align: center;
-}
-/* Écran peu haut (portable 13 pouces, projecteur) : le bouton doit rester visible. */
-@media (max-height: 760px) {
-  .hero-full { padding: 24px 0 60px; }
-  .hero-mark { margin-bottom: 18px !important; }
-  .hero-full .scroll-cue { display: none; }
-}
-.hero-inner { position: relative; z-index: 1; width: 100%; }
-
-/* halo diffus derrière la voile : pur CSS, respire lentement */
+/* halo diffus derrière le produit : pur CSS, respire lentement */
 .hero-glow {
   position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%);
   width: min(120vw, 900px); aspect-ratio: 1; pointer-events: none; z-index: 0;
@@ -491,79 +467,14 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
   50%      { opacity: 1;    transform: translate(-50%, -50%) scale(1.07); }
 }
 
-/* La voile domine, mais elle se règle aussi sur la HAUTEUR de l'écran :
-   sinon, sur un portable, elle pousse le bouton sous la ligne de flottaison. */
-.hero-mark { width: clamp(140px, min(26vw, 30vh), 300px); margin: 0 auto 24px; }
-.hero-mark svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.5)); }
-
-/* Le mât se trace du pied vers la tête, puis la voile se hisse le long.
-   État de repos (mouvement réduit) = voile entièrement hissée, jamais un vide. */
-.hm-mat {
-  stroke: rgba(248, 240, 231, 0.32); stroke-width: 1.6; fill: none; stroke-linecap: round;
-  stroke-dasharray: 158; stroke-dashoffset: 158;
-  animation: hisse-mat 0.8s cubic-bezier(0.25, 0.75, 0.25, 1) 0.1s forwards;
-}
-@keyframes hisse-mat { to { stroke-dashoffset: 0; } }
-
-/* la ligne d'eau : posée en dernier, elle ancre le logo sans le concurrencer */
-.hm-mer {
-  stroke: var(--accent-line); stroke-width: 1.4; stroke-linecap: round;
-  stroke-dasharray: 2 9; opacity: 0;
-  animation: hm-fondu 0.9s ease 1.5s forwards;
-}
-@keyframes hm-fondu { to { opacity: 1; } }
-
-/* Le foc part en premier, court et vif. */
-.hm-foc {
-  fill: var(--terracotta);
-  clip-path: inset(100% 0 0 0);
-  animation: hisser 0.9s cubic-bezier(0.22, 0.72, 0.28, 1) 0.45s forwards;
-}
-/* La grand-voile suit, plus longue à monter, puis se remplit de vent.
-   Crème sur fond sombre : la variante encre disparaîtrait ici. */
-.hm-grand {
-  fill: var(--creme);
-  clip-path: inset(100% 0 0 0);
-  transform-box: view-box; transform-origin: 41.4px 158px;
-  animation:
-    hisser 1.6s cubic-bezier(0.22, 0.72, 0.28, 1) 0.62s forwards,
-    souffle 9s ease-in-out 2.4s infinite;
-}
-/* Le découpage remonte du pied vers la tête : c'est la voile qui se hisse. */
+/* Le découpage remonte du pied vers la tête : c'est la voile qui se hisse.
+   Sert au filigrane .hero-voile-bg, seul endroit où la voile bouge encore
+   depuis que le hero de l'accueil montre le produit et non le logo. */
 @keyframes hisser { to { clip-path: inset(0 0 0 0); } }
-@keyframes souffle {
-  0%, 100% { transform: scaleX(1); }
-  50%      { transform: scaleX(1.022); }
-}
 
-.hero-full .eyebrow { animation: monte 0.7s var(--ease) 0.5s both; }
-.hero-title {
-  font-size: clamp(38px, min(8.2vw, 8.6vh), 84px); line-height: 1.03; letter-spacing: -0.035em;
-  font-weight: 700; margin: 0 0 20px;
-  animation: monte 0.8s var(--ease) 0.62s both;
-}
-.hero-title em { font-style: normal; color: var(--accent-3); }
-.hero-lead {
-  color: var(--text-2); font-size: clamp(16px, 2vw, 20px); line-height: 1.5;
-  max-width: 42ch; margin: 0 auto 28px;
-  animation: monte 0.8s var(--ease) 0.74s both;
-}
-.hero-cta { margin: 0 0 16px; animation: monte 0.8s var(--ease) 0.86s both; }
-.hero-sub { font-size: 14px; color: var(--muted); margin: 0; animation: monte 0.8s var(--ease) 0.98s both; }
-.hero-sub a { color: var(--text-2); }
 @keyframes monte { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 
 .btn-xl { padding: 16px 34px; font-size: 17px; border-radius: 11px; }
-
-.scroll-cue {
-  position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
-  width: 24px; height: 40px; border: 1.5px solid var(--border-2); border-radius: 14px;
-  display: flex; justify-content: center; padding-top: 7px; z-index: 1;
-  animation: monte 0.8s var(--ease) 1.2s both;
-}
-.scroll-cue:hover { border-color: var(--accent-line); }
-.scroll-cue span { width: 3px; height: 7px; border-radius: 2px; background: var(--accent-3); animation: descend 1.9s ease-in-out infinite; }
-@keyframes descend { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(11px); opacity: 0.25; } }
 
 /* --------------------------------------------------- en-tete des pages secondaires */
 .hero { position: relative; overflow-x: clip; }
@@ -757,10 +668,12 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 .pv-grappe .pv-petite { aspect-ratio: 4 / 3; }
 .pv-vedette { grid-row: span 2; }
 
-/* Vignette de carte (page Fonctionnalités) : recadrée en 16/9 pour que la carte
-   reste de la hauteur de ses voisines dans la grille. */
+/* Vignette de carte (page Fonctionnalités) : un bandeau large plutôt qu'un carré,
+   sinon la carte dépasse d'une tête ses voisines et la rangée se creuse. Le
+   recadrage 2,4/1 ne mange que la marge vide au-dessus et au-dessous de la
+   monture, qui est elle-même large. */
 .pv-vignette { border-radius: var(--radius); margin-bottom: 14px; box-shadow: var(--shadow-1); }
-.pv-vignette img { aspect-ratio: 16 / 9; object-fit: cover; }
+.pv-vignette img { aspect-ratio: 2.4 / 1; object-fit: cover; }
 
 /* ------------------------------------------------------------- recit fondateur */
 .story { display: grid; grid-template-columns: 1.12fr 1fr; gap: 44px; align-items: center; }
@@ -819,9 +732,6 @@ details.plus .plus-body p:last-child, details.plus .plus-body ul:last-child { ma
   .cl::after { right: auto; left: 50%; top: auto; bottom: -1px; transform: translateX(-50%) rotate(135deg); }
 }
 @media (max-width: 720px) {
-  .hero-full { min-height: 0; padding: 30px 0 64px; }
-  .hero-mark { margin-bottom: 20px; }
-  .scroll-cue { display: none; }
   .viz { padding: 20px 16px; }
   .hero-voile-bg { width: 128px; right: -22px; top: -30px; opacity: 0.12; }
   .vs-row { padding: 12px 12px; gap: 10px; }
@@ -836,4 +746,151 @@ details.plus .plus-body p:last-child, details.plus .plus-body ul:last-child { ma
      la source, les deux autres gardent leur recadrage 4/3. */
   .pv-grappe { grid-template-columns: 1fr; }
   .pv-vedette { grid-row: auto; aspect-ratio: 1 / 1; }
+}
+
+/* =========================================================================
+   LE PRODUIT — les lunettes
+   Le hero de l'accueil et la page lunettes.html montrent l'objet, son prix et
+   son bouton d'achat avant toute autre chose. La voile reste en filigrane
+   (.hero-voile-bg) : la marque signe, elle ne prend plus la vedette.
+   ========================================================================= */
+
+/* ---------------------------------------------------------- hero du produit */
+.hero-produit { position: relative; overflow-x: clip; padding: 46px 0 54px; }
+/* Le halo était dimensionné pour un hero plein écran : à cette hauteur-ci il
+   déborderait sur la section suivante. On le resserre autour de la photo. */
+.hero-produit .hero-glow { width: min(88vw, 620px); top: 50%; left: 66%; }
+@media (max-width: 900px) { .hero-produit .hero-glow { left: 50%; top: 32%; } }
+.hp-grid {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 1.04fr 1fr; gap: 52px; align-items: center;
+}
+/* Colonne flex plutôt que bloc : sur téléphone, l'ordre des éléments change
+   pour que le bouton d'achat reste au-dessus de la ligne de flottaison. */
+.hp-txt { display: flex; flex-direction: column; animation: monte 0.7s var(--ease) 0.05s both; }
+.hp-titre {
+  font-size: clamp(31px, 4.3vw, 54px); line-height: 1.07; letter-spacing: -0.032em;
+  font-weight: 700; margin: 0 0 18px; max-width: 16ch;
+}
+.hp-titre em { font-style: normal; color: var(--accent-3); }
+.hp-lead {
+  color: var(--text-2); font-size: clamp(15.5px, 1.85vw, 18.5px); line-height: 1.55;
+  max-width: 48ch; margin: 0 0 24px;
+}
+
+/* La photo est la vedette : plaque noire, sans mélange, comme .est-sombre. */
+.hp-photo { margin: 0; animation: monte 0.8s var(--ease) 0.18s both; }
+.hp-photo figcaption { font-size: 12.5px; color: var(--muted); margin-top: 12px; text-align: center; }
+
+/* ------------------------------------------------- bloc de prix et d'achat
+   Le seul endroit de la page où le terracotta cerne un bloc entier : c'est là
+   qu'on achète, ça doit se voir sans lire. Réutilisé tel quel sur lunettes.html. */
+.prix-bloc {
+  border: 1px solid var(--accent-line); border-radius: var(--radius-lg);
+  padding: 20px 22px; max-width: 470px;
+  background:
+    radial-gradient(520px 200px at 0% 0%, rgba(179, 107, 59, 0.17), transparent 70%),
+    linear-gradient(180deg, var(--panel), var(--bg-2));
+  box-shadow: var(--shadow-2);
+}
+.pb-quoi { font-size: 14.5px; font-weight: 570; color: var(--text); margin: 0 0 4px; }
+.pb-quoi span { color: var(--muted); font-weight: 400; }
+.pb-prix {
+  font-family: var(--mono); font-size: clamp(34px, 4vw, 42px); line-height: 1.05;
+  letter-spacing: -0.03em; color: var(--accent-3); margin: 0 0 3px;
+  /* L'espace insécable avant le « $ » est correct en français, mais dans une
+     chasse fixe et à cette taille il creuse un trou entre le nombre et le
+     symbole. On le resserre sans le supprimer. */
+  word-spacing: -0.24em;
+}
+.pb-prix .pb-dev { font-size: 13px; color: var(--muted); letter-spacing: 0.04em; margin-left: 9px; }
+.pb-taxes { font-size: 12.5px; color: var(--muted); margin: 0 0 16px; }
+.pb-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
+.pb-note { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 0; }
+.pb-note strong { color: var(--text-2); font-weight: 600; }
+
+/* Trois faits sous le bloc de prix : ce qu'on achète, en un coup d'œil. */
+.hp-faits { display: flex; gap: 10px 20px; flex-wrap: wrap; margin: 18px 0 0; padding: 0; list-style: none; }
+.hp-faits li {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13.5px; color: var(--text-2);
+}
+.hp-faits .ico { width: 17px; height: 17px; }
+
+/* ------------------------------------------------------------------ galerie */
+.galerie { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.galerie figure { margin: 0; }
+.galerie figcaption { font-size: 12.5px; color: var(--muted); margin-top: 10px; line-height: 1.45; }
+.galerie .pv-plaque img { aspect-ratio: 1 / 1; object-fit: cover; }
+
+/* -------------------------------------------------------- ce qu'il y a dedans */
+.boite { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.boite li {
+  display: grid; grid-template-columns: 30px 1fr; gap: 13px; align-items: start;
+  border-bottom: 1px solid var(--border); padding-bottom: 12px;
+}
+.boite li:last-child { border-bottom: none; padding-bottom: 0; }
+.boite .n {
+  font-family: var(--mono); font-size: 12.5px; color: var(--accent-3);
+  border: 1px solid var(--accent-line); background: var(--accent-soft);
+  border-radius: 999px; width: 30px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.boite b { display: block; font-weight: 600; font-size: 15px; }
+.boite span.d { color: var(--text-2); font-size: 14px; }
+
+/* --------------------------------------------------- rappel d'achat en bas de page */
+.rappel-achat {
+  display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap;
+  border: 1px solid var(--accent-line); border-radius: var(--radius-lg); padding: 24px 28px;
+  background:
+    radial-gradient(620px 240px at 100% 0%, rgba(179, 107, 59, 0.16), transparent 70%),
+    linear-gradient(180deg, var(--panel), var(--bg-2));
+  box-shadow: var(--shadow-2);
+}
+.rappel-achat h2 { margin: 0 0 6px; font-size: clamp(21px, 2.6vw, 27px); }
+.rappel-achat p { margin: 0; color: var(--text-2); font-size: 15px; max-width: 54ch; }
+.rappel-achat .ra-prix { font-family: var(--mono); color: var(--accent-3); }
+
+/* ------------------------------------------------------------------- mobile */
+@media (max-width: 900px) {
+  .hp-grid { grid-template-columns: 1fr; gap: 26px; }
+  /* La photo passe en premier : on doit voir l'objet, puis le prix et le bouton.
+     Recadrée en 4/3 pour que le bouton d'achat reste au-dessus de la ligne de
+     flottaison sur un téléphone — la marge vide de la photo carrée est perdue,
+     pas la monture, qui occupe le centre du cadre. */
+  .hp-photo { order: -1; }
+  /* max-height en vh : sur une tablette, une photo pleine largeur en 4/3 fait
+     600 px de haut et repousse le bouton d'achat hors de l'écran. Le recadrage
+     ne mord que sur la marge vide autour de la monture. */
+  .hp-photo .pv-plaque img { aspect-ratio: 4 / 3; object-fit: cover; max-height: 42vh; }
+  .hp-titre { max-width: none; }
+  .prix-bloc { max-width: none; }
+  /* L'ordre du téléphone : photo, nom, prix, bouton — puis seulement le texte
+     de présentation. Sans ça, les six lignes du paragraphe repoussent le bouton
+     d'achat sous la ligne de flottaison d'un écran de 812 px de haut. */
+  .prix-bloc { order: 2; }
+  .hp-lead { order: 3; margin: 24px 0 0; }
+  .hp-faits { order: 4; }
+  .galerie { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .hero-produit { padding: 26px 0 40px; }
+  .prix-bloc { padding: 18px 18px; }
+  .pb-actions .btn { flex: 1 1 100%; }
+  .rappel-achat { padding: 20px; }
+  .boite li { grid-template-columns: 26px 1fr; gap: 11px; }
+}
+@media (max-width: 560px) {
+  .galerie { grid-template-columns: 1fr; }
+  /* Téléphone : on resserre tout ce qui précède le bouton d'achat pour qu'il
+     tienne à l'écran même sur un appareil court (375 x 667). Le recadrage 16/10
+     de la photo ne prend que sur la marge vide autour de la monture. */
+  .hero-produit { padding: 16px 0 34px; }
+  .hp-grid { gap: 18px; }
+  .hp-photo .pv-plaque img { aspect-ratio: 16 / 10; }
+  .hp-photo figcaption { margin-top: 9px; }
+  .hp-titre { margin-bottom: 14px; }
+  .prix-bloc { padding: 16px 16px; }
+  .pb-taxes { margin-bottom: 13px; }
 }

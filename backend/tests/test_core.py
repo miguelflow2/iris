@@ -274,3 +274,57 @@ def test_stop_and_mute_words():
     aliases = ["dis moi iris", "dis iris", "iris"]
     assert contains_wake("dis iris ouvre google", "Dis-moi Iris", aliases=aliases) == (True, "ouvre google")
     assert contains_wake("iris quelle heure il est", "Dis-moi Iris", aliases=aliases) == (True, "quelle heure il est")
+
+
+# --------------------------------------------------------------------------- préparatifs au démarrage
+# Incident réel : au démarrage, IRIS téléchargeait le modèle vocal sans rien demander. Excellent
+# pour un utilisateur, désastreux pour la suite de tests — un modèle de 41 Mo par client, et le
+# disque plein. Ces préparatifs n'appartiennent qu'à une vraie session lancée par l'application.
+def test_les_preparatifs_reseau_exigent_une_vraie_session(app, monkeypatch):
+    from iris import main as m
+
+    monkeypatch.delenv("IRIS_AUTO_SETUP", raising=False)
+    assert m.session_reelle() is False
+
+    appels: list[str] = []
+    monkeypatch.setattr(m.stt, "download_model", lambda *a, **k: appels.append("modèle"))
+    ctx = app.state.ctx
+    ctx.assurer_modele_vocal()
+    ctx.assurer_acces_vela()
+    assert appels == [], "rien ne doit partir sur le réseau sans IRIS_AUTO_SETUP"
+
+
+def test_lapplication_seule_pose_le_drapeau():
+    """Le drapeau vient d'electron/main/backend.ts : nulle part ailleurs."""
+    lanceur = Path(__file__).resolve().parents[2] / "electron" / "main" / "backend.ts"
+    assert "IRIS_AUTO_SETUP: '1'" in lanceur.read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- renommage des forfaits
+# Les paliers s'appelaient Gratuit / Essentiel / Pro / Ultra ; ils s'appellent maintenant
+# Gratuit / Pro / Premium / Entreprise. « pro » existe des deux côtés sans désigner la même chose :
+# sans numéro de version, chaque relecture des réglages rétrograderait l'abonné d'un cran.
+def test_un_abonne_ne_perd_pas_ce_quil_a_paye(tmp_path):
+    import json
+
+    from iris.config import Settings
+
+    (tmp_path / "settings.json").write_text(json.dumps({"plan": "pro", "plan_expires": "2099-01-01"}), encoding="utf-8")
+    s = Settings(tmp_path)
+    assert s.user.plan == "premium", "l'ancien Pro à 29,99 $ est devenu Premium"
+    assert s.user.settings_version == 2
+
+    # Deuxième lecture : le plan ne doit plus bouger, sinon Premium deviendrait Entreprise.
+    assert Settings(tmp_path).user.plan == "premium"
+
+
+def test_les_anciens_paliers_sont_tous_repris(tmp_path):
+    import json
+
+    from iris.config import Settings
+
+    for ancien, attendu in (("essentiel", "pro"), ("pro", "premium"), ("ultra", "entreprise"), ("gratuit", "gratuit")):
+        dossier = tmp_path / ancien
+        dossier.mkdir()
+        (dossier / "settings.json").write_text(json.dumps({"plan": ancien}), encoding="utf-8")
+        assert Settings(dossier).user.plan == attendu, ancien

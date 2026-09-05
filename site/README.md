@@ -1,7 +1,51 @@
 # Site public de VELA
 
-Site statique de présentation d'IRIS. Écrit à la main en HTML, CSS et un peu de JavaScript :
-aucune dépendance, aucun outil de compilation, aucun appel réseau. Il s'ouvre tel quel, même hors ligne.
+Site statique qui **vend les lunettes VELA**. IRIS, l'application, est l'argument qui les rend
+utiles — pas le sujet principal. Écrit à la main en HTML, CSS et un peu de JavaScript : aucune
+dépendance, aucun outil de compilation, aucun appel réseau. Il s'ouvre tel quel, même hors ligne.
+
+## ⚠ Le numéro de version des ressources — à lire avant toute modification
+
+`assets/style.css` et `assets/site.js` sont appelés avec un **numéro de version** :
+
+```html
+<link rel="stylesheet" href="assets/style.css?v=3">
+<script src="assets/site.js?v=3"></script>
+```
+
+**Chaque fois que vous modifiez la CSS ou le JavaScript, incrémentez ce numéro dans les neuf
+pages.** Sinon, le navigateur d'un visiteur déjà venu continue de servir l'ancienne feuille depuis
+son cache : le HTML neuf arrive, la vieille CSS n'a pas de règle pour les nouvelles classes, et le
+site s'affiche cassé — c'est exactement ce qui est arrivé en septembre 2026 (logo noir, accents
+verts, parce que la vieille feuille ne connaissait pas la classe `.v-grand`).
+
+En une commande, depuis `site/` :
+
+```bash
+# remplacer 3 par l'ancien numéro et 4 par le nouveau
+sed -i 's/style\.css?v=3/style.css?v=4/; s/site\.js?v=3/site.js?v=4/' *.html
+grep -c 'v=4' *.html    # doit afficher 2 pour chacune des neuf pages
+```
+
+En PowerShell :
+
+```powershell
+Get-ChildItem *.html | ForEach-Object {
+  (Get-Content $_ -Raw) -replace 'style\.css\?v=3','style.css?v=4' -replace 'site\.js\?v=3','site.js?v=4' |
+    Set-Content $_ -Encoding utf8
+}
+```
+
+Deuxième filet, dans `_headers` : `assets/style.css` et `assets/site.js` sont servis en
+`Cache-Control: public, max-age=0, must-revalidate`. Le navigateur garde le fichier mais demande à
+chaque visite s'il a changé ; la réponse est un 304 vide quand rien n'a bougé. Une correction part
+donc immédiatement **même si le numéro de version a été oublié**. Les photos, elles, sont en cache
+24 h. Les pages HTML ne doivent jamais être mises en cache longtemps : ce sont elles qui portent le
+numéro de version.
+
+Après un déploiement, vérifier dans le navigateur (onglet Réseau) que `style.css?v=…` porte bien le
+nouveau numéro. Un rechargement forcé (<kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>R</kbd>) ne prouve rien :
+il contourne le cache, ce que le visiteur ne fera pas.
 
 ## Ouvrir le site
 
@@ -20,7 +64,8 @@ python -m http.server 8080
 
 | Fichier | Page |
 |---|---|
-| `index.html` | Accueil : hero plein écran avec la voile qui se hisse, registre chaîné animé, commande vocale animée, trois piliers, « Pourquoi VELA existe », garanties, aperçu des plans |
+| `index.html` | Accueil : **hero produit** (photo des lunettes, prix, bouton d'achat), l'objet, IRIS comme ce qui vient avec, registre chaîné animé, photos, garanties, « Pourquoi VELA existe », plans, rappel d'achat |
+| `lunettes.html` | **Fiche du produit** : hero d'achat, galerie des six photos, contenu de l'envoi, caractéristiques vérifiées, ce que les lunettes changent avec IRIS, les trois étapes de l'achat |
 | `confidentialite.html` | La confidentialité vérifiable expliquée simplement + démonstration interactive du registre chaîné |
 | `fonctionnalites.html` | Tableau complet de ce qu'IRIS sait faire, avec le plan requis, et ce qui n'existe pas encore |
 | `plans.html` | Plans et prix exacts, boutons de paiement PayPal, offre groupée, comportement du quota |
@@ -29,7 +74,7 @@ python -m http.server 8080
 | `politique-confidentialite.html` | Ce que le logiciel fait des données, vérifié dans le code : local, chiffrement, consentements, tiers, registre, rétention, droits |
 | `mentions-legales.html` | Éditeur, hébergement, propriété intellectuelle, responsabilité, droit applicable |
 | `DEPLOIEMENT.md` | Marche à suivre pour publier (Netlify Drop, alternative Cloudflare) et liste de vérification après mise en ligne |
-| `_headers` | En-têtes de sécurité au format Netlify (CSP, HSTS, anti-cadre, cache) |
+| `_headers` | En-têtes de sécurité au format Netlify (CSP, HSTS, anti-cadre) **et politique de cache** — voir l'avertissement en tête de ce fichier |
 | `robots.txt`, `sitemap.xml` | Indexation. **Contiennent l'adresse du site : à corriger si le domaine change.** |
 | `assets/style.css` | Système visuel, repris de `renderer/src/styles.css` (mêmes variables, même palette : crème, encre, terracotta) |
 | `assets/site.js` | Menu sur téléphone + démonstration du registre : SHA-256 implémenté dans la page |
@@ -55,11 +100,19 @@ en `file://` et hors ligne.
 
 | Visuel | Où | Comment |
 |---|---|---|
-| Voile qui se hisse | `index.html`, classe `.hero-mark` | Le mât se trace du pied vers la tête (`stroke-dasharray: 158`), puis les deux voiles montent le long : un `clip-path: inset()` qui remonte du pied vers la tête. Ensuite la grand-voile se remplit de vent, très légèrement (`scaleX` 1 → 1,022 sur 9 s) |
+| Hero produit | `index.html` et `lunettes.html`, `.hero-produit` / `.hp-grid` | Deux colonnes : le texte, le prix et le bouton d'achat à gauche, la photo à droite. Sur téléphone la photo passe **en premier** (`order: -1`) et le paragraphe de présentation passe **après** le bloc de prix (`order: 3`), pour que le bouton d'achat reste au-dessus de la ligne de flottaison |
+| Bloc de prix | `.prix-bloc`, sur les deux pages produit | Le seul bloc du site cerné de terracotta : c'est là qu'on achète, ça doit se voir sans lire |
 | Registre chaîné animé | `index.html`, `.viz-chain` | Cinq blocs, quatre liens. Une boucle CSS de 9 s : la 2ᵉ entrée est réécrite, la cassure descend la chaîne bloc par bloc (`animation-delay: calc(var(--i) * 0.32s)`) |
 | Commande vocale animée | `index.html`, `.viz-voice` | Boucle de 8 s : onde sonore, phrase dévoilée de gauche à droite (`clip-path`), action, puis inscription au registre |
-| Photos des lunettes | `index.html` (`.pv`, `.pv-grappe`), `fonctionnalites.html` (`.pv-vignette`) | Vraies photos du produit. Elles ont remplacé le dessin au trait qui occupait la place ; voir la section suivante |
-| Pictogrammes | `index.html`, `<symbol>` en haut du fichier, appelés par `<use href="#…">` | Douze icônes au trait. Même document, donc aucune requête réseau |
+| Photos des lunettes | `index.html` (`.hp-photo`, `.pv-grappe`), `lunettes.html` (`.hp-photo`, `.galerie`), `fonctionnalites.html` (`.pv-vignette`) | Vraies photos du produit ; voir la section suivante |
+| Filigrane de la voile | pages secondaires, `.hero-voile-bg` | La voile se hisse une fois (`clip-path: inset()`), à 11 % d'opacité. **Les deux pages produit ne le portent pas** : la photo y est la vedette |
+| Pictogrammes | `index.html` et `lunettes.html`, `<symbol>` en haut du fichier, appelés par `<use href="#…">` | Icônes au trait. Même document, donc aucune requête réseau. `lunettes.html` n'embarque que les six dont il se sert |
+
+**L'ancien hero à la voile animée a été retiré.** L'accueil montrait un logo plein écran ; il montre
+maintenant le produit. Les règles CSS correspondantes (`.hero-full`, `.hero-mark`, `.hm-*`,
+`.scroll-cue`, et les animations `hisse-mat`, `souffle`, `descend`) ont été **supprimées** de
+`style.css` — elles n'étaient utilisées que par `index.html`. `@keyframes hisser` reste : le
+filigrane des pages secondaires s'en sert.
 
 **`prefers-reduced-motion` coupe tout.** La règle en haut de `style.css` ramène la durée à 0,001 ms **et
 force `animation-iteration-count: 1`** : sans ça, une boucle infinie clignoterait mille fois par seconde.
@@ -73,14 +126,16 @@ par un `srcset`/`sizes` qui donne la petite aux téléphones et la grande au-del
 `width` et un `height` explicites pour que rien ne saute au chargement, et `loading="lazy"` partout sauf
 sur la première image de chaque page.
 
+Les six sont utilisées : `lunettes.html` les montre toutes.
+
 | Fichier | Où il est utilisé |
 |---|---|
-| `lunettes-trois-quarts.jpg` | `index.html`, section « Pourquoi VELA existe » — remplace le dessin au trait |
-| `lunettes-fond-sombre.jpg` | `index.html`, section « Les lunettes VELA » — la grande photo de gauche |
-| `lunettes-et-etuis.jpg` | `index.html`, même section, en haut à droite |
-| `lunettes-en-charge.jpg` | `index.html`, même section, en bas à droite |
-| `lunettes-face.jpg` | `fonctionnalites.html`, carte « Lunettes VELA » |
-| `lunettes-solaires.jpg` | Pas utilisée. Gardée en réserve : trois photos suffisaient |
+| `lunettes-fond-sombre.jpg` | **Le hero des deux pages produit** (`index.html`, `lunettes.html`) — la plus belle, et la seule déjà prise sur fond noir. Aussi dans la galerie de `lunettes.html` |
+| `lunettes-trois-quarts.jpg` | `index.html`, grande photo de la grappe « En vrai » ; galerie de `lunettes.html` |
+| `lunettes-et-etuis.jpg` | `index.html`, grappe « En vrai » ; galerie de `lunettes.html` |
+| `lunettes-en-charge.jpg` | `index.html`, grappe « En vrai » ; galerie de `lunettes.html` |
+| `lunettes-face.jpg` | `fonctionnalites.html`, carte « Lunettes VELA » ; galerie de `lunettes.html` |
+| `lunettes-solaires.jpg` | `index.html`, section « Pourquoi VELA existe » ; galerie de `lunettes.html` |
 
 **Le fond blanc sur un site sombre.** Cinq des six photos sont détourées sur blanc ou sur gris très
 clair. Plutôt que de les découper, on les pose sur une **plaque crème** (`.pv-plaque`) et on passe
@@ -101,6 +156,26 @@ jamais cassé. `lunettes-fond-sombre.jpg`, déjà photographiée sur fond noir, 
 >
 > Tant que ce n'est pas réglé, ces photos sont à considérer comme **provisoires**. Les remplacer ne
 > demande aucun changement de code : mêmes noms de fichiers, mêmes deux tailles, format carré.
+
+### Le slogan
+
+**« Des lunettes qui vous écoutent, sans jamais vous regarder. »**
+
+Il est en `h1` sur l'accueil (`.hp-titre`, avec « écoutent » en terracotta) et en signature dans le
+pied de page des neuf pages. Il remplace « Parlez. Elle agit. Vous vérifiez. », qui empilait trois
+verbes et sonnait comme un logiciel plutôt que comme un objet à porter.
+
+Ce qu'il doit continuer de dire, si on le réécrit un jour :
+
+- **c'est un objet qu'on porte** — le mot « lunettes » vient en premier, pas « IA » ni « assistante » ;
+- **il est intelligent** — « écoutent », donc le micro, donc la voix ;
+- **on peut lui faire confiance parce que c'est vérifiable** — « sans jamais vous regarder » n'est
+  pas une promesse morale, c'est un fait : **il n'y a pas de caméra**, ça se voit sur les photos et
+  c'est écrit dans la fiche du produit. Le jour où un modèle à caméra existerait, **ce slogan devrait
+  changer le même jour**.
+
+À fuir : les tirades en trois temps, les verbes empilés, et les mots « révolutionnaire »,
+« expérience », « solution », « redéfinit ».
 
 ### Ce qu'on dit des lunettes
 
@@ -158,17 +233,31 @@ Aucun service tiers, aucune inscription, aucun serveur : tout passe par `mailto:
 Pour changer l'adresse de destination : la constante `COURRIEL` en haut du bloc « formulaire de
 contact » dans `assets/site.js`, plus les `href` `mailto:` des pages.
 
-### Le paiement
+### Le parcours d'achat
 
-`plans.html` porte quatre liens `paypal.me`, en dur, identiques à ceux que l'application construit
-elle-même (`payment_link()` dans `backend/iris/plans.py`) :
+Le visiteur doit pouvoir acheter sans chercher. Trois entrées, dans cet ordre :
 
-| Bouton | Lien |
-|---|---|
-| S'abonner · 19,99 $ | `https://paypal.me/irisvela461/19.99CAD` |
-| S'abonner · 29,99 $ | `https://paypal.me/irisvela461/29.99CAD` |
-| S'abonner · 99,99 $ | `https://paypal.me/irisvela461/99.99CAD` |
-| Acheter les lunettes · 839 $ | `https://paypal.me/irisvela461/839.00CAD` |
+1. **Le hero de l'accueil** — photo, prix (839 $), bouton « Acheter · 839 $ » qui ouvre PayPal, et
+   un second bouton vers la fiche du produit. Le bouton d'achat tient au-dessus de la ligne de
+   flottaison à 1440 × 900, à 860 × 900 et à 375 × 812 (vérifié ; à 375 × 667 il affleure le bas).
+2. **`lunettes.html`** — la fiche : galerie, contenu de l'envoi, caractéristiques, et le même bouton
+   d'achat répété en tête et à la fin, dans la section « L'achat ».
+3. **Le bas de l'accueil** (`.rappel-achat`) et **`plans.html#acheter`**, pour qui descend jusque-là.
+
+Le parcours annoncé est celui qui existe vraiment, et il est écrit tel quel partout : **PayPal, puis
+un reçu par courriel, puis une clé d'activation par courriel**, et la livraison convenue par courriel
+au cas par cas. Aucun panier, aucun suivi de colis, aucun prélèvement récurrent. Si un jour un vrai
+tunnel de commande existe, c'est ce texte qu'il faudra remplacer — aux trois endroits ci-dessus.
+
+`plans.html` et les deux pages produit portent quatre liens `paypal.me`, en dur, identiques à ceux
+que l'application construit elle-même (`payment_link()` dans `backend/iris/plans.py`) :
+
+| Bouton | Lien | Où |
+|---|---|---|
+| S'abonner · 19,99 $ | `https://paypal.me/irisvela461/19.99CAD` | `plans.html` |
+| S'abonner · 29,99 $ | `https://paypal.me/irisvela461/29.99CAD` | `plans.html` |
+| S'abonner · 99,99 $ | `https://paypal.me/irisvela461/99.99CAD` | `plans.html` |
+| Acheter · 839 $ | `https://paypal.me/irisvela461/839.00CAD` | `index.html` (× 2), `lunettes.html` (× 2), `plans.html` |
 
 Format : `https://paypal.me/<compte>/<montant à deux décimales><devise>`. Tous s'ouvrent dans un
 nouvel onglet avec `rel="noopener noreferrer"`. Le plan Gratuit n'a évidemment aucun bouton.
@@ -195,6 +284,33 @@ Les deux pages portent en tête un avis indiquant qu'elles ont été rédigées 
 professionnel. `mentions-legales.html` contient un encadré jaune listant précisément ce que Miguel
 doit fournir (forme juridique, NEQ, hébergeur…). **Cet encadré est visible publiquement : il doit
 disparaître une fois rempli.**
+
+## Ce que Miguel doit décider lui-même
+
+Ces points-là ne sont pas des oublis : ce sont des décisions commerciales qui n'appartiennent pas au
+site. Rien n'a été inventé pour les combler, et les pages sont écrites de façon à ne pas mentir en
+attendant.
+
+1. **Le prix des lunettes seules.** Il n'existe pas. Le seul prix connu et payable aujourd'hui est
+   l'offre groupée à **839 $** (lunettes + 12 mois du plan Pro), et c'est ce que les deux pages
+   produit annoncent. `docs/finance/build_plan_financier.py` contient bien une ligne « Lunettes
+   seules », mais c'est une **hypothèse de tableur**, pas un prix arrêté, et le coût de revient qui
+   la sous-tend porte sur un modèle à caméra qui n'est pas celui qu'on vend. Tant que le prix n'est
+   pas fixé, **ne pas afficher de montant « lunettes seules »** : il faudrait un quatrième lien
+   `paypal.me` et une décision sur ce que devient l'abonnement dans ce cas.
+2. **Le contenu exact de la boîte.** `lunettes.html` liste la monture, l'étui de charge avec son
+   câble et l'étui rigide de rangement — c'est ce que **montrent les photos**, et la page dit
+   explicitement que le contenu exact est confirmé par courriel avant l'expédition. Confirmer ce qui
+   part réellement, puis retirer cette réserve.
+3. **Les deux montures.** Verres transparents et verres teintés existent tous les deux en photo.
+   Le site demande au client de préciser son choix par courriel. Décider si les deux sont vraiment
+   proposées, si l'une coûte plus cher, et si l'on tient un stock des deux.
+4. **Autonomie, poids, dimensions, résistance à l'eau, verres correcteurs.** Les lignes existent
+   dans le tableau de `lunettes.html` et disent « non mesuré par VELA ». Les remplir demande de
+   chronométrer et de peser l'exemplaire — pas de recopier une fiche du fabricant.
+5. **Délai de livraison et politique de retour.** Le site dit « convenu par courriel, au cas par
+   cas ». C'est honnête, mais un délai annoncé et une politique de retour rassurent davantage —
+   et le droit québécois de la consommation en impose une part.
 
 ## Ce qui reste à faire avant publication
 
@@ -237,9 +353,16 @@ sous-dossier.
 
 ## Règles de rédaction
 
+- **Les lunettes sont le produit ; IRIS est ce qui vient avec.** L'accueil et `lunettes.html`
+  vendent l'objet ; IRIS y est l'argument qui justifie le prix, pas le sujet. `fonctionnalites.html`
+  et `confidentialite.html` restent les pages du logiciel.
 - Français du Québec, ton direct, pas d'anglicismes inutiles.
 - Aucune fonctionnalité annoncée qui n'existe pas dans le code ; ce qui n'est pas livré porte la
   mention « à venir ».
+- **Aucune caractéristique matérielle non mesurée par VELA.** Une ligne vide qui dit « non mesuré »
+  vaut mieux qu'un chiffre recopié d'une fiche commerciale. C'est la même règle que le registre
+  d'IRIS : rien qui ne se vérifie.
+- Aucun prix inventé. Le seul prix des lunettes est l'offre groupée à 839 $.
 - Aucun chiffre, témoignage, logo de client ou récompense inventé.
 - Les prix et quotas viennent de `backend/iris/plans.py` et de `docs/PLANS.md` : si le code change,
   mettre `plans.html` à jour.

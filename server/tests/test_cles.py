@@ -13,7 +13,7 @@ from licences.config import SECRET_HISTORIQUE
 def test_cle_du_serveur_identique_a_celle_de_lapplication():
     """Octet pour octet : le serveur et l'application doivent produire la même chaîne."""
     plans = plans_application()
-    for plan in ("essentiel", "pro", "ultra"):
+    for plan in ("pro", "premium", "entreprise"):
         attendue = plans.make_key(plan, "2027-09-03", "client@exemple.com")
         obtenue = cles.faire_cle(plan, "2027-09-03", "client@exemple.com", SECRET_HISTORIQUE)
         assert obtenue == attendue, f"divergence de format pour le plan {plan}"
@@ -40,7 +40,7 @@ def test_cle_expiree_refusee_des_deux_cotes():
 
 
 def test_signature_falsifiee_rejetee():
-    cle = cles.faire_cle("ultra", "2027-09-03", "client@exemple.com", SECRET_HISTORIQUE)
+    cle = cles.faire_cle("entreprise", "2027-09-03", "client@exemple.com", SECRET_HISTORIQUE)
     charge = cle.rsplit("-", 1)[0]
     assert cles.verifier_cle(charge + "-0000000000000000abcd", SECRET_HISTORIQUE) is None
     # Un autre secret ne doit rien valider non plus.

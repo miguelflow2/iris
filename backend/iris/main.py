@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import os
 import platform
 import threading
 import time
@@ -44,6 +46,26 @@ from .voice.listener import VoiceListener
 from .voice.tts import TextToSpeech
 
 log = logging.getLogger("iris.api")
+
+
+def session_reelle() -> bool:
+    """L'application a-t-elle lancé ce backend pour une vraie session ?
+
+    Deux préparatifs partent sur le réseau au démarrage : le modèle vocal (41 Mo) et le jeton
+    d'accès VELA. Ils ont leur place quand un utilisateur ouvre IRIS, nulle part ailleurs. Sans
+    ce garde-fou, la suite de tests téléchargeait le modèle une fois par client et remplissait
+    le disque — c'est arrivé. Le drapeau est posé par electron/main/backend.ts, et par lui seul."""
+    return os.environ.get("IRIS_AUTO_SETUP", "") == "1"
+
+
+def courriel_du_jeton(jeton: str) -> str | None:
+    """Le courriel encodé dans un jeton d'appareil VELA. Sert à savoir s'il faut en redemander un
+    après que l'utilisateur a renseigné son courriel d'achat."""
+    try:
+        tete = (jeton or "").split(".", 1)[0]
+        return base64.urlsafe_b64decode(tete + "=" * (-len(tete) % 4)).decode(errors="replace").lower()
+    except Exception:
+        return None
 
 
 class AppContext:
@@ -142,6 +164,7 @@ class AppContext:
         while True:
             try:
                 self.licence.check_expiry()
+                await asyncio.to_thread(self.assurer_acces_vela)
                 if self.licence.configured:
                     await asyncio.to_thread(self.licence.sync)
             except Exception as exc:  # pragma: no cover
@@ -175,6 +198,71 @@ class AppContext:
                         self.voice.start()
             except Exception as exc:  # pragma: no cover
                 log.warning("chien de garde vocal: %s", exc)
+
+    def assurer_acces_vela(self) -> None:
+        """Obtient auprès du relais VELA le jeton qui donne accès à l'IA.
+
+        C'est ce qui remplace la demande de clé OpenRouter à l'accueil. L'accès fait partie de ce
+        qu'on vend : il est fourni, pas apporté par le client. Le jeton ne vaut que pour cet
+        appareil, et c'est le relais qui décide quel modèle répond, selon l'abonnement rattaché
+        au courriel. Un échec ne casse rien : IRIS retombe sur les moteurs déjà configurés."""
+        if not session_reelle():
+            return
+        base = (self.settings.user.relay_server or "").strip().rstrip("/")
+        if not base or self.settings.user.local_only:
+            return
+        courriel = (self.settings.user.licence_email or "").strip().lower()
+        actuel = self.secrets.get_api_key("vela")
+        if actuel and courriel_du_jeton(actuel) == courriel:
+            return  # déjà obtenu, et pour le bon courriel
+        try:
+            import uuid
+
+            import httpx
+
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{base}/api/appareil", json={"machine": f"{uuid.getnode():x}", "email": courriel})
+            resp.raise_for_status()
+            jeton = (resp.json().get("jeton") or "").strip()
+            if not jeton:
+                raise ValueError("le relais n'a pas renvoyé de jeton")
+            self.secrets.set_api_key("vela", jeton)
+            log.info("accès IA VELA obtenu (plan %s)", resp.json().get("plan", "?"))
+        except Exception as exc:
+            log.info("relais VELA injoignable (%s) : IRIS utilisera les moteurs déjà configurés", exc)
+
+    def assurer_modele_vocal(self) -> None:
+        """Télécharge le modèle de reconnaissance vocale s'il manque. Sans rien demander.
+
+        Constat réel sur une installation neuve : le modèle n'arrivait que si l'utilisateur
+        cliquait « Télécharger » dans la dernière étape de l'accueil. Sans lui, le moteur refuse
+        de démarrer — le micro s'ouvre, plus rien n'est entendu, et aucun message ne l'explique.
+        Une assistante vocale qui n'entend pas n'est pas un réglage avancé, c'est une panne.
+
+        Aucune donnée ne part : on récupère un fichier de modèle, et c'est justement lui qui
+        permet ensuite de tout reconnaître sur l'appareil, sans réseau."""
+        if not session_reelle():
+            return
+        langue = self.settings.user.language
+        if stt.model_dir(self.settings.models_dir, langue) is not None:
+            return
+        try:
+            log.info("modèle vocal absent : téléchargement automatique (%s)", langue)
+            self.hub.publish("voice.model_progress", done=0, total=0, language=langue)
+
+            def progress(done: int, total: int) -> None:
+                self.hub.publish("voice.model_progress", done=done, total=total, language=langue)
+
+            stt.download_model(self.settings.models_dir, langue, progress)
+            self.voice.error = None
+            self.hub.publish("voice.model_ready", language=langue, ready=True)
+            if self.settings.user.voice_autostart and not self.voice.running:
+                self.voice.start()
+            self.hub.publish("voice.state", **self.voice.status())
+            log.info("modèle vocal installé : IRIS entend")
+        except Exception as exc:
+            log.warning("téléchargement automatique du modèle vocal impossible : %s", exc)
+            self.hub.publish("voice.model_ready", language=langue, ready=False, error=str(exc))
 
     async def _daily_summary_loop(self) -> None:
         from datetime import date, datetime
@@ -402,6 +490,8 @@ def create_app(
         from .pc.apps import index as app_index
 
         threading.Thread(target=app_index.build, name="iris-apps-index", daemon=True).start()
+        threading.Thread(target=ctx.assurer_modele_vocal, name="iris-modele-vocal", daemon=True).start()
+        threading.Thread(target=ctx.assurer_acces_vela, name="iris-acces-vela", daemon=True).start()
         if ctx.settings.user.voice_autostart and not ctx.settings.user.privacy_mode:
             loop.call_later(1.0, ctx.voice.start)
         glasses_task = loop.create_task(ctx.glasses.auto_connect_on_start())

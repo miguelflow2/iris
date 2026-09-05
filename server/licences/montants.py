@@ -1,10 +1,10 @@
 """Du montant reçu au plan vendu.
 
 Prix de référence (backend/iris/plans.py) :
-    19,99 $ → essentiel, 1 mois
-    29,99 $ → pro,       1 mois
-    99,99 $ → ultra,     1 mois
-   839,00 $ → offre groupée « lunettes VELA + 12 mois Pro » → pro, 12 mois
+    19,99 $ → pro,        1 mois
+    29,99 $ → premium,    1 mois
+    99,99 $ → entreprise, 1 mois
+   250,00 $ → lunettes VELA : du matériel, aucun abonnement à activer
 
 Un montant inconnu n'active jamais rien : il part en traitement manuel.
 """
@@ -14,11 +14,12 @@ from dataclasses import dataclass
 
 # (montant, plan, nombre de mois, libellé)
 TARIFS: tuple[tuple[float, str, int, str], ...] = (
-    (19.99, "essentiel", 1, "Essentiel — 1 mois"),
-    (29.99, "pro", 1, "Pro — 1 mois"),
-    (99.99, "ultra", 1, "Ultra — 1 mois"),
-    (839.00, "pro", 12, "Lunettes VELA + 12 mois Pro"),
+    (19.99, "pro", 1, "Pro — 1 mois"),
+    (29.99, "premium", 1, "Premium — 1 mois"),
+    (99.99, "entreprise", 1, "Entreprise — 1 mois"),
 )
+# 250,00 $ n'est volontairement pas dans ce tableau : c'est l'achat des lunettes. Un paiement de
+# matériel ne doit activer aucun abonnement, sous peine d'offrir un mois à chaque client.
 
 
 @dataclass(frozen=True)

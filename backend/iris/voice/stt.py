@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import sys
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -32,11 +33,32 @@ def lang_key(language: str) -> str:
     return "en" if (language or "fr").lower().startswith("en") else "fr"
 
 
+def dossiers_modeles(models_dir: Path) -> list[Path]:
+    """Où chercher un modèle, dans l'ordre.
+
+    D'abord celui que l'utilisateur a téléchargé, ensuite celui livré avec l'application. Le
+    second existe parce qu'un modèle absent rendait IRIS complètement sourde sur une machine
+    neuve : le moteur refusait de démarrer, le micro s'ouvrait, et rien n'était jamais entendu.
+    Personne ne doit avoir à cliquer sur « Télécharger » pour qu'elle entende."""
+    dossiers = [Path(models_dir)]
+    exe = Path(sys.executable).resolve()
+    if getattr(sys, "frozen", False):
+        # Application installée : le moteur est dans resources/backend, les modèles dans resources/models.
+        dossiers += [exe.parent / "models", exe.parent.parent / "models"]
+    dossiers.append(Path(__file__).resolve().parents[3] / "resources-modeles")  # dépôt, en développement
+    vus: list[Path] = []
+    for d in dossiers:
+        if d not in vus:
+            vus.append(d)
+    return vus
+
+
 def model_dir(models_dir: Path, language: str) -> Path | None:
     info = VOSK_MODELS[lang_key(language)]
-    path = models_dir / info["name"]
-    if path.is_dir() and any((path / sub).exists() for sub in ("am", "conf", "graph")):
-        return path
+    for dossier in dossiers_modeles(models_dir):
+        path = dossier / info["name"]
+        if path.is_dir() and any((path / sub).exists() for sub in ("am", "conf", "graph")):
+            return path
     return None
 
 

@@ -74,7 +74,10 @@ export class BackendProcess extends EventEmitter {
         child = spawn(cmd, args, {
           cwd,
           windowsHide: true,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
+          // IRIS_AUTO_SETUP : autorise le backend à préparer une vraie session (modèle vocal, accès
+          // VELA). Réservé au lancement par l'application : ni les tests ni les scripts ne
+          // doivent télécharger 41 Mo ni joindre le relais.
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1', IRIS_AUTO_SETUP: '1' },
           stdio: ['ignore', 'pipe', 'pipe']
         })
       } catch (err) {

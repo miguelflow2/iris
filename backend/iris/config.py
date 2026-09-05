@@ -63,7 +63,24 @@ def write_env_value(data_dir: Path, key: str, value: str) -> Path:
         os.environ.pop(key, None)
     return path
 
-AGENT_NAMES = ("openrouter", "claude", "gpt", "gemini", "custom")
+AGENT_NAMES = ("vela", "openrouter", "claude", "gpt", "gemini", "custom")
+
+VERSION_REGLAGES = 2
+# Les paliers s'appelaient Gratuit / Essentiel / Pro / Ultra ; ils s'appellent maintenant
+# Gratuit / Pro / Premium / Entreprise. Le renommage n'est pas anodin : « pro » existe des deux
+# côtés et ne désigne pas la même chose. D'où le numéro de version — sans lui, chaque relecture
+# des réglages rétrograderait un abonné Pro d'un cran.
+_RENOMMAGE_PLANS_V2 = {"essentiel": "pro", "pro": "premium", "ultra": "entreprise"}
+
+
+def migrer(raw: dict) -> dict:
+    """Fait suivre des réglages déjà écrits quand le vocabulaire change. Appliqué une seule fois."""
+    if int(raw.get("settings_version") or 1) < 2:
+        ancien = raw.get("plan")
+        if ancien in _RENOMMAGE_PLANS_V2:
+            raw["plan"] = _RENOMMAGE_PLANS_V2[ancien]
+    raw["settings_version"] = VERSION_REGLAGES
+    return raw
 
 
 def default_data_dir() -> Path:
@@ -88,6 +105,9 @@ class AgentConfig(BaseModel):
 
 def _default_agents() -> dict[str, AgentConfig]:
     return {
+        # L'accès IA fourni par VELA : actif d'emblée, sans clé à coller. C'est lui qui fait
+        # qu'IRIS répond dès la première minute sur une machine neuve.
+        "vela": AgentConfig(label="VELA", model="", active=True),
         "openrouter": AgentConfig(label="OpenRouter", model="minimax/minimax-m3:free", active=True),
         "claude": AgentConfig(label="Claude", model="claude-opus-5"),
         "gpt": AgentConfig(label="GPT", model="gpt-5"),
@@ -128,7 +148,7 @@ class UserSettings(BaseModel):
     language: str = "fr-CA"
     local_only: bool = False  # rien ne quitte l'ordinateur, aucun agent externe
     privacy_mode: bool = False  # mode confidentiel : micro coupé, aucune écoute ni capture tant qu'il est actif
-    default_agent: str = "openrouter"
+    default_agent: str = "vela"
     routing_mode: Literal["auto", "manual"] = "auto"
     retention_days: int = 0  # 0 = illimité ; sinon 1 (24h), 7, 30...
     tts_enabled: bool = True
@@ -157,6 +177,9 @@ class UserSettings(BaseModel):
     daily_summary_enabled: bool = True
     daily_summary_time: str = "21:00"
     voice_followup: bool = True  # si IRIS pose une question, elle écoute la réponse sans mot d'activation
+    # Fenêtre de dialogue : après une réponse, IRIS reste ouverte ce nombre de secondes. On enchaîne
+    # sans redire son nom, chaque échange relance le compte, « arrête » la referme. 0 = désactivée.
+    voice_conversation_seconds: int = 45
     # confirmation avant d'exécuter une commande : toujours / seulement les commandes dangereuses / jamais
     confirm_commands: Literal["always", "dangerous", "never"] = "dangerous"
     claude_effort: Literal["low", "medium", "high"] = "medium"
@@ -164,13 +187,17 @@ class UserSettings(BaseModel):
     claude_web_search: bool = True  # recherche web côté serveur Anthropic (outil web_search)
     history_window: int = 40  # nb de messages renvoyés à l'agent
     onboarded: bool = False
-    plan: Literal["gratuit", "essentiel", "pro", "ultra"] = "gratuit"
+    plan: Literal["gratuit", "pro", "premium", "entreprise"] = "gratuit"
+    settings_version: int = VERSION_REGLAGES
     plan_expires: str = ""  # AAAA-MM-JJ ("" = sans échéance)
     plan_demo: bool = False  # plan choisi sans clé (mode démonstration)
     license_key: str = ""
     # Activation automatique : IRIS demande sa clé au serveur de licences VELA avec le courriel d'achat,
     # puis revérifie chaque jour (renouvellement, expiration, annulation). Vide = activation manuelle.
     licence_server: str = "https://licences.vela.app"
+    # Relais IA de VELA : c'est lui qui détient la clé et choisit le modèle selon l'abonnement.
+    # Voir serveur/relais.py. Vider ce champ revient à exiger que le client apporte sa propre clé.
+    relay_server: str = "https://relais.vela.app"
     licence_email: str = ""
     licence_auto: bool = True
     agents: dict[str, AgentConfig] = Field(default_factory=_default_agents)
@@ -198,7 +225,7 @@ class Settings:
     def _load(self) -> UserSettings:
         if self.settings_path.exists():
             try:
-                raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
+                raw = migrer(json.loads(self.settings_path.read_text(encoding="utf-8")))
                 merged = UserSettings(**raw)
                 for name, cfg in _default_agents().items():
                     merged.agents.setdefault(name, cfg)

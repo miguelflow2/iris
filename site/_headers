@@ -24,6 +24,41 @@
   Content-Disposition: attachment
   Cache-Control: public, max-age=31536000, immutable
 
-# Styles et scripts : versionnés à la main, on garde un cache court pour pouvoir corriger vite.
+# ---------------------------------------------------------------------------- cache
+# Le problème vécu en septembre 2026 : après un redéploiement, le navigateur servait encore
+# l'ANCIENNE assets/style.css depuis son cache. Le HTML neuf arrivait bien, mais la vieille
+# feuille n'avait aucune règle pour les nouvelles classes : logo noir, accents verts.
+#
+# Deux protections, à garder ensemble :
+#   1. le numéro de version dans les pages — assets/style.css?v=2, assets/site.js?v=2 —
+#      à INCRÉMENTER à chaque modification de la CSS ou du JS (voir README.md) ;
+#   2. les en-têtes ci-dessous, qui rattrapent l'oubli du numéro.
+#
+# Les règles vont du général au particulier : Netlify applique la plus précise, mais cet
+# ordre-là est aussi celui que lisent les autres hébergeurs, alors on le respecte.
+
+# Filet pour tout fichier d'assets/ qui ne serait visé par aucune règle plus bas.
 /assets/*
   Cache-Control: public, max-age=3600
+
+# Les photos ne changent pas d'un déploiement à l'autre, et elles pèsent : une journée de
+# cache. Elles portent des noms de fichiers stables (voir README.md, « Les photos du
+# produit ») : si l'une d'elles est remplacée, compter jusqu'à 24 h avant qu'un visiteur
+# déjà venu voie la nouvelle.
+/assets/photos/*
+  Cache-Control: public, max-age=86400
+
+# max-age=0, must-revalidate : le navigateur garde le fichier mais demande à chaque visite
+# s'il a changé. La réponse est un 304 vide quand rien n'a bougé — quelques centaines
+# d'octets — donc le coût est négligeable et une correction part immédiatement, même si le
+# numéro de version a été oublié dans les pages.
+/assets/style.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+/assets/site.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Les pages HTML ne doivent JAMAIS être mises en cache longtemps : ce sont elles qui portent
+# le numéro de version des ressources. Une page HTML périmée continuerait de réclamer
+# l'ancienne CSS, et le numéro de version ne servirait à rien. Netlify sert déjà le HTML en
+# « max-age=0, must-revalidate » par défaut ; sur un autre hébergement, vérifier ce point.

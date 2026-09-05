@@ -6,7 +6,7 @@ from ..security.secrets import SecretStore
 from .base import BaseConnector, ChatOptions, Chunk, ConnectorError, ToolSpec
 from .claude import CLAUDE_MODELS, ClaudeConnector
 from .gemini import GEMINI_MODELS, GeminiConnector
-from .openai_compat import GPT_MODELS, OPENROUTER_MODELS, OpenAICompatibleConnector, OpenRouterConnector
+from .openai_compat import GPT_MODELS, OPENROUTER_MODELS, OpenAICompatibleConnector, OpenRouterConnector, VelaConnector
 
 __all__ = [
     "BaseConnector",
@@ -19,6 +19,16 @@ __all__ = [
 ]
 
 AGENT_META = {
+    "vela": {
+        "label": "VELA",
+        "vendor": "VELA — inclus dans votre abonnement",
+        "key_hint": "",
+        "key_url": "",
+        "needs_key": False,
+        "supports_tools": True,
+        "models": [],
+        "description": "L'accès IA livré avec IRIS. Aucune clé à coller : le modèle est choisi selon votre abonnement, du gratuit jusqu'à Claude.",
+    },
     "openrouter": {
         "label": "OpenRouter",
         "vendor": "OpenRouter — IA de base d'IRIS",
@@ -86,6 +96,13 @@ def build_connector(name: str, settings: Settings, secrets: SecretStore) -> Base
     key = secrets.get_api_key(name)
     if meta["needs_key"] and not key:
         raise ConnectorError(f"Aucune clé API configurée pour {meta['label']}. Ajoutez-la dans Réglages › Moteurs IA.")
+    if name == "vela":
+        base = (settings.user.relay_server or "").strip().rstrip("/")
+        if not base:
+            raise ConnectorError("Aucun relais VELA n'est configuré. Ajoutez votre propre clé dans Réglages › Moteurs IA.")
+        if not key:
+            raise ConnectorError("IRIS n'a pas encore obtenu son accès VELA. Vérifiez la connexion Internet, puis relancez-la.")
+        return VelaConnector(key, cfg.model, base_url=base + "/v1")
     if name == "openrouter":
         return OpenRouterConnector(key, cfg.model or "minimax/minimax-m3:free")
     if name == "claude":

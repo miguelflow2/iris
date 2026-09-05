@@ -42,9 +42,9 @@ def test_licence_active_renvoie_le_plan_et_la_cle(client, base):
     poster_webhook(client, charges.capture_completee("actif@exemple.com", "99.99", capture_id="CAP-ACTIF"))
     donnees = client.get("/api/licence", params={"email": "actif@exemple.com"}).json()
     assert donnees["actif"] is True
-    assert donnees["plan"] == "ultra"
+    assert donnees["plan"] == "entreprise"
     assert donnees["cle"].startswith("IRIS-")
-    assert cles.verifier_cle(donnees["cle"], SECRET_HISTORIQUE)["plan"] == "ultra"
+    assert cles.verifier_cle(donnees["cle"], SECRET_HISTORIQUE)["plan"] == "entreprise"
     # Rien de plus que le nécessaire : ni identifiant PayPal, ni montant, ni historique.
     assert set(donnees) == {"actif", "plan", "expire_le", "cle"}
 
@@ -52,7 +52,7 @@ def test_licence_active_renvoie_le_plan_et_la_cle(client, base):
 def test_licence_insensible_a_la_casse_et_aux_espaces(client, base):
     poster_webhook(client, charges.capture_completee("Casse@Exemple.com", "29.99", capture_id="CAP-CASSE"))
     donnees = client.get("/api/licence", params={"email": "  CASSE@exemple.COM "}).json()
-    assert donnees["actif"] is True and donnees["plan"] == "pro"
+    assert donnees["actif"] is True and donnees["plan"] == "premium"
 
 
 def test_licence_sans_parametre_reste_neutre(client):
@@ -87,7 +87,7 @@ def test_verification_dune_cle_falsifiee(client):
 
 def test_verification_dune_cle_expiree(client):
     hier = (date.today() - timedelta(days=1)).isoformat()
-    cle = cles.faire_cle("essentiel", hier, "client@exemple.com", SECRET_HISTORIQUE)
+    cle = cles.faire_cle("pro", hier, "client@exemple.com", SECRET_HISTORIQUE)
     donnees = client.post("/api/licence/verifier", json={"cle": cle}).json()
     assert donnees["valide"] is False
     assert hier in donnees["raison"]
@@ -117,7 +117,7 @@ def test_administration_affiche_les_abonnements(client, base):
 def test_emission_manuelle_dune_cle(client, base, config):
     """Le filet de sécurité : virement, comptant, clé perdue."""
     reponse = client.post("/admin/emettre", data={
-        "courriel": "Virement@Exemple.com", "plan": "ultra", "mois": "3",
+        "courriel": "Virement@Exemple.com", "plan": "entreprise", "mois": "3",
         "raison": "virement Interac", "jeton": JETON_ADMIN,
     })
     assert reponse.status_code == 200
@@ -125,10 +125,10 @@ def test_emission_manuelle_dune_cle(client, base, config):
     assert donnees["ok"] is True
     assert donnees["courriel"] == "virement@exemple.com"
     assert donnees["expire_le"] == cles.prolonger(None, 3)
-    assert cles.verifier_cle(donnees["cle"], SECRET_HISTORIQUE)["plan"] == "ultra"
+    assert cles.verifier_cle(donnees["cle"], SECRET_HISTORIQUE)["plan"] == "entreprise"
 
     ligne = base.abonnement("virement@exemple.com")
-    assert ligne["statut"] == "actif" and ligne["plan"] == "ultra"
+    assert ligne["statut"] == "actif" and ligne["plan"] == "entreprise"
     # La clé est aussi partie au client.
     assert any("virement@exemple.com" in f.read_text(encoding="utf-8")
                for f in config.dossier_sortie.glob("*.eml"))

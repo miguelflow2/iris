@@ -55,7 +55,9 @@ def test_health_and_auth(client, app):
 
 def test_agents_and_keys(client):
     agents = client.get("/api/agents").json()["agents"]
-    assert [a["name"] for a in agents] == ["openrouter", "claude", "gpt", "gemini", "custom"]
+    assert [a["name"] for a in agents] == ["vela", "openrouter", "claude", "gpt", "gemini", "custom"]
+    vela = agents[0]
+    assert vela["needs_key"] is False, "l'accès VELA est fourni : le client ne colle aucune clé"
     view = client.put("/api/agents/claude", json={"active": True, "api_key": "sk-ant-abcdefgh12345678"}).json()
     assert view["has_key"] and view["key_masked"].startswith("sk-a") and "abcdefgh" not in view["key_masked"]
     assert view["ready"] is True
@@ -309,11 +311,11 @@ def test_plan_api_and_quota_error(client, fake_claude):
     from iris.plans import make_key
 
     info = client.get("/api/plan").json()
-    assert info["plan"] == "gratuit" and len(info["plans"]) == 4 and info["bundle"]["price"] == 839.0
+    assert info["plan"] == "gratuit" and len(info["plans"]) == 4 and info["lunettes"]["price"] == 250.0
     assert client.post("/api/plan/activate", json={"key": "IRIS-x-y"}).status_code == 400
-    info = client.post("/api/plan/activate", json={"key": make_key("essentiel", "2099-01-01")}).json()
-    assert info["plan"] == "essentiel" and info["quota_requests"] == 600
-    assert client.get("/api/status").json()["plan"]["label"] == "Essentiel"
+    info = client.post("/api/plan/activate", json={"key": make_key("pro", "2099-01-01")}).json()
+    assert info["plan"] == "pro" and info["quota_requests"] == 600
+    assert client.get("/api/status").json()["plan"]["label"] == "Pro"
     assert client.post("/api/plan/demo", json={"plan": "gratuit"}).json()["plan"] == "gratuit"
     # quota atteint → erreur explicite, aucune requête envoyée
     _setup_ready(client)

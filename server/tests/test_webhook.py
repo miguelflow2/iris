@@ -18,14 +18,14 @@ def test_paiement_valide_cree_labonnement_et_une_cle_utilisable(client, base):
 
     ligne = base.abonnement("nouveau@exemple.com")
     assert ligne is not None
-    assert ligne["plan"] == "pro"
+    assert ligne["plan"] == "premium"
     assert ligne["statut"] == "actif"
     assert date.fromisoformat(ligne["expire_le"]) > date.today()
 
     # La clé stockée doit être acceptée par le VRAI verify_key de l'application.
     plans = plans_application()
     verifiee = plans.verify_key(ligne["derniere_cle"])
-    assert verifiee is not None and verifiee["plan"] == "pro" and verifiee["expired"] is False
+    assert verifiee is not None and verifiee["plan"] == "premium" and verifiee["expired"] is False
 
 
 def test_la_cle_part_par_courriel(client, config):
@@ -47,28 +47,27 @@ def test_courriel_dans_custom_id_reconnu(client, base):
     """Cas réel : PayPal ne met pas toujours l'adresse du payeur dans la capture."""
     poster_webhook(client, charges.capture_completee("via-custom@exemple.com", "19.99", courriel_dans_custom=True))
     ligne = base.abonnement("via-custom@exemple.com")
-    assert ligne is not None and ligne["plan"] == "essentiel"
+    assert ligne is not None and ligne["plan"] == "pro"
 
 
 def test_chaque_prix_active_le_bon_plan(client, base):
-    for montant, plan, courriel in (("19.99", "essentiel", "e@exemple.com"),
-                                    ("29.99", "pro", "p@exemple.com"),
-                                    ("99.99", "ultra", "u@exemple.com")):
+    for montant, plan, courriel in (("19.99", "pro", "e@exemple.com"),
+                                    ("29.99", "premium", "p@exemple.com"),
+                                    ("99.99", "entreprise", "u@exemple.com")):
         poster_webhook(client, charges.capture_completee(courriel, montant, capture_id=f"CAP-{plan}"))
         assert base.abonnement(courriel)["plan"] == plan
 
 
-def test_offre_groupee_donne_douze_mois_de_pro(client, base):
-    poster_webhook(client, charges.capture_completee("lunettes@exemple.com", "839.00", capture_id="CAP-BUNDLE"))
-    ligne = base.abonnement("lunettes@exemple.com")
-    assert ligne["plan"] == "pro"
-    assert ligne["expire_le"] == cles.prolonger(None, 12)
+def test_lachat_des_lunettes_nactive_aucun_abonnement(client, base):
+    """250 $, c'est du matériel. Le confondre avec un abonnement offrirait un mois à chaque client."""
+    poster_webhook(client, charges.capture_completee("lunettes@exemple.com", "250.00", capture_id="CAP-LUNETTES"))
+    assert base.abonnement("lunettes@exemple.com") is None
 
 
 def test_ecart_de_quelques_cents_tolere(client, base):
-    """Change, arrondis : 29,96 $ reste un Pro."""
+    """Change, arrondis : 29,96 $ reste un Premium."""
     poster_webhook(client, charges.capture_completee("centimes@exemple.com", "29.96", capture_id="CAP-CENTS"))
-    assert base.abonnement("centimes@exemple.com")["plan"] == "pro"
+    assert base.abonnement("centimes@exemple.com")["plan"] == "premium"
 
 
 # ============================================================ idempotence
@@ -125,7 +124,7 @@ def test_un_echec_inattendu_libere_la_reservation(service, base, monkeypatch):
     # La relance de PayPal aboutit maintenant que la panne est passée.
     monkeypatch.undo()
     assert service.traiter(charge)["resultat"] == "active"
-    assert base.abonnement("panne-interne@exemple.com")["plan"] == "pro"
+    assert base.abonnement("panne-interne@exemple.com")["plan"] == "premium"
 
 
 def test_deux_paiements_distincts_cumulent_bien(client, base):
@@ -184,7 +183,7 @@ def test_mode_developpement_saute_la_verification(fabrique_client, base):
     reponse = poster_webhook(client, charges.capture_completee("dev@exemple.com", "29.99"),
                              signature="peu-importe")
     assert reponse.status_code == 200
-    assert base.abonnement("dev@exemple.com")["plan"] == "pro"
+    assert base.abonnement("dev@exemple.com")["plan"] == "premium"
 
 
 def test_mode_developpement_interdit_en_production():
@@ -235,7 +234,7 @@ def test_alerte_envoyee_pour_un_paiement_a_traiter(client, config):
 def test_abonnement_active(client, base):
     poster_webhook(client, charges.abonnement_active("abonne@exemple.com", "29.99"))
     ligne = base.abonnement("abonne@exemple.com")
-    assert ligne["plan"] == "pro"
+    assert ligne["plan"] == "premium"
     assert ligne["statut"] == "actif"
     assert ligne["abonnement_paypal"] == "I-BW452GLLEP1G"
 
@@ -293,7 +292,7 @@ def test_changement_de_plan_repart_de_zero(client, base):
     poster_webhook(client, charges.capture_completee("montee@exemple.com", "19.99", capture_id="CAP-E"))
     poster_webhook(client, charges.capture_completee("montee@exemple.com", "99.99", capture_id="CAP-U"))
     ligne = base.abonnement("montee@exemple.com")
-    assert ligne["plan"] == "ultra"
+    assert ligne["plan"] == "entreprise"
     assert ligne["expire_le"] == cles.prolonger(None, 1)
 
 

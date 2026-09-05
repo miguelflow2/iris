@@ -309,6 +309,46 @@ class OpenAICompatibleConnector(BaseConnector):
             return {"ok": False, "message": f"Erreur : {exc}", "model": self.model, "latency_ms": 0}
 
 
+class VelaConnector(OpenAICompatibleConnector):
+    """L'accès IA inclus avec IRIS : le relais de VELA détient la clé et choisit le modèle.
+
+    Le client n'a rien à coller. Le jeton envoyé ici n'est pas une clé d'IA — il identifie
+    l'appareil, et c'est le relais qui décide ce à quoi cet abonnement donne droit."""
+
+    name = "vela"
+
+    def __init__(self, jeton: str, model: str, base_url: str):
+        super().__init__(
+            jeton,
+            model or "vela/auto",
+            base_url=base_url,
+            name="vela",
+            label="VELA",
+            supports_tools=True,
+            include_usage=True,
+        )
+
+    async def test(self) -> dict:  # type: ignore[override]
+        """« vela/auto » n'existe chez personne : c'est le relais qui traduit. Interroger sa liste
+        de modèles dit donc à la fois qu'il répond et à quoi l'abonnement donne droit."""
+        started = time.time()
+        try:
+            listing = await self._client().models.list()
+            ids = [m.id for m in listing.data]
+            if not ids:
+                return {"ok": False, "message": "Le relais VELA ne propose aucun modèle pour ce compte.", "model": self.model, "latency_ms": 0}
+            return {
+                "ok": True,
+                "message": f"Accès VELA actif — {ids[0]}.",
+                "model": self.model,
+                "latency_ms": int((time.time() - started) * 1000),
+            }
+        except openai.APIError as exc:
+            return {"ok": False, "message": _map_error(exc, self.label).message, "model": self.model, "latency_ms": 0}
+        except Exception as exc:
+            return {"ok": False, "message": f"Relais VELA injoignable : {exc}", "model": self.model, "latency_ms": 0}
+
+
 class OpenRouterConnector(OpenAICompatibleConnector):
     """OpenRouter : IA de base d'IRIS (modèles gratuits par défaut), appel d'outils, en-têtes d'attribution."""
 

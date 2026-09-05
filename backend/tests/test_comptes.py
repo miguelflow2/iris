@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 
 import pytest
 
@@ -123,3 +124,33 @@ def test_les_tentatives_repetees_sont_bloquees(comptes: Comptes):
     assert comptes.verifier("motdepasse-solide") is False, "le blocage doit tenir même pour le bon mot de passe"
     comptes._essais.clear()  # la fenêtre passée, l'accès revient
     assert comptes.verifier("motdepasse-solide") is True
+
+
+# --------------------------------------------------------------------------- la première ouverture
+# Constat réel : IRIS démarrait sans jamais demander de compte, et la protection du téléphone
+# restait donc désactivée sans que personne le sache. L'assistant d'accueil doit la réclamer.
+ACCUEIL = Path(__file__).resolve().parents[2] / "renderer" / "src" / "views" / "Onboarding.tsx"
+
+
+def test_laccueil_demande_un_compte():
+    source = ACCUEIL.read_text(encoding="utf-8")
+    assert "'Compte'" in source, "l'étape doit figurer dans la barre de progression"
+    assert "/api/compte/connexion" in source, "un compte déjà posé doit pouvoir se déverrouiller"
+    assert "Créer mon compte" in source and "Se connecter" in source
+
+
+def test_on_ne_peut_pas_passer_letape_sans_mot_de_passe():
+    """Un bouton « Ignorer » suffirait à ramener le problème d'origine."""
+    source = ACCUEIL.read_text(encoding="utf-8")
+    debut = source.index("{step === 1 ? (")
+    etape = source[debut:source.index("{step === 2 ? (")]
+    assert "disabled={compteOccupe || !mdp.trim()}" in etape
+    for echappatoire in ("Ignorer", "Passer", "Plus tard"):
+        assert echappatoire not in etape, f"échappatoire trouvée : {echappatoire}"
+
+
+def test_le_mot_de_passe_nest_jamais_renvoye_au_serveur_de_licences():
+    """Le courriel sert à activer l'abonnement ; le mot de passe reste sur la machine."""
+    source = ACCUEIL.read_text(encoding="utf-8")
+    ligne = [l for l in source.splitlines() if "licence_email" in l]
+    assert ligne and all("mdp" not in l for l in ligne)

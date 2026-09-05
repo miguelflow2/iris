@@ -6,7 +6,7 @@
 <title>Installer IRIS — VELA</title>
 <meta name="description" content="Marche à suivre pour installer IRIS sur Windows 10 ou 11 : télécharger IRIS-Setup-0.1.0.exe, l’exécuter, suivre l’assistant de démarrage, puis dire « Dis-moi Iris ».">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/style.css?v=3">
 </head>
 <body>
 <a class="skip" href="#contenu">Aller au contenu</a>
@@ -23,8 +23,9 @@
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
       <a href="index.html">Accueil</a>
-      <a href="confidentialite.html">Confidentialité</a>
+      <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="confidentialite.html">Confidentialité</a>
       <a href="plans.html">Plans</a>
       <a href="installer.html" aria-current="page">Installer</a>
       <a href="contact.html" class="nav-cta">Contact</a>
@@ -184,12 +185,12 @@
               <p class="small">Votre prénom, pour qu’IRIS sache comment vous appeler.</p>
             </div>
             <div class="card">
-              <h3>2. Clé OpenRouter</h3>
-              <p class="small">OpenRouter est le service qui donne accès aux modèles d’IA. Créez-y un compte,
-                copiez votre clé et collez-la&nbsp;: IRIS la vérifie tout de suite et la range dans le coffre
-                de Windows, sans jamais la réafficher. Les modèles utilisés par défaut sont gratuits.</p>
-              <p class="small muted">La page des clés OpenRouter s’ouvre depuis l’assistant lui-même, par le
-                bouton «&nbsp;Obtenir une clé&nbsp;».</p>
+              <h3>2. Votre compte</h3>
+              <p class="small">Le courriel de votre achat, et un mot de passe qui protège l’accès à votre
+                ordinateur. <strong>Aucune clé à coller&nbsp;:</strong> l’accès aux modèles d’IA est fourni par
+                VELA, et votre abonnement se reconnaît tout seul à partir de ce courriel.</p>
+              <p class="small muted">Le mot de passe ne quitte jamais l’ordinateur et n’y est jamais écrit en
+                clair. Sans abonnement, IRIS démarre au plan Gratuit, qui donne déjà des modèles d’IA.</p>
             </div>
             <div class="card">
               <h3>3. Consentements</h3>
@@ -233,9 +234,9 @@
             <li><strong>Abonnement</strong>&nbsp;: votre plan, votre quota du mois, et le champ où saisir une
               clé d’abonnement si vous en avez une.</li>
           </ul>
-          <p class="small muted">Pour une voix française plus naturelle, ajoutez votre clé ElevenLabs dans
-            Paramètres&nbsp;› Voix. Sans clé, IRIS parle avec une voix installée sur Windows&nbsp;; installez
-            une voix française dans les réglages de Windows si la voix par défaut est anglaise.</p>
+          <p class="small muted">La voix française naturelle vient avec le plan Pro. Au plan Gratuit, IRIS parle
+            avec une voix installée sur Windows&nbsp;; installez une voix française dans les réglages de Windows
+            si la voix par défaut est anglaise.</p>
         </li>
       </ol>
     </div>
@@ -254,8 +255,8 @@
         <div class="card">
           <h3>La voix est en anglais</h3>
           <p class="small">C’est la voix Windows de repli. Installez une voix française dans Windows
-            (Heure et langue&nbsp;› Voix), puis choisissez-la dans Paramètres&nbsp;› Voix, ou ajoutez une clé
-            ElevenLabs.</p>
+            (Heure et langue&nbsp;› Voix), puis choisissez-la dans Paramètres&nbsp;› Voix — ou passez au plan
+            Pro, qui apporte la voix naturelle en français.</p>
         </div>
         <div class="card">
           <h3>IRIS dit qu’elle n’a pas le droit d’envoyer quelque chose</h3>
@@ -264,9 +265,9 @@
         </div>
         <div class="card">
           <h3>Le quota du mois est atteint</h3>
-          <p class="small">IRIS le dit et cesse d’envoyer. Vous pouvez attendre le mois suivant, changer de
-            plan, ou brancher votre propre clé OpenRouter&nbsp;: ce que votre clé paie n’est pas compté dans
-            le quota.</p>
+          <p class="small">IRIS le dit et cesse d’envoyer&nbsp;: pas d’échec silencieux, pas de dépassement
+            facturé. Vous pouvez attendre le mois suivant, où le compteur repart à zéro, ou
+            <a href="plans.html">passer à un plan supérieur</a>.</p>
         </div>
       </div>
     </div>
@@ -353,11 +354,12 @@ npm run dist:full</code></pre>
           </svg>
           <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
         </a>
-        <p>Vois. Souviens-toi. Fais.<br>Une IA. Toute ta vie. Rien à taper.</p>
+        <p>Des lunettes qui vous écoutent,<br>sans jamais vous regarder.</p>
       </div>
       <div>
         <h4>Le produit</h4>
         <ul>
+          <li><a href="lunettes.html">Les lunettes VELA</a></li>
           <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
           <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
           <li><a href="plans.html">Plans et prix</a></li>
@@ -383,6 +385,6 @@ npm run dist:full</code></pre>
   </div>
 </footer>
 
-<script src="assets/site.js"></script>
+<script src="assets/site.js?v=3"></script>
 </body>
 </html>

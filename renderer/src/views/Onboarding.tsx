@@ -5,36 +5,49 @@ import { api } from '../lib/api'
 import { useStore } from '../lib/store'
 
 export function Onboarding(): JSX.Element {
-  const { settings, updateSettings, consent, setConsent, refreshAgents, refreshStatus, toast, voice } = useStore()
+  const { settings, updateSettings, consent, setConsent, toast, voice } = useStore()
   const [step, setStep] = useState(0)
   const [name, setName] = useState(settings?.user_name || '')
   const [wake, setWake] = useState(settings?.wake_word || 'Dis-moi Iris')
-  const [key, setKey] = useState('')
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
 
-  const steps = ['Bienvenue', 'OpenRouter', 'Consentement', 'Audio', 'Voix']
+  // Le compte du propriétaire. IRIS exécute des commandes sur cet ordinateur : on ne laisse pas
+  // cet accès ouvert au premier appareil qui connaît l'adresse. Voir backend/iris/comptes.py.
+  const [compte, setCompte] = useState<{ configure: boolean; nom?: string } | null>(null)
+  const [email, setEmail] = useState('')
+  const [mdp, setMdp] = useState('')
+  const [mdp2, setMdp2] = useState('')
+  const [compteErreur, setCompteErreur] = useState<string | null>(null)
+  const [compteOccupe, setCompteOccupe] = useState(false)
+
+  const steps = ['Bienvenue', 'Compte', 'Consentement', 'Audio', 'Voix']
   const [devices, setDevices] = useState<{ devices: string[]; outputs: string[] }>({ devices: [], outputs: [] })
   useEffect(() => {
     api.get('/api/voice/devices').then(setDevices).catch(() => undefined)
+    api.get('/api/compte').then(setCompte).catch(() => setCompte({ configure: false }))
   }, [])
   const isHandsFree = (n: string) => /hands-free|mains libres/i.test(n)
 
-  const connectClaude = async () => {
-    setTesting(true)
-    setTestResult(null)
+  const validerCompte = async () => {
+    setCompteErreur(null)
+    setCompteOccupe(true)
     try {
-      await api.put('/api/agents/openrouter', { active: true, api_key: key.trim() })
-      const res = await api.post('/api/agents/openrouter/test')
-      setTestResult(res.message)
-      await refreshAgents()
-      await refreshStatus()
-      if (res.ok) setKey('')
+      if (compte?.configure) {
+        await api.post('/api/compte/connexion', { mot_de_passe: mdp })
+      } else {
+        if (mdp.trim().length < 8) throw new Error('Le mot de passe doit faire au moins 8 caractères.')
+        if (mdp !== mdp2) throw new Error('Les deux mots de passe ne sont pas identiques.')
+        await api.post('/api/compte', { nouveau: mdp, nom: name })
+        // Le courriel d'achat suffit à activer l'abonnement : aucune clé à recopier.
+        if (email.trim()) await updateSettings({ licence_email: email.trim(), licence_auto: true })
+      }
+      setMdp('')
+      setMdp2('')
+      setStep(2)
     } catch (err) {
-      setTestResult(String((err as Error).message))
+      setCompteErreur(String((err as Error).message))
     } finally {
-      setTesting(false)
+      setCompteOccupe(false)
     }
   }
 
@@ -60,17 +73,43 @@ export function Onboarding(): JSX.Element {
         ) : null}
         {step === 1 ? (
           <>
-            <h3>Connecter OpenRouter</h3>
-            {/* On dit d’abord pourquoi la clé est demandée, avant de nommer le fournisseur. « Coffre du système » : keyring avec repli fichier chiffré (main.py). */}
-            <p className="small muted">IRIS a besoin d’une intelligence pour comprendre vos demandes. Collez votre clé OpenRouter : elle donne accès à des centaines de modèles, gratuits par défaut. La clé est rangée dans le coffre du système et n’est jamais affichée.</p>
-            <label className="field"><span>Clé API OpenRouter</span><input className="input mono" type="password" placeholder="sk-or-v1-…" value={key} onChange={(e) => setKey(e.target.value)} /></label>
-            <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn primary sm" disabled={!key.trim() || testing} onClick={connectClaude}>{testing ? 'Vérification…' : 'Connecter et tester'}</button>
-              <button className="btn ghost sm" onClick={() => window.iris.openExternal('https://openrouter.ai/keys')}>Obtenir une clé ↗</button>
-              {testResult ? <span className="small">{testResult}</span> : null}
+            <h3>{compte?.configure ? 'Connectez-vous' : 'Votre compte'}</h3>
+            {compte?.configure ? (
+              <p className="small muted">Un compte existe déjà sur cet ordinateur{compte.nom ? ` — ${compte.nom}` : ''}. Entrez son mot de passe pour reprendre la main.</p>
+            ) : (
+              <p className="small muted">IRIS ouvre vos applications, tape à votre place et lit votre écran. Ce mot de passe est ce qui protège cet accès quand vous la joignez depuis votre téléphone : sans lui, connaître l’adresse suffirait. Il ne quitte jamais cet ordinateur et n’y est jamais écrit en clair.</p>
+            )}
+            {!compte?.configure ? (
+              <label className="field"><span>Courriel <span className="muted">(facultatif)</span></span>
+                <input className="input" type="email" autoComplete="email" placeholder="vous@exemple.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              </label>
+            ) : null}
+            {!compte?.configure ? (
+              <p className="small muted" style={{ marginTop: -4 }}>Celui de votre achat VELA. Votre abonnement s’activera tout seul, sans clé à recopier.</p>
+            ) : null}
+            <label className="field" style={{ marginTop: 10 }}><span>Mot de passe</span>
+              <input className="input" type="password" autoComplete={compte?.configure ? 'current-password' : 'new-password'}
+                placeholder={compte?.configure ? '' : '8 caractères au minimum'} value={mdp}
+                onChange={(e) => setMdp(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && compte?.configure) validerCompte() }} />
+            </label>
+            {!compte?.configure ? (
+              <label className="field" style={{ marginTop: 10 }}><span>Répétez-le</span>
+                <input className="input" type="password" autoComplete="new-password" value={mdp2}
+                  onChange={(e) => setMdp2(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') validerCompte() }} />
+              </label>
+            ) : null}
+            {compteErreur ? <p className="small" style={{ color: 'var(--danger)' }}>{compteErreur}</p> : null}
+            {compte?.configure ? (
+              <p className="small muted" style={{ marginTop: 12 }}>Oublié ? Il n’est stocké nulle part, donc introuvable. Supprimez <span className="mono">compte.json</span> dans le dossier de données d’IRIS pour repartir de zéro : cela déconnecte aussi tous vos téléphones.</p>
+            ) : null}
+            <div className="actions">
+              <button className="btn" onClick={() => setStep(0)}>Retour</button>
+              <button className="btn primary" disabled={compteOccupe || !mdp.trim()} onClick={validerCompte}>
+                {compteOccupe ? 'Un instant…' : compte?.configure ? 'Se connecter' : 'Créer mon compte'}
+              </button>
             </div>
-            <p className="small muted" style={{ marginTop: 14 }}>Vous pourrez ajouter Claude, GPT, Gemini ou un moteur local plus tard dans Réglages › Moteurs IA.</p>
-            <div className="actions"><button className="btn" onClick={() => setStep(0)}>Retour</button><button className="btn primary" onClick={() => setStep(2)}>Continuer</button></div>
           </>
         ) : null}
         {step === 2 ? (
@@ -112,8 +151,8 @@ export function Onboarding(): JSX.Element {
             <label className="field"><span>Dites-le suivi de votre demande</span><input className="input" value={wake} onChange={(e) => setWake(e.target.value)} /></label>
             <p className="small muted" style={{ marginTop: 10 }}>Exemple : « {wake}, ouvre mon navigateur et mets de la musique ». IRIS répond en moins de 5 secondes et vous pose une question si elle a besoin d’une précision.</p>
             <div className="row between" style={{ padding: '8px 0', borderTop: '1px solid var(--border)', marginTop: 8 }}>
-              <div><div>Reconnaissance vocale hors-ligne</div><div className="small muted">{voice?.model_ready ? 'Modèle installé — tout reste sur l’appareil.' : `Téléchargez le modèle (${voice?.model_info?.size_mb} Mo) pour une écoute 100 % locale.`}</div></div>
-              {voice?.model_ready ? <span className="pill ok">installé</span> : <button className="btn sm" disabled={downloading} onClick={() => { setDownloading(true); api.post('/api/voice/model/download', {}).catch((e) => toast(e.message, 'error')) }}>{downloading ? 'Téléchargement…' : 'Télécharger'}</button>}
+              <div><div>Reconnaissance vocale hors-ligne</div><div className="small muted">{voice?.model_ready ? 'Installée — tout reste sur l’appareil.' : `IRIS l’installe elle-même (${voice?.model_info?.size_mb} Mo). Vous pouvez continuer, elle vous préviendra.`}</div></div>
+              {voice?.model_ready ? <span className="pill ok">installé</span> : <button className="btn sm" disabled={downloading} onClick={() => { setDownloading(true); api.post('/api/voice/model/download', {}).catch((e) => toast(e.message, 'error')) }}>{downloading ? 'En cours…' : 'Relancer'}</button>}
             </div>
             <div className="actions"><button className="btn" onClick={() => setStep(3)}>Retour</button><button className="btn primary" onClick={finish}>Terminer</button></div>
           </>

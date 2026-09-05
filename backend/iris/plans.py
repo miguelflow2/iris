@@ -43,46 +43,70 @@ PLANS: dict[str, dict] = {
         "quota_tts_chars": 0,  # voix Windows uniquement
         "features": {"chat", "pc_control", "routines", "reminders", "register"},
         "tts": "windows",
-        "models": {"fast": "", "reasoning": "", "vision": ""},  # OpenRouter gratuit (réglages de l'utilisateur)
-        "contents": ["Interface vocale continue : contrôle du PC, routines, rappels, mémoire", "Modèles gratuits (OpenRouter), voix Windows, reconnaissance hors-ligne", "Gouvernance et confidentialité complètes (consentements, registre, mode confidentiel)"],
+        "models": {"fast": "", "reasoning": "", "vision": ""},  # modèles gratuits, fournis par le relais VELA
+        "contents": [
+            "Interface vocale continue : contrôle du PC, routines, rappels, mémoire",
+            "Modèles gratuits fournis par VELA, voix Windows, reconnaissance hors-ligne",
+            "Gouvernance et confidentialité complètes (consentements, registre, mode confidentiel)",
+        ],
         "api_cost": 0.0,
     },
-    "essentiel": {
-        "label": "Essentiel",
+    "pro": {
+        "label": "Pro",
         "price": 19.99,
         "quota_requests": 600,
         "quota_tts_chars": 60000,
         "features": {"chat", "pc_control", "routines", "reminders", "register", "elevenlabs", "web"},
         "tts": "elevenlabs",
         "models": {"fast": "google/gemini-2.5-flash", "reasoning": "openai/gpt-5-mini", "vision": "google/gemini-2.5-flash"},
-        "contents": ["Tout Gratuit", "Voix ElevenLabs (français naturel)", "Gemini 2.5 Flash + GPT-5 mini", "Navigation web et comptes enregistrés (Omnivox, portails, outils métier) : fini les bascules d'outils"],
+        "contents": [
+            "Tout Gratuit",
+            "Voix ElevenLabs (français naturel)",
+            "Gemini 2.5 Flash + GPT-5 mini",
+            "Navigation web et comptes enregistrés (Omnivox, portails, outils métier)",
+        ],
         "api_cost": 13.0,
     },
-    "pro": {
-        "label": "Pro",
+    "premium": {
+        "label": "Premium",
         "price": 29.99,
         "quota_requests": 1000,
         "quota_tts_chars": 120000,
         "features": {"chat", "pc_control", "routines", "reminders", "register", "elevenlabs", "web", "screen", "memory", "tasks", "dev"},
         "tts": "elevenlabs",
         "models": {"fast": "google/gemini-2.5-flash", "reasoning": "anthropic/claude-sonnet-5", "vision": "anthropic/claude-sonnet-5"},
-        "contents": ["Tout Essentiel", "Claude Sonnet 5 pour le raisonnement et le code", "Contrôle complet de l'écran (vision, OCR, souris)", "Tâches asynchrones avec rapport vocal (build, tests, recherches)", "Résumé quotidien et mémoire partagée entre agents", "Retour vocal développeur (git, tests, build)"],
+        "contents": [
+            "Tout Pro",
+            "Claude Sonnet 5 pour le raisonnement et le code",
+            "Contrôle complet de l'écran (vision, OCR, souris)",
+            "Tâches asynchrones avec rapport vocal (build, tests, recherches)",
+            "Résumé quotidien et mémoire partagée entre agents",
+            "Retour vocal développeur (git, tests, build)",
+        ],
         "api_cost": 16.0,
     },
-    "ultra": {
-        "label": "Ultra",
+    "entreprise": {
+        "label": "Entreprise",
         "price": 99.99,
         "quota_requests": 1500,
         "quota_tts_chars": 250000,
         "features": {"chat", "pc_control", "routines", "reminders", "register", "elevenlabs", "web", "screen", "memory", "tasks", "dev", "opus", "enterprise", "content"},
         "tts": "elevenlabs",
         "models": {"fast": "anthropic/claude-sonnet-5", "reasoning": "anthropic/claude-opus-5", "vision": "anthropic/claude-opus-5"},
-        "contents": ["Tout Pro", "Claude Opus 5", "Connecteurs d'agents de code et outils PME (à venir)", "Création de contenu POV + montage IA (à venir, caméra des lunettes VELA)", "Politique de gouvernance d'entreprise et export d'audit (à venir)"],
+        "contents": [
+            "Tout Premium",
+            "Claude Opus 5",
+            "Connecteurs d'agents de code et outils PME (à venir)",
+            "Création de contenu POV + montage IA (à venir, caméra des lunettes VELA)",
+            "Politique de gouvernance d'entreprise et export d'audit (à venir)",
+        ],
         "api_cost": 62.0,
     },
 }
-PLAN_ORDER = ["gratuit", "essentiel", "pro", "ultra"]
-BUNDLE = {"label": "Lunettes VELA + 12 mois Pro", "price": 839.0}
+PLAN_ORDER = ["gratuit", "pro", "premium", "entreprise"]
+# Le matériel. L'offre groupée « lunettes + 12 mois » a été retirée : avec un prix affiché
+# pour les lunettes, son montant ne correspondait plus à une addition défendable.
+LUNETTES = {"label": "Lunettes VELA", "price": 250.0}
 
 
 class QuotaExceeded(Exception):
@@ -189,7 +213,7 @@ class PlanService:
                 }
                 for n in PLAN_ORDER
             ],
-            "bundle": {**BUNDLE, "pay_url": payment_link(BUNDLE["price"])},
+            "lunettes": {**LUNETTES, "pay_url": payment_link(LUNETTES["price"])},
         }
 
     BYOK_MODEL_FEATURES = {"web", "screen", "memory", "tasks", "dev"}

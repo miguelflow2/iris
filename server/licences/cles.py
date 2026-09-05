@@ -21,14 +21,14 @@ from datetime import date, timedelta
 log = logging.getLogger("licences.cles")
 
 # Plans vendables. « gratuit » existe dans l'application mais ne se vend pas.
-PLANS = ("gratuit", "essentiel", "pro", "ultra")
-PLANS_PAYANTS = ("essentiel", "pro", "ultra")
+PLANS = ("gratuit", "pro", "premium", "entreprise")
+PLANS_PAYANTS = ("pro", "premium", "entreprise")
 
 ETIQUETTES = {
     "gratuit": "Gratuit",
-    "essentiel": "Essentiel",
+    "premium": "Premium",
     "pro": "Pro",
-    "ultra": "Ultra",
+    "entreprise": "Entreprise",
 }
 
 

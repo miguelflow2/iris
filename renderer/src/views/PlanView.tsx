@@ -127,13 +127,13 @@ export function PlanView(): JSX.Element {
       <div className="card col" style={{ marginTop: 16 }}>
         <div className="row between wrap">
           <div>
-            <strong>{info.bundle.label}</strong>
+            <strong>{info.lunettes.label}</strong>
             <div className="small muted">Les lunettes VELA avec douze mois du plan Pro inclus.</div>
           </div>
           <div className="row">
-            <strong style={{ fontSize: 17 }}>{info.bundle.price.toFixed(2)} $</strong>
-            {info.bundle.pay_url ? (
-              <button className="btn primary" onClick={() => window.iris.openExternal(info.bundle.pay_url)}>
+            <strong style={{ fontSize: 17 }}>{info.lunettes.price.toFixed(2)} $</strong>
+            {info.lunettes.pay_url ? (
+              <button className="btn primary" onClick={() => window.iris.openExternal(info.lunettes.pay_url)}>
                 Acheter les lunettes
               </button>
             ) : null}

@@ -132,3 +132,63 @@ def test_commande_dite_dans_le_meme_souffle_est_rejouee():
     trouve, commande = contains_wake(tout, WAKE, aliases=ALIASES)
     assert trouve, f"mot d'activation absent du rejeu : {tout!r}"
     assert "ouvre" in commande and "navigateur" in commande, f"commande rejouée : {commande!r}"
+
+
+# --------------------------------------------------------------------------- fenêtre de dialogue
+# Demande de Miguel : « je ne veux plus avoir à dire IRIS à chaque fois que je veux donner une
+# commande ». Après une réponse, IRIS reste ouverte un moment ; chaque échange relance le compte ;
+# « arrête » referme la fenêtre et le mot d'activation redevient nécessaire.
+def _preparer(voice, monkeypatch, dits):
+    traites: list[str] = []
+    restants = list(dits)
+    monkeypatch.setattr(voice, "_drain", lambda: None)
+    monkeypatch.setattr(voice, "_set_state", lambda *a, **k: None)
+    monkeypatch.setattr(voice, "_listen_command", lambda *a, **k: restants.pop(0) if restants else "")
+    monkeypatch.setattr(voice, "_process", lambda texte, **k: traites.append(texte))
+    voice._one_shot = False
+    voice._stop.clear()
+    return traites
+
+
+def test_on_enchaine_sans_repeter_le_mot_dactivation(app, monkeypatch):
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({"voice_conversation_seconds": 30})
+    traites = _preparer(voice, monkeypatch, ["ouvre spotify", "monte le son", "arrête"])
+    voice._fenetre_dialogue()
+    assert traites == ["ouvre spotify", "monte le son"], "« arrête » ne doit pas être traité comme une demande"
+
+
+def test_le_nom_redit_pendant_la_fenetre_nest_pas_pris_pour_la_demande(app, monkeypatch):
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({"voice_conversation_seconds": 30})
+    traites = _preparer(voice, monkeypatch, ["dis moi iris ouvre google", "stop"])
+    voice._fenetre_dialogue()
+    assert traites == ["ouvre google"]
+
+
+def test_le_silence_referme_la_fenetre_tout_seul(app, monkeypatch):
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({"voice_conversation_seconds": 1})
+    traites = _preparer(voice, monkeypatch, [])  # personne ne parle
+    voice._fenetre_dialogue()
+    assert traites == []
+
+
+def test_la_fenetre_peut_etre_desactivee(app, monkeypatch):
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({"voice_conversation_seconds": 0})
+    appels: list[str] = []
+    monkeypatch.setattr(voice, "_listen_command", lambda *a, **k: appels.append("écoute") or "")
+    voice._one_shot = False
+    voice._stop.clear()
+    voice._fenetre_dialogue()
+    assert appels == [], "à 0 seconde, IRIS ne doit pas rester ouverte du tout"
+
+
+def test_les_mots_darret_sont_ceux_des_reglages(app):
+    voice = app.state.ctx.voice
+    for ordre in ("arrête", "stop", "chut", "ça suffit", "tais-toi", "ok arrête merci"):
+        assert voice._est_arret(ordre), ordre
+    # Le piège : ces phrases contiennent un mot d'arrêt mais sont des commandes.
+    for commande in ("arrête la musique", "stop le minuteur", "ouvre spotify", ""):
+        assert not voice._est_arret(commande), commande
