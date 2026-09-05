@@ -1,0 +1,27 @@
+# Dépendances du relais IA de VELA (serveur/relais.py).
+#
+# Pourquoi ce fichier existe séparément. Jusqu'ici le relais était lancé avec l'interpréteur de
+# `backend/.venv`, parce que les paquets s'y trouvaient déjà. C'est acceptable pour un essai de
+# cinq minutes, pas pour un service qui doit tourner en permanence : `backend/.venv` est
+# l'environnement de DÉVELOPPEMENT d'IRIS, il est reconstruit, vidé et recréé sans prévenir, et
+# le jour où quelqu'un le refait, le relais s'arrête au milieu de la nuit sans que personne ne
+# comprenne pourquoi. `scripts/installer-relais.ps1` crée donc `serveur/.venv` à partir d'ici.
+#
+# uvicorn est demandé SANS l'extra [standard], contrairement à backend/requirements.txt. Le relais
+# ne sert que du HTTP et du flux SSE (StreamingResponse) : websockets, watchfiles et httptools ne
+# lui servent à rien. Sur un disque déjà presque plein, on n'installe pas ce qu'on n'utilise pas.
+#
+# Versions effectivement vérifiées sur ce poste (Python 3.13, septembre 2026) :
+#   fastapi 0.141.1 · uvicorn 0.52.4 · httpx 0.28.1 · pydantic 2.13.5
+# Les bornes ci-dessous sont volontairement basses, comme dans backend/requirements.txt : ce sont
+# les versions minimales qui possèdent ce que relais.py utilise (lifespan asynccontextmanager,
+# StreamingResponse, pydantic v2).
+
+fastapi>=0.115
+uvicorn>=0.30
+httpx>=0.27
+pydantic>=2.7
+
+# pytest n'est pas listé ici, et c'est volontaire : ce fichier décrit ce qu'il faut pour FAIRE
+# TOURNER le relais, pas pour le tester. Les tests utilisent l'interpréteur du backend
+# (voir README.md, section 8) — un serveur en production n'a aucune raison d'embarquer pytest.

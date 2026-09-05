@@ -12,6 +12,7 @@ import threading
 from collections import deque
 from datetime import datetime, timezone
 
+from . import lunettes_trames
 from .capture import CaptureIndicator
 from .config import Settings
 from .events import EventHub
@@ -335,9 +336,18 @@ class GlassesService:
 
     # ------------------------------------------------------------------ callbacks
     def _on_notify(self, sender, data: bytearray) -> None:
-        packet = {"ts": now_iso(), "uuid": str(getattr(sender, "uuid", sender)), "hex": bytes(data).hex(), "len": len(data)}
+        brut = bytes(data)
+        packet = {"ts": now_iso(), "uuid": str(getattr(sender, "uuid", sender)), "hex": brut.hex(), "len": len(brut)}
         self.packets.append(packet)
         self.hub.publish("glasses.packet", **packet)
+        # Ces lunettes n'exposent aucune caractéristique de batterie standard : la lecture GATT
+        # habituelle renvoie vide, et IRIS affichait « batterie inconnue » en permanence. Le niveau
+        # n'arrive que dans leur trame maison, décodée dans lunettes_trames.py.
+        niveau = lunettes_trames.batterie(brut)
+        if niveau is not None and niveau != self.battery:
+            self.battery = niveau
+            log.info("batterie des lunettes : %s %%", niveau)
+            self._publish()
 
     def _on_disconnect(self, _client) -> None:
         was = self.device
