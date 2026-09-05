@@ -490,6 +490,10 @@ def create_app(
         reminders_task = loop.create_task(ctx.reminders.loop())
         summary_task = loop.create_task(ctx._daily_summary_loop())
         threading.Thread(target=ctx.tts.eleven.prewarm, name="iris-eleven-prewarm", daemon=True).start()
+        # Et le canal Windows : ouvrir le profil mains libres coute jusqu'a huit secondes la
+        # premiere fois. Sans ce prechauffage, ces huit secondes tombent sur le tout premier
+        # << Dis-moi Iris >>, celui qu'on fait devant une salle.
+        ctx.tts.prechauffer()
         from .pc.apps import index as app_index
 
         threading.Thread(target=app_index.build, name="iris-apps-index", daemon=True).start()

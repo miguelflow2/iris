@@ -168,3 +168,54 @@ def test_le_nom_du_peripherique_est_reconnu_sans_egard_a_la_casse(data_dir, sort
     tts, sapi, _hub = _voix(data_dir, sortie=sortie)
     tts._apply_settings()
     assert sapi.AudioOutput.description == MAINS_LIBRES
+
+
+# --------------------------------------------------------------------------- le premier mot
+# Mesure sur les vraies lunettes le 5 septembre 2026 : la meme phrase prend 3,27 s par le canal
+# stereo et 3,90 s par le canal mains libres — mais 8,3 s la toute premiere fois, parce que le
+# casque doit basculer en profil telephone. Sans prechauffage, ces huit secondes tombent sur le
+# tout premier << Dis-moi Iris >>, celui qu'on fait devant une salle.
+def test_le_prechauffage_nest_jamais_prononce():
+    """Une sentinelle, pas une chaine : une chaine finirait un jour dite a voix haute."""
+    from iris.voice.tts import PRECHAUFFAGE
+
+    assert not isinstance(PRECHAUFFAGE, str)
+
+
+def test_le_prechauffage_ne_fait_aucun_bruit(app, monkeypatch):
+    """Volume remis a zero pendant l'ouverture du peripherique, puis restaure."""
+    tts = app.state.ctx.tts
+    volumes = []
+    dits = []
+
+    class FauxMoteur:
+        def getProperty(self, nom):
+            return 0.9 if nom == "volume" else None
+
+        def setProperty(self, nom, valeur):
+            if nom == "volume":
+                volumes.append(valeur)
+
+        def say(self, texte):
+            dits.append(texte)
+
+        def runAndWait(self):
+            pass
+
+    monkeypatch.setattr(tts, "_engine", FauxMoteur())
+    monkeypatch.setattr(tts, "_apply_settings", lambda: None)
+    tts._prechauffer_maintenant()
+
+    assert volumes and volumes[0] == 0.0, "le volume doit tomber a zero avant d'ouvrir"
+    assert volumes[-1] == 0.9, "et etre remis exactement comme il etait"
+    assert len(dits) == 1 and len(dits[0]) <= 2, "une syllabe suffit a ouvrir le peripherique"
+
+
+def test_le_prechauffage_ne_touche_a_rien_quand_elevenlabs_repond(app, monkeypatch):
+    """ElevenLabs a deja sa propre pre-connexion : ce chemin-la ne le concerne pas."""
+    tts = app.state.ctx.tts
+    monkeypatch.setattr(tts, "_use_elevenlabs", lambda: True)
+    mis = []
+    monkeypatch.setattr(tts._queue, "put", lambda x: mis.append(x))
+    tts.prechauffer()
+    assert mis == []

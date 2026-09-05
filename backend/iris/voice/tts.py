@@ -85,6 +85,12 @@ def speakable(text: str, limit: int = 1500, language: str = "fr") -> str:
     return text[:limit]
 
 
+# Passe dans la file d'attente comme une phrase, mais n'en est pas une : elle ouvre le
+# peripherique audio sans qu'on entende rien. Un objet, pas une chaine : une chaine finirait tot ou
+# tard prononcee a voix haute par un chemin qu'on aurait oublie.
+PRECHAUFFAGE = object()
+
+
 class TextToSpeech:
     def __init__(self, settings: Settings, hub: EventHub, enabled: bool = True):
         self.settings = settings
@@ -253,6 +259,42 @@ class TextToSpeech:
             except Exception:
                 pass
 
+    def prechauffer(self) -> None:
+        """Ouvre le canal audio d'avance, pour que la PREMIERE phrase ne soit pas la plus lente.
+
+        Mesure sur les lunettes de Miguel le 5 septembre 2026, la meme phrase a chaque fois :
+
+            sortie stereo         3,27 s | 3,27 s | 3,27 s
+            sortie mains libres   4,25 s | 3,90 s | 3,90 s
+            tout premier passage en mains libres : 8,3 s
+
+        Les huit secondes sont le basculement du casque en profil telephone, paye une seule fois.
+        En regime etabli il ne reste que six dixiemes de seconde par phrase. Mais ce basculement,
+        s'il n'est pas provoque a l'avance, tombe exactement au pire moment : au tout premier
+        << Dis-moi Iris >>, celui qu'on fait devant une salle."""
+        if not self.available or self._use_elevenlabs():
+            return
+        try:
+            self._ensure_started()
+            self._queue.put(PRECHAUFFAGE)
+        except Exception as exc:
+            log.debug("prechauffage de la voix impossible : %s", exc)
+
+    def _prechauffer_maintenant(self) -> None:
+        """Prononce une syllabe a volume nul : le peripherique s'ouvre, personne n'entend rien."""
+        try:
+            self._apply_settings()
+            volume = self._engine.getProperty("volume")
+            self._engine.setProperty("volume", 0.0)
+            debut = time.time()
+            self._engine.say("a")
+            self._engine.runAndWait()
+            self._engine.setProperty("volume", volume)
+            log.info("canal audio prechauffe en %.2f s (%s)", time.time() - debut,
+                     self._sortie_routee or "sortie par defaut")
+        except Exception as exc:
+            log.debug("prechauffage impossible : %s", exc)
+
     def _pick_default_voice(self) -> None:
         if self._engine is None or self.settings.user.tts_voice:
             return
@@ -303,6 +345,10 @@ class TextToSpeech:
             item = self._queue.get()
             if item is None:
                 break
+            if item is PRECHAUFFAGE:
+                # Ni etat << en train de parler >>, ni evenement : rien ne se passe pour l'utilisateur.
+                self._prechauffer_maintenant()
+                continue
             self._idle.clear()
             self.speaking = True
             self.hub.publish("tts.state", speaking=True, text=item[:200])
