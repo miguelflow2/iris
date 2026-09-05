@@ -139,3 +139,82 @@ def test_le_relais_ne_divulgue_jamais_sa_cle(client, relais):
         client.post("/api/appareil", json={"machine": "m", "email": ""}).json()
     )
     assert relais.CLE_AMONT not in corps
+
+
+# --------------------------------------------------------------------------- la voix incluse
+# Les forfaits payants promettent une voix ElevenLabs. Sans ce relais, l'abonné devrait fournir sa
+# propre clé : il paierait une voix qu'il n'entendrait jamais.
+@pytest.fixture()
+def avec_voix(relais, monkeypatch):
+    monkeypatch.setattr(relais, "CLE_VOIX", "cle-voix-factice")
+    return relais
+
+
+def test_le_plan_gratuit_garde_la_voix_de_windows(client, avec_voix):
+    jeton = client.post("/api/appareil", json={"machine": "m", "email": ""}).json()["jeton"]
+    r = client.post("/v1/voix/abcdef", json={"text": "bonjour"}, headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 403
+    assert "Windows" in r.json()["detail"], "le refus doit dire ce dont on dispose, pas seulement ce qu'on refuse"
+
+
+def test_la_voix_est_fermee_sans_jeton(client, avec_voix):
+    assert client.post("/v1/voix/abcdef", json={"text": "bonjour"}).status_code == 401
+
+
+def test_un_identifiant_de_voix_fabrique_est_refuse(client, avec_voix):
+    """Sans ce contrôle, l'identifiant partirait tel quel dans l'URL appelée en amont."""
+    abonne(avec_voix, "pro@exemple.com", "pro")
+    jeton = client.post("/api/appareil", json={"machine": "m", "email": "pro@exemple.com"}).json()["jeton"]
+    entetes = {"Authorization": "Bearer " + jeton}
+    for mauvais in ("../../compte", "abc/def", "a" * 60):
+        r = client.post("/v1/voix/" + mauvais, json={"text": "bonjour"}, headers=entetes)
+        assert r.status_code in (400, 404), mauvais
+
+
+def test_la_cle_de_voix_ne_fuit_jamais(client, avec_voix):
+    abonne(avec_voix, "pro@exemple.com", "pro")
+    jeton = client.post("/api/appareil", json={"machine": "m", "email": "pro@exemple.com"}).json()["jeton"]
+    r = client.post("/v1/voix/abcdef", json={"text": ""}, headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 400 and avec_voix.CLE_VOIX not in r.text
+
+
+# --------------------------------------------------------------------------- une seule vérité
+# Le serveur de licences (dossier server/) reçoit les paiements et décide qui est abonné. Le
+# relais ne doit pas tenir une seconde liste : deux vérités finissent par diverger, et c'est
+# toujours le client qui paie la différence.
+def test_le_plan_vient_du_serveur_de_licences(relais, monkeypatch):
+    monkeypatch.setenv("VELA_LICENCES_URL", "https://licences.exemple.test")
+    abonne(relais, "double@exemple.com", "gratuit")  # le fichier local dit « gratuit »…
+
+    class FausseReponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"plan": "entreprise", "expires": "2099-01-01"}
+
+    class FauxClient:
+        def __init__(self, **_): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def get(self, *_a, **_k): return FausseReponse()
+
+    monkeypatch.setattr(relais.httpx, "Client", FauxClient)
+    relais._CACHE.clear()
+    assert relais.abonnement("double@exemple.com")["plan"] == "entreprise", "le serveur prime sur le fichier"
+
+
+def test_un_serveur_injoignable_ne_coupe_pas_le_service(relais, monkeypatch):
+    """Une panne du serveur de licences ne doit pas rendre IRIS muette pour tout le monde."""
+    monkeypatch.setenv("VELA_LICENCES_URL", "https://licences.exemple.test")
+    abonne(relais, "replis@exemple.com", "premium")
+
+    class FauxClient:
+        def __init__(self, **_): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def get(self, *_a, **_k): raise OSError("réseau coupé")
+
+    monkeypatch.setattr(relais.httpx, "Client", FauxClient)
+    relais._CACHE.clear()
+    assert relais.abonnement("replis@exemple.com")["plan"] == "premium"

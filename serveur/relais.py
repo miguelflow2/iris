@@ -23,6 +23,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -92,12 +93,47 @@ def normaliser(courriel: str) -> str:
 
 
 # --------------------------------------------------------------------------- abonnements
+_CACHE: dict[str, tuple[float, dict]] = {}
+CACHE_SECONDES = 300
+
+
+def _demander_au_serveur_de_licences(courriel: str) -> dict | None:
+    """Interroge le serveur de licences, seule source de vérité sur qui est abonné.
+
+    Le serveur de licences (dossier `server/`) reçoit les webhooks PayPal, crée les abonnements
+    et émet les clés. Tenir ici une seconde liste d'abonnés reviendrait à avoir deux vérités qui
+    finiraient par diverger — et c'est toujours le client qui paierait la différence."""
+    base = os.environ.get("VELA_LICENCES_URL", "").strip().rstrip("/")
+    if not base or not courriel:
+        return None
+    frais = _CACHE.get(courriel)
+    if frais and time.time() - frais[0] < CACHE_SECONDES:
+        return frais[1]
+    try:
+        with httpx.Client(timeout=8) as client:
+            reponse = client.get(base + "/api/licence", params={"email": courriel})
+        etat = {"plan": "gratuit", "expires": ""} if reponse.status_code == 404 else {
+            "plan": reponse.json().get("plan", "gratuit"),
+            "expires": reponse.json().get("expires", ""),
+        }
+    except Exception as exc:
+        log.warning("serveur de licences injoignable (%s) : repli sur le fichier local", exc)
+        return None
+    if etat["plan"] not in MODELES_PAR_PLAN:
+        etat["plan"] = "gratuit"
+    _CACHE[courriel] = (time.time(), etat)
+    return etat
+
+
 def abonnement(courriel: str) -> dict:
     """Le plan rattaché à un courriel. Inconnu, expiré ou vide : c'est le plan gratuit.
 
-    Les abonnés vivent dans un simple fichier JSON, édité à la main après chaque paiement. C'est
-    modeste, et c'est assumé : tant que les versements PayPal sont vérifiés à l'œil, une base de
-    données ne rendrait pas le processus plus automatique."""
+    On demande d'abord au serveur de licences. S'il n'est pas configuré ou ne répond pas, on
+    retombe sur un fichier JSON local, édité à la main — utile pour un dépannage ou un essai,
+    jamais destiné à devenir la référence."""
+    du_serveur = _demander_au_serveur_de_licences(normaliser(courriel))
+    if du_serveur is not None:
+        return du_serveur
     fiche = _lire("abonnes.json").get(normaliser(courriel))
     if not isinstance(fiche, dict):
         return {"plan": "gratuit", "expires": ""}
@@ -227,6 +263,52 @@ def _identifier(autorisation: str | None) -> tuple[str, str]:
         raise HTTPException(401, "Jeton d'appareil invalide ou expiré. Relancez IRIS pour en obtenir un nouveau.")
     etat = abonnement(info["courriel"])
     return (info["courriel"] or "anonyme:" + info["machine"]), etat["plan"]
+
+
+# Les forfaits payants promettent une voix ElevenLabs. Sans ce relais, chaque abonné devrait
+# fournir sa propre clé ElevenLabs : il paierait donc une voix qu'il n'entendrait jamais. La
+# voix fait partie de ce qu'on vend, au même titre que le modèle.
+AMONT_VOIX = "https://api.elevenlabs.io/v1"
+CLE_VOIX = os.environ.get("VELA_ELEVENLABS_KEY", "").strip()
+VOIX_INCLUSE = {"pro", "premium", "entreprise"}  # le plan Gratuit garde la voix de Windows
+
+
+@app.post("/v1/voix/{voice_id}")
+async def voix(voice_id: str, request: Request, authorization: str | None = Header(default=None)):
+    """Fabrique la voix d'IRIS pour un abonné, avec la clé de VELA.
+
+    Le texte transite, il n'est pas conservé. Un plan Gratuit est refusé ici : sa voix est celle
+    de Windows, et le dire franchement vaut mieux que de laisser une requête échouer sans raison."""
+    if not CLE_VOIX:
+        raise HTTPException(503, "Le relais n'a pas de clé de synthèse vocale configurée.")
+    identite, plan = _identifier(authorization)
+    if plan not in VOIX_INCLUSE:
+        raise HTTPException(403, "La voix naturelle fait partie des forfaits payants. Le plan Gratuit utilise la voix de Windows.")
+    if not re.fullmatch(r"[A-Za-z0-9]{1,40}", voice_id):
+        raise HTTPException(400, "Identifiant de voix invalide.")
+    try:
+        charge = await request.json()
+    except Exception:
+        raise HTTPException(400, "Corps de requête illisible.")
+    texte = (charge or {}).get("text") or ""
+    if not texte.strip():
+        raise HTTPException(400, "Rien à prononcer.")
+    consommer(identite + "|voix", plan)
+
+    parametres = str(request.url.query or "output_format=pcm_16000&optimize_streaming_latency=3")
+    entetes = {"xi-api-key": CLE_VOIX, "Content-Type": "application/json"}
+
+    async def flux():
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("POST", f"{AMONT_VOIX}/text-to-speech/{voice_id}/stream?{parametres}",
+                                     json=charge, headers=entetes) as amont:
+                if amont.status_code >= 400:
+                    log.warning("voix amont %s", amont.status_code)
+                    return
+                async for morceau in amont.aiter_bytes():
+                    yield morceau
+
+    return StreamingResponse(flux(), media_type="audio/basic")
 
 
 @app.get("/v1/models")
