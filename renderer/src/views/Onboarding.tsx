@@ -4,9 +4,19 @@ import { Toggle } from '../components/ui'
 import { api } from '../lib/api'
 import { useStore } from '../lib/store'
 
-export function Onboarding(): JSX.Element {
+type Props = {
+  /** Ne demander que le compte, sans le reste de l'accueil.
+   *
+   * Sert aux installations déjà configurées avant que l'étape existe : sans cela, elles ne se
+   * verraient jamais réclamer de mot de passe, et l'accès depuis le téléphone resterait sans
+   * protection sans que personne le sache. */
+  seulementCompte?: boolean
+}
+
+export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element | null {
   const { settings, updateSettings, consent, setConsent, toast, voice } = useStore()
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(seulementCompte ? 1 : 0)
+  const [comptePose, setComptePose] = useState(false)
   const [name, setName] = useState(settings?.user_name || '')
   const [wake, setWake] = useState(settings?.wake_word || 'Dis-moi Iris')
   const [downloading, setDownloading] = useState(false)
@@ -43,6 +53,11 @@ export function Onboarding(): JSX.Element {
       }
       setMdp('')
       setMdp2('')
+      if (seulementCompte) {
+        setComptePose(true)
+        toast('Votre compte est en place.', 'success')
+        return
+      }
       setStep(2)
     } catch (err) {
       setCompteErreur(String((err as Error).message))
@@ -56,10 +71,12 @@ export function Onboarding(): JSX.Element {
     toast(`IRIS est prête. Dites « ${wake} » pour commencer.`, 'success')
   }
 
+  if (seulementCompte && (comptePose || compte === null || compte.configure)) return null
+
   return (
     <div className="overlay">
       <div className="modal" style={{ width: 'min(620px, 92vw)' }}>
-        <div className="steps">{steps.map((s, i) => <span key={s} className={i <= step ? 'done' : ''} />)}</div>
+        {!seulementCompte ? <div className="steps">{steps.map((s, i) => <span key={s} className={i <= step ? 'done' : ''} />)}</div> : null}
         {step === 0 ? (
           <>
             <div className="row" style={{ marginBottom: 12 }}><Voile taille={30} variante="clair" className="voile lueur" titre="VELA" /><h3 style={{ margin: 0 }}>Bienvenue dans IRIS</h3></div>
@@ -105,7 +122,7 @@ export function Onboarding(): JSX.Element {
               <p className="small muted" style={{ marginTop: 12 }}>Oublié ? Il n’est stocké nulle part, donc introuvable. Supprimez <span className="mono">compte.json</span> dans le dossier de données d’IRIS pour repartir de zéro : cela déconnecte aussi tous vos téléphones.</p>
             ) : null}
             <div className="actions">
-              <button className="btn" onClick={() => setStep(0)}>Retour</button>
+              {!seulementCompte ? <button className="btn" onClick={() => setStep(0)}>Retour</button> : null}
               <button className="btn primary" disabled={compteOccupe || !mdp.trim()} onClick={validerCompte}>
                 {compteOccupe ? 'Un instant…' : compte?.configure ? 'Se connecter' : 'Créer mon compte'}
               </button>

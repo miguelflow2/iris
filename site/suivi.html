@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivre ma commande — VELA</title>
+<meta name="description" content="Où en est votre commande de lunettes VELA : les états d’une commande, ce que nous savons à chacun d’eux, et ce que nous ne savons pas encore.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
+<link rel="stylesheet" href="assets/style.css?v=4">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Le logo de VELA : une voile">
+        <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+        <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="index.html">Accueil</a>
+      <a href="lunettes.html">Les lunettes</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="confidentialite.html">Confidentialité</a>
+      <a href="plans.html">Plans</a>
+      <a href="installer.html">Installer</a>
+      <a href="contact.html" class="nav-cta">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <section class="hero">
+    <svg class="hero-voile-bg" viewBox="0 0 120 158" aria-hidden="true" focusable="false">
+      <path class="hv-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+      <path class="hv-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+    </svg>
+    <div class="wrap narrow">
+      <p class="eyebrow">Suivi</p>
+      <h1>Où en est ma commande&nbsp;?</h1>
+      <p class="lead">
+        Cette page dit ce que nous savons de votre commande, et elle dit aussi ce que nous ne savons
+        pas encore. Elle ne vous montrera jamais une date de livraison qu’on aurait devinée.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ l'état du système -->
+  <section class="tight">
+    <div class="wrap narrow">
+      <div class="callout warn" data-suivi-avis>
+        <p><strong>Le suivi automatique n’est pas encore branché.</strong> Aujourd’hui, une commande de
+        lunettes VELA se règle par PayPal, puis <em>une personne</em> vous écrit&nbsp;: c’est là que se
+        décident la monture, l’adresse et la date d’envoi. Cette page est prête à afficher un suivi
+        réel&nbsp;; tant qu’aucune donnée n’y arrive, elle vous renvoie vers nous plutôt que d’inventer
+        une progression.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ le formulaire -->
+  <section>
+    <div class="wrap narrow">
+      <h2>Retrouver une commande</h2>
+      <p class="small muted" style="margin-bottom:20px">
+        Il faut les <strong>deux</strong>&nbsp;: le numéro de commande et l’adresse courriel utilisée au
+        paiement. Le numéro seul ne donne accès à rien — c’est volontaire, pour que personne ne puisse
+        aller regarder la commande de quelqu’un d’autre.
+      </p>
+
+      <form id="form-suivi" novalidate autocomplete="off">
+        <div class="field">
+          <label for="numero">Numéro de commande</label>
+          <input type="text" id="numero" name="numero" placeholder="VELA-XXXXXXXX"
+                 inputmode="text" autocomplete="off" spellcheck="false" required
+                 aria-describedby="err-numero aide-numero">
+          <span class="err-msg" id="err-numero" hidden>Indiquez le numéro de commande reçu par courriel.</span>
+          <span class="small muted" id="aide-numero">Il figure dans le courriel de confirmation que nous
+            vous envoyons après le paiement.</span>
+        </div>
+        <div class="field">
+          <label for="courriel-suivi">Courriel du paiement</label>
+          <input type="email" id="courriel-suivi" name="courriel" placeholder="vous@exemple.ca"
+                 autocomplete="email" required aria-describedby="err-courriel-suivi">
+          <span class="err-msg" id="err-courriel-suivi" hidden>Indiquez l’adresse courriel utilisée pour payer.</span>
+        </div>
+        <p class="actions">
+          <button class="btn primary" type="submit">Voir ma commande</button>
+        </p>
+        <p class="small muted" style="margin-top:10px">
+          Rien de ce que vous tapez ici n’apparaît dans l’adresse de la page&nbsp;: un numéro de commande
+          dans un lien, ce serait déjà une fuite. Cette page ne dépose aucun témoin et ne garde rien.
+        </p>
+        <div id="reponse-suivi" class="form-reponse" role="status" aria-live="polite" hidden></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================================================ les états -->
+  <section class="band">
+    <div class="wrap narrow">
+      <p class="section-label">Le vocabulaire</p>
+      <h2>Les cinq états d’une commande.</h2>
+      <p class="lead" style="margin-bottom:26px">
+        Ceci n’est pas votre commande&nbsp;: c’est la liste de ce qu’une commande peut être, et de ce
+        qu’on sait — ou pas — à chaque étape. Une commande avance dans cet ordre, sans sauter d’étape.
+      </p>
+
+      <ol class="etats">
+        <li>
+          <h3>Paiement reçu</h3>
+          <p>PayPal nous a confirmé votre versement. C’est le seul moment où l’information nous arrive
+            toute seule, sans que personne ait rien à saisir.</p>
+          <p class="ignore"><b>Ce qu’on ignore encore&nbsp;:</b> la date d’expédition, le transporteur,
+            la date de livraison. Aucun des trois n’existe à cet instant.</p>
+        </li>
+        <li>
+          <h3>Commande passée au fournisseur</h3>
+          <p>Vos lunettes ont été commandées auprès de l’atelier qui les fabrique. Cet état est inscrit
+            à la main, le jour où la commande part.</p>
+          <p class="ignore"><b>Ce qu’on ignore encore&nbsp;:</b> quand elles quitteront l’atelier. Le
+            délai dépend du stock et de la monture choisie&nbsp;; il n’est pas garanti d’avance.</p>
+        </li>
+        <li>
+          <h3>Expédiée</h3>
+          <p>Le colis a quitté l’atelier. C’est à ce moment-là, et pas avant, qu’un numéro de suivi
+            transporteur existe. Dès qu’il nous parvient, il apparaît sur cette page et vous recevez
+            un courriel.</p>
+          <p class="ignore"><b>Ce qu’on ignore encore&nbsp;:</b> la date d’arrivée, tant que le
+            transporteur ne l’annonce pas lui-même.</p>
+        </li>
+        <li>
+          <h3>En transit</h3>
+          <p>Le colis circule. À partir d’ici, c’est le transporteur qui sait, pas nous&nbsp;: nous
+            reprenons ce qu’il publie, sans y ajouter de commentaire.</p>
+          <p class="ignore"><b>Ce qu’on ignore&nbsp;:</b> tout ce que le transporteur ne publie pas.
+            Une date estimée n’est affichée que si elle vient de lui.</p>
+        </li>
+        <li>
+          <h3>Livrée</h3>
+          <p>Le colis est arrivé. Si ce n’est pas votre cas alors que la page l’affiche, écrivez-nous
+            le jour même&nbsp;: c’est traité comme un problème, pas comme un dossier clos.</p>
+        </li>
+      </ol>
+
+      <h3 style="margin-top:34px">Et deux voies de traverse</h3>
+      <ol class="etats detours">
+        <li class="detour">
+          <h3>Annulée</h3>
+          <p>La commande a été arrêtée, par vous ou par nous, et le remboursement est traité par
+            PayPal. La page vous dit qui a annulé et à quelle date&nbsp;; le délai de remboursement,
+            lui, appartient à PayPal.</p>
+        </li>
+        <li class="detour">
+          <h3>Problème</h3>
+          <p>Quelque chose ne va pas — paiement inhabituel, adresse incomplète, colis perdu. Cet état
+            ne se résout pas tout seul&nbsp;: il veut dire qu’un humain s’en occupe, et vous recevez
+            un courriel.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============================================================ ce qu'on ne promet pas -->
+  <section>
+    <div class="wrap narrow">
+      <h2>Ce que cette page ne fera jamais</h2>
+      <ul class="check">
+        <li><strong>Afficher une date de livraison inventée.</strong> Tant que le transporteur n’a pas
+          donné la sienne, la ligne dit «&nbsp;inconnue&nbsp;». Une fausse date rassure une journée et
+          fâche la semaine suivante.</li>
+        <li><strong>Afficher une barre de progression décorative.</strong> Ce que vous voyez correspond
+          à un fait daté&nbsp;: un paiement encaissé, un colis remis à un transporteur.</li>
+        <li><strong>Nommer un transporteur avant qu’il y en ait un.</strong> Il est choisi à
+          l’expédition, pas au paiement.</li>
+        <li><strong>Vous laisser voir la commande d’un autre.</strong> Le numéro seul ne suffit pas, et
+          la page ne dit pas non plus si un numéro existe ou non.</li>
+      </ul>
+
+      <div class="grid grid-2" style="margin-top:26px">
+        <div class="card">
+          <h3>Je n’ai pas de numéro de commande</h3>
+          <p class="small">C’est normal si vous venez de payer&nbsp;: il vous est envoyé par courriel.
+            S’il n’arrive pas, écrivez-nous à
+            <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a> avec le reçu de
+            PayPal&nbsp;: il porte tout ce qu’il nous faut pour retrouver le versement.</p>
+        </div>
+        <div class="card">
+          <h3>Quand vais-je recevoir mes lunettes&nbsp;?</h3>
+          <p class="small">Nous ne pouvons pas encore l’annoncer honnêtement, alors nous ne l’annonçons
+            pas. Le délai est convenu par courriel, au cas par cas, et il est confirmé une fois la
+            commande passée à l’atelier.</p>
+        </div>
+        <div class="card">
+          <h3>Puis-je changer mon adresse&nbsp;?</h3>
+          <p class="small">Oui, tant que la commande n’est pas expédiée. Écrivez-nous&nbsp;: l’adresse
+            ne se modifie pas depuis cette page, justement parce qu’elle est accessible sans mot de
+            passe.</p>
+        </div>
+        <div class="card">
+          <h3>Et mon abonnement IRIS&nbsp;?</h3>
+          <p class="small">C’est autre chose. Les lunettes sont un achat unique&nbsp;;
+            <a href="plans.html">l’abonnement</a> est un paiement séparé, qui vous renvoie une clé
+            <span class="mono">IRIS-…</span> par courriel. Cette page-ci ne suit que le matériel.</p>
+        </div>
+      </div>
+
+      <p class="actions" style="margin-top:28px">
+        <a class="btn primary" href="contact.html">Nous écrire</a>
+        <a class="btn" href="lunettes.html">Revenir aux lunettes</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Le logo de VELA : une voile">
+            <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+            <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Des lunettes qui vous écoutent,<br>sans jamais vous regarder.</p>
+      </div>
+      <div>
+        <h4>Le produit</h4>
+        <ul>
+          <li><a href="lunettes.html">Les lunettes VELA</a></li>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Nous joindre</h4>
+        <ul>
+          <li><a href="suivi.html">Suivre ma commande</a></li>
+          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js?v=4"></script>
+</body>
+</html>

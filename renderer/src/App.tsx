@@ -184,6 +184,9 @@ export default function App(): JSX.Element {
       </main>
 
       {settings && !settings.onboarded ? <Onboarding /> : null}
+      {/* Installation antérieure à l'étape « compte » : on la réclame quand même, une fois.
+          Sans cela, l'accès depuis le téléphone resterait ouvert sans mot de passe. */}
+      {settings?.onboarded ? <Onboarding seulementCompte /> : null}
 
       {confirmRequest ? (
         <Modal
