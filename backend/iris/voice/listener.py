@@ -30,6 +30,10 @@ SPEECH_PEAK = 700  # amplitude minimale considérée comme de la parole (sur 327
 WEAK_MIC_PEAK = 1500  # en dessous : le micro capte trop faiblement, on le signale à l'utilisateur
 POLITESSE = {"ok", "okay", "bon", "merci", "svp", "stp"}  # écartés avant de reconnaître un ordre d'arrêt
 CLOUD_TIMEOUT = 4.0  # renfort de reconnaissance cloud : au-delà, on garde la transcription locale
+# Le micro livre un bloc toutes les 0,25 s. Vingt blocs manquants d'affilée, ce n'est plus un
+# ralentissement : le périphérique a disparu (lunettes éteintes, hors de portée, Bluetooth coupé).
+# Cinq secondes laissent aussi passer l'établissement du lien mains libres, qui prend jusqu'à 2 s.
+MICRO_MUET = 5.0
 
 
 def wake_phrases(wake: str, aliases: list[str] | None = None) -> list[str]:
@@ -121,6 +125,85 @@ def contains_wake(text: str, wake: str, threshold: float = 0.78, aliases: list[s
     return True, " ".join(words[best_i + n :])
 
 
+# --------------------------------------------------------------------------- périphériques audio
+def score_hote(nom_hote: str) -> int:
+    """Confiance accordée à un hôte audio de Windows pour OUVRIR un flux (le plus grand gagne).
+
+    Même ordre que la sortie d'ElevenLabs (`elevenlabs.py`, `_output_device`), pour que les deux
+    bouts de la voix choisissent de la même façon : MME et DirectSound passent par le moteur audio
+    de Windows, qui rééchantillonne tout seul et partage le périphérique ; WASAPI impose la
+    fréquence du pilote ; WDM-KS ouvre la broche du noyau, souvent déjà prise par le moteur audio."""
+    api = (nom_hote or "").lower()
+    if "mme" in api:
+        return 3
+    if "directsound" in api:
+        return 2
+    if "wasapi" in api:
+        return 1
+    return 0
+
+
+def choisir_peripherique(devices, hostapis, cherche: str, entree: bool = True) -> int | None:
+    """Index du périphérique dont le nom contient `cherche`, ou None si aucun ne convient.
+
+    Trois règles, dans cet ordre, et chacune vient de l'énumération relevée sur la machine de
+    Miguel le 2026-09-04, où les lunettes « M01 Pro_F444 » apparaissent six fois :
+
+    1. le SENS d'abord : un périphérique sans canal d'entrée n'est jamais un micro, même quand il
+       porte exactement le même nom qu'un micro — « Casque (M01 Pro_F444 Hands-Free » existe sous
+       MME en entrée (index 2) ET en sortie seule (index 5) ;
+    2. un nom exactement égal l'emporte sur un nom qui ne fait que contenir ce qu'on cherche : MME
+       tronque les noms à 31 caractères, c'est cette forme tronquée que l'interface enregistre, et
+       elle est aussi contenue dans le nom complet qu'annonce WASAPI ;
+    3. à égalité, l'hôte le plus tolérant gagne (voir `score_hote`), puis le plus petit index.
+       L'ancien code retenait le premier index rencontré : selon l'ordre d'énumération, cela pouvait
+       tomber sur la broche WDM-KS (index 26) plutôt que sur le micro MME qui marche."""
+    cherche = (cherche or "").strip().lower()
+    if not cherche:
+        return None
+    canal = "max_input_channels" if entree else "max_output_channels"
+    candidats: list[tuple[int, int, int, int]] = []
+    for idx, dev in enumerate(devices or []):
+        nom = (dev.get("name") or "").strip()
+        try:
+            voies = int(dev.get(canal, 0) or 0)
+        except (TypeError, ValueError):
+            voies = 0
+        if voies <= 0 or cherche not in nom.lower():
+            continue
+        try:
+            hote = (hostapis or [])[int(dev.get("hostapi", -1))].get("name") or ""
+        except Exception:
+            hote = ""
+        candidats.append((1 if nom.lower() == cherche else 0, score_hote(hote), -idx, idx))
+    return max(candidats)[-1] if candidats else None
+
+
+def frequence_native(devices, cherche: str) -> float:
+    """Plus basse fréquence annoncée pour un micro dont le nom contient `cherche` (0.0 si aucun).
+
+    Les hôtes ne disent pas la même chose du même casque, et le plus bavard est le moins fiable :
+    mesuré, MME annonce 44100 Hz pour les lunettes « M01 Pro_F444 » là où WASAPI et WDM-KS déclarent
+    16000 Hz — la vraie fréquence du lien mains libres, que le moteur audio de Windows masque en
+    rééchantillonnant. La plus basse des valeurs annoncées est donc la seule qui ne mente pas."""
+    cherche = (cherche or "").strip().lower()
+    if not cherche:
+        return 0.0
+    taux = []
+    for dev in devices or []:
+        try:
+            if int(dev.get("max_input_channels", 0) or 0) <= 0:
+                continue
+            if cherche not in (dev.get("name") or "").lower():
+                continue
+            valeur = float(dev.get("default_samplerate") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if valeur > 0:
+            taux.append(valeur)
+    return min(taux) if taux else 0.0
+
+
 class VoiceListener:
     def __init__(
         self,
@@ -157,6 +240,9 @@ class VoiceListener:
         self.dropped = 0  # blocs audio perdus (le décodage ne suit pas)
         self.level = 0  # niveau du micro (pic récent, 0-32767) pour l'indicateur de Paramètres › Voix
         self.device_name = ""  # micro réellement ouvert
+        self._last_block = 0.0  # heure du dernier bloc reçu du micro : sert à repérer sa disparition
+        self._micro_absent_signale = False  # une seule alerte « micro introuvable » par démarrage d'écoute
+        self._mono_annonce = False  # le compromis mono des lunettes ne s'explique qu'une fois par session
         self._last_peak = 0  # pic de la dernière commande (pour signaler un micro trop faible)
         self._level_sent = 0.0
         self.paused_until = 0.0  # pause temporaire (bouton « Arrêter l'écoute ») : l'écoute reprend automatiquement après
@@ -220,26 +306,41 @@ class VoiceListener:
 
     # ------------------------------------------------------------------ contrôle
     def _narrowband_input(self) -> bool:
-        """Micro en qualité téléphone (profil Bluetooth mains libres, 8 kHz) ?"""
-        wanted = (self.settings.user.audio_input_device or "").lower()
+        """Micro en qualité téléphone (profil Bluetooth mains libres) ?
+
+        Le test qui décide est celui du NOM, et il faut le dire franchement : le second test, sur la
+        fréquence annoncée, ne peut pas être le principal. Mesuré le 2026-09-04, MME annonce
+        44100 Hz pour les lunettes « M01 Pro_F444 » alors que le pilote (WASAPI et WDM-KS, mêmes
+        lunettes) déclare 16000 Hz. Écrit tel quel — `sd.query_devices(idx)["default_samplerate"]`
+        sur le périphérique choisi — ce second test était donc mort. On interroge maintenant tous
+        les hôtes et on retient la plus basse fréquence annoncée (`frequence_native`), ce qui rend
+        au test son utilité : un casque nommé autrement qu'en anglais reste reconnu."""
+        wanted = (self.settings.user.audio_input_device or "").strip().lower()
+        if not wanted:
+            return False
         if "hands-free" in wanted or "mains libres" in wanted or "hfp" in wanted:
             return True
         try:
             import sounddevice as sd
 
-            idx = self._input_device(sd)
-            if idx is not None and sd.query_devices(idx, "input")["default_samplerate"] <= 16000:
-                return True
+            return 0 < frequence_native(sd.query_devices(), wanted) <= 16000
         except Exception:
-            pass
-        return False
+            return False
 
     def _choose_engine(self) -> str:
         pref = self.settings.user.stt_engine
-        if pref == "auto" and self._narrowband_input() and self.consent.is_granted("audio_raw") and not self.settings.user.local_only:
-            log.info("micro bande étroite : reconnaissance cloud privilégiée")
-            return "google"
         if pref in ("auto", "vosk") and self.model_ready():
+            # Le mot d'activation reste TOUJOURS hors ligne, y compris en bande étroite. La règle
+            # d'avant basculait tout le cycle vers Google dès que le micro était en qualité
+            # téléphone et que le consentement « audio brut » avait été donné : c'était l'inverse de
+            # ce qu'il faut. La grammaire restreinte tranche en 0,05 s entre les phrases
+            # d'activation et « [unk] », et c'est justement quand l'audio se dégrade qu'elle est la
+            # plus précieuse ; le nuage, lui, réclame un segment de 6 s plus un aller-retour réseau
+            # — incompatible avec une réponse en moins de 5 s — et envoie le salon en continu, ce
+            # que la docstring de `_cloud_upgrade` promettait justement de ne pas faire.
+            # Le renfort cloud garde sa place, sur la COMMANDE seule : voir `_cloud_upgrade`.
+            if self._narrowband_input():
+                log.info("micro bande étroite (mains libres) : activation hors ligne, renfort cloud réservé à la commande")
             return "vosk"
         if pref == "vosk":
             raise RuntimeError("Modèle de reconnaissance hors-ligne absent : téléchargez-le dans Paramètres › Voix.")
@@ -292,6 +393,10 @@ class VoiceListener:
         self.stopped_by_user = False
         self.paused_until = 0.0
         self._started_at = time.time()
+        # Chaque démarrage a droit à sa propre alerte : si les lunettes sont encore absentes au
+        # redémarrage suivant, il faut le redire, sinon on retombe dans le silence qu'on corrige.
+        self._micro_absent_signale = False
+        self._last_block = 0.0
         self._stop.clear()
         self._ptt.clear()
         self._thread = threading.Thread(target=self._run, name="iris-voice", daemon=True)
@@ -420,7 +525,14 @@ class VoiceListener:
 
     # ------------------------------------------------------------------ boucle audio
     def _resample(self, data: bytes) -> bytes:
-        """Rééchantillonne le PCM 16 bits mono de la fréquence native du micro vers 16 kHz (Vosk)."""
+        """Rééchantillonne le PCM 16 bits mono de la fréquence native du micro vers 16 kHz (Vosk).
+
+        Interpolation linéaire, sans filtre anti-repliement, et c'est suffisant ICI — la mesure le
+        montre. Le lien Bluetooth mains libres borne déjà le contenu sous 8 kHz (mSBC), donc
+        redescendre les 44100 Hz annoncés par MME vers 16000 ne peut replier aucune énergie. Et pour
+        un casque réellement à 8 kHz (le « GT TWS » appairé sur cette machine), c'est une MONTÉE vers
+        16 kHz : aucun filtre n'est requis à la montée, et elle ne recrée évidemment pas la bande
+        4-8 kHz absente — rien ne le peut. numpy suffit, aucune dépendance à ajouter."""
         rate = getattr(self, "_native_rate", stt.SAMPLE_RATE)
         if rate == stt.SAMPLE_RATE or not data:
             return data
@@ -433,6 +545,9 @@ class VoiceListener:
         return np.interp(x_new, x_old, pcm.astype(np.float32)).astype(np.int16).tobytes()
 
     def _callback(self, indata, frames, time_info, status) -> None:  # noqa: D401 - signature sounddevice
+        # Horodaté AVANT la mise en file : une file pleine est un retard de décodage, pas un micro
+        # mort, et confondre les deux couperait l'écoute au pire moment (voir `_micro_perdu`).
+        self._last_block = time.time()
         try:
             self._audio.put_nowait(self._resample(bytes(indata)))
         except queue.Full:
@@ -443,17 +558,80 @@ class VoiceListener:
 
     def _input_device(self, sd) -> int | None:
         """Index du micro choisi (ex. lunettes appairées en casque Bluetooth), sinon None = défaut système."""
-        wanted = (self.settings.user.audio_input_device or "").strip().lower()
-        if not wanted:
+        demande = (self.settings.user.audio_input_device or "").strip()
+        if not demande:
             return None
+        idx = None
         try:
-            for idx, dev in enumerate(sd.query_devices()):
-                if dev.get("max_input_channels", 0) > 0 and wanted in dev["name"].lower():
-                    return idx
-        except Exception:
-            pass
-        log.warning("micro « %s » introuvable, micro par défaut utilisé", wanted)
-        return None
+            idx = choisir_peripherique(sd.query_devices(), sd.query_hostapis(), demande, entree=True)
+        except Exception as exc:
+            log.warning("énumération des micros impossible (%s)", exc)
+        if idx is None:
+            self._signaler_micro_absent(demande)
+        return idx
+
+    def _signaler_micro_absent(self, demande: str) -> None:
+        """Dit dans l'interface que le micro demandé a disparu — une fois par démarrage d'écoute.
+
+        Se rabattre en silence sur le micro par défaut était le pire des comportements : IRIS
+        continuait d'écouter, mais l'ORDINATEUR, pendant que Miguel parlait dans ses lunettes.
+        Aucune erreur nulle part, et l'impression que le mot d'activation ne marche plus.
+        Une fois par démarrage seulement : `_input_device` est appelé deux fois par `start()`
+        (une fois par `_narrowband_input`, une fois par `_run`)."""
+        log.warning("micro « %s » introuvable, micro par défaut utilisé", demande)
+        if self._micro_absent_signale:
+            return
+        self._micro_absent_signale = True
+        self.hub.publish(
+            "voice.warning",
+            text=(f"Le micro « {demande} » n'apparaît plus dans la liste des périphériques : vos "
+                  "lunettes sont peut-être éteintes, hors de portée ou déconnectées. IRIS écoute "
+                  "avec le micro de l'ordinateur en attendant ; rallumez les lunettes, puis "
+                  "relancez l'écoute pour repasser dessus."),
+        )
+
+    def _micro_perdu(self) -> bool:
+        """Le micro s'est-il tu pour de bon ? Si oui, on le dit et on arrête l'écoute proprement.
+
+        Des lunettes qui s'éteignent ne lèvent AUCUNE exception : PortAudio garde le flux « actif »
+        et cesse simplement d'appeler `_callback`. Sans ce garde-fou, IRIS restait en écoute pour
+        toujours devant un micro mort, sans un mot — le plus mauvais des cas, puisque tout paraît
+        normal jusqu'au moment où Miguel dit « Dis-moi Iris » et où rien n'arrive."""
+        if self._stop.is_set() or self._last_block <= 0:
+            return False
+        depuis = time.time() - self._last_block
+        if depuis < MICRO_MUET:
+            return False
+        nom = self.device_name or "micro par défaut"
+        self.error = (
+            f"Le micro « {nom} » ne renvoie plus rien depuis {int(depuis)} secondes. Si ce sont vos "
+            "lunettes : rallumez-les, vérifiez la connexion Bluetooth, puis relancez l'écoute."
+        )
+        log.warning("micro muet depuis %.1f s (%s) : l'écoute s'arrête", depuis, nom)
+        self.hub.publish("voice.warning", text=self.error)
+        # `stopped_by_user` n'est pas tout à fait vrai, mais c'est le drapeau que lit le chien de
+        # garde (`main.py`, `_voice_watchdog`) : sans lui il relancerait l'écoute toutes les 20 s
+        # sur un périphérique mort, en redisant l'alerte à chaque fois. Même usage que le verrou des
+        # lunettes dans `start()`. C'est donc à l'utilisateur de relancer, comme le message le dit.
+        self.stopped_by_user = True
+        self._stop.set()
+        return True
+
+    def _prevenir_mono(self) -> None:
+        """Explique une fois le compromis imposé par la radio Bluetooth, au lieu de le faire subir.
+
+        Le Bluetooth classique ne porte qu'UN lien audio à la fois : dès que le micro mains libres
+        s'ouvre, la sortie stéréo (A2DP) des lunettes cesse d'être rendue et tout passe par le canal
+        voix, en mono. Ce n'est pas un défaut d'IRIS et aucun code ne le contournera ; le taire
+        ferait croire à une panne de son au moment précis où l'écoute démarre."""
+        if self._mono_annonce:
+            return
+        self._mono_annonce = True
+        self.hub.publish(
+            "voice.info",
+            text=("Micro des lunettes actif : pendant l'écoute, le son des lunettes passe en mono voix "
+                  "(profil mains libres Bluetooth). La stéréo revient dès qu'IRIS n'écoute plus."),
+        )
 
     def _drain(self) -> None:
         try:
@@ -475,6 +653,7 @@ class VoiceListener:
         try:
             data = self._audio.get(timeout=timeout)
         except queue.Empty:
+            self._micro_perdu()  # rien dans la file : le micro est-il seulement encore là ?
             return None
         self.level = max(int(self.level * 0.7), self._peak_of(data))
         now = time.time()
@@ -490,6 +669,16 @@ class VoiceListener:
             import sounddevice as sd
 
             device = self._input_device(sd)
+            # Fréquence d'ouverture du flux. Quand un micro est choisi, on prend celle qu'il ANNONCE,
+            # même si elle ment : MME annonce 44100 Hz pour les lunettes, dont le lien mains libres
+            # est réellement à 16000 Hz. Ce qui compte est d'ouvrir au taux que l'hôte attend,
+            # `_resample` ramenant ensuite tout à 16000 Hz pour Vosk — et à 44100 le compte tombe
+            # juste : un bloc de 11025 échantillons redescend à exactement 4000, rapport entier,
+            # aucun résidu qui s'accumulerait de bloc en bloc.
+            # Sans micro choisi on garde 16000 Hz sans rien demander, et c'est VOLONTAIRE : le micro
+            # de l'ordinateur est un vrai micro large bande ; laisser Windows convertir 44100 → 16000
+            # avec son filtre vaut mieux que notre décimation sans filtre, qui replierait les
+            # fricatives au-dessus de 8 kHz dans la bande utile.
             self._native_rate = int(sd.query_devices(device, "input")["default_samplerate"]) if device is not None else stt.SAMPLE_RATE
             if self._native_rate <= 0:
                 self._native_rate = stt.SAMPLE_RATE
@@ -504,12 +693,24 @@ class VoiceListener:
             self.dropped = 0
             log.info("micro %s (%s) à %d Hz (rééchantillonné vers %d Hz)", device if device is not None else "par défaut",
                      self.device_name, self._native_rate, stt.SAMPLE_RATE)
+            # La surveillance du micro part d'ici : le premier bloc doit arriver dans les 0,25 s, et
+            # l'établissement du lien mains libres prend jusqu'à 2 s — MICRO_MUET laisse la marge.
+            self._last_block = time.time()
             stream.start()
         except Exception as exc:
-            self.error = f"Micro indisponible : {exc}"
+            demande = (self.settings.user.audio_input_device or "").strip()
+            if demande:
+                self.error = (f"Le micro « {demande} » n'a pas pu être ouvert ({exc}). Si ce sont vos "
+                              "lunettes : rallumez-les, vérifiez la connexion Bluetooth, puis relancez l'écoute.")
+            else:
+                self.error = f"Micro indisponible : {exc}"
+            # Un « state: off » dans le statut ne se remarque pas ; l'écoute qui ne démarre pas, si.
+            self.hub.publish("voice.warning", text=self.error)
             self._thread = None
             self._set_state("off")
             return
+        if self._narrowband_input():
+            self._prevenir_mono()
         self.capture.set(mic=True, listening=True)
         try:
             if self._one_shot:

@@ -1,5 +1,21 @@
 # Lunettes M01 Pro — ce que le matériel expose réellement
 
+> **Piste close — 5 septembre 2026.** Les gestes sur les lunettes sont **abandonnés**. Décision de
+> Miguel : « tout doit être commandé par la voix ». Ce document reste comme trace de ce qui a été
+> établi sur le protocole, mais la cartographie geste → code n'est plus poursuivie, et les scripts
+> de capture ont été retirés.
+>
+> Ce que la recherche a réellement donné, et qui est **conservé et utilisé** : le format de trame
+> (`bc | commande | longueur | CRC-16/MODBUS | contenu`), décodé dans
+> `backend/iris/lunettes_trames.py` et gardé par `backend/tests/test_lunettes_trames.py`, et la
+> lecture du **niveau de batterie**, que ces lunettes n'exposent par aucun moyen standard.
+>
+> Ce qui a été mesuré et qui clôt la question : dix gestes exécutés dans dix fenêtres nommées, et
+> **zéro trame** pendant chacune. Les cinq trames reçues pendant tout l'exercice étaient des
+> rapports de batterie, tombés entre les gestes. Sur ce canal, ces lunettes n'annoncent pas les
+> gestes — ou plus, dans l'état où elles se trouvent aujourd'hui.
+
+
 Relevé du 2026-09-04, sur l'exemplaire présent, avec `scripts/diagnostic-lunettes.py`
 (strictement en lecture seule : rien n'a été écrit dans les lunettes).
 

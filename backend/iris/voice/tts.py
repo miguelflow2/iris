@@ -100,6 +100,11 @@ class TextToSpeech:
         self.speaking = False
         self._thread: threading.Thread | None = None
         self._start_lock = threading.Lock()
+        # routage de la sortie audio (voir _appliquer_sortie) : mémorisé pour ne pas ré-énumérer
+        # les périphériques à chaque phrase (mesuré : ~70 ms l'énumération SAPI)
+        self._sortie_routee = ""  # nom demandé actuellement appliqué à SAPI ("" = rien d'acquis)
+        self._sortie_assignee = False  # IRIS a-t-elle déjà imposé une sortie à SAPI ?
+        self._sortie_avertie = ""  # nom déjà signalé introuvable (on n'avertit qu'une fois)
         self.eleven = ElevenLabsSpeaker(settings, hub)
         self.eleven.fallback_speak = lambda text: self._speak_windows(text)
 
@@ -124,6 +129,129 @@ class TextToSpeech:
                 self._engine.setProperty("voice", u.tts_voice)
         except Exception as exc:
             log.warning("réglage TTS impossible: %s", exc)
+        # La sortie audio n'est PAS une propriété pyttsx3 (setProperty lève KeyError) : elle se règle
+        # sur l'objet SAPI, juste avant say(). Hors du try ci-dessus pour qu'un réglage de voix raté
+        # ne prive pas Miguel du routage vers ses lunettes.
+        self._appliquer_sortie()
+
+    # ------------------------------------------------------------------ sortie audio (lunettes)
+    def _sapi(self):
+        """Objet COM SAPI caché sous pyttsx3, ou None si ce n'est pas le pilote SAPI5.
+
+        pyttsx3 n'offre aucune API de sortie : setProperty("output_device") lève
+        KeyError « unknown property » (mesuré sur 2.99, la version installée) et say() ne touche
+        jamais AudioOutput. Il faut donc descendre à l'objet privé du pilote — d'où les getattr
+        défensifs : requirements.txt autorise pyttsx3 >= 2.98 et cet attribut n'est pas public.
+        """
+        driver = getattr(getattr(self._engine, "proxy", None), "_driver", None)
+        return getattr(driver, "_tts", None)
+
+    @staticmethod
+    def _jetons_sortie(sapi) -> list:
+        """Sorties audio connues de SAPI. SAPI ne prend pas un nom mais un jeton issu de cette liste."""
+        sorties = sapi.GetAudioOutputs()
+        try:
+            return list(sorties)
+        except TypeError:  # collection COM sans itérateur : on passe par Count/Item
+            return [sorties.Item(i) for i in range(sorties.Count)]
+
+    @staticmethod
+    def _decrire(jeton) -> str:
+        try:
+            return jeton.GetDescription() or ""
+        except Exception:
+            return ""
+
+    def _choisir_sortie(self, jetons: list, voulu: str) -> tuple:
+        """Jeton dont la description contient `voulu` (minuscules), sinon (None, "").
+
+        Le réglage est une correspondance partielle, comme pour le micro : « M01 Pro_F444 » désigne
+        chez Miguel DEUX sorties, « Stereo » (A2DP) et « Hands-Free AG Audio » (HFP). C'est
+        Hands-Free qui gagne. Pourquoi : IRIS écoute « Dis-moi Iris » en permanence, donc le micro
+        mains libres des lunettes est ouvert, et Windows met alors le profil stéréo en veille —
+        parler vers « Stereo » à ce moment-là, c'est parler dans le vide. Hands-Free reste audible
+        dans les deux états, au prix du 8 kHz mono. Une voix moins belle vaut mieux qu'une voix
+        inaudible. C'est aussi ce que vise déjà main.py quand on choisit le micro des lunettes.
+        """
+        repli = None
+        for jeton in jetons:
+            desc = self._decrire(jeton)
+            bas = desc.lower()
+            if voulu not in bas:
+                continue
+            if "hands-free" in bas or "mains libres" in bas:
+                return jeton, desc
+            if repli is None:
+                repli = (jeton, desc)
+        return repli or (None, "")
+
+    def _replier_sur_defaut(self, sapi, jetons: list) -> str:
+        """Ramène la voix sur une sortie encore présente quand la sortie voulue a disparu.
+
+        Ne sert que si IRIS avait déjà imposé les lunettes à SAPI : le jeton assigné pointerait
+        alors sur un périphérique éteint et la phrase serait perdue. Tant qu'IRIS n'a rien assigné,
+        on ne touche à rien — c'est la sortie par défaut de Windows qui parle, et elle est vivante.
+        (Ne jamais assigner None pour « rendre la main » : sonde faite, cela renvoie la voix
+        ailleurs au lieu de rétablir le défaut.)
+        """
+        if not self._sortie_assignee:
+            return ""
+        for jeton in jetons:
+            try:
+                sapi.AudioOutput = jeton
+            except Exception:
+                continue
+            self._sortie_assignee = False  # revenu sur une sortie quelconque : plus rien à défaire
+            return self._decrire(jeton)
+        return ""
+
+    def _appliquer_sortie(self) -> None:
+        """Dirige la voix Windows vers audio_output_device, comme ElevenLabs le fait déjà.
+
+        Sans cela le moteur Windows suit aveuglément le périphérique par défaut du système : quand
+        Miguel choisit le micro de ses lunettes, main.py écrit la sortie mains libres dans les
+        réglages, mais personne ne la lisait sur le chemin pyttsx3 — la voix partait vers le profil
+        que Windows venait justement d'endormir.
+        """
+        voulu = (self.settings.user.audio_output_device or "").strip()
+        if not voulu:
+            # Réglage vide = « sortie par défaut de Windows » : on ne touche à rien.
+            return
+        if voulu.lower() == self._sortie_routee.lower():
+            return  # déjà routé ; ré-énumérer coûterait ~70 ms par phrase pour rien
+        sapi = self._sapi()
+        if sapi is None:
+            return  # pilote non SAPI5 : rien à router, mais surtout rien à casser
+        jetons: list = []
+        try:
+            jetons = self._jetons_sortie(sapi)
+            jeton, desc = self._choisir_sortie(jetons, voulu.lower())
+            if jeton is not None:
+                sapi.AudioOutput = jeton
+                self._sortie_routee = voulu
+                self._sortie_assignee = True
+                self._sortie_avertie = ""
+                log.info("voix Windows dirigée vers « %s »", desc)
+                return
+        except Exception as exc:
+            log.warning("routage de la voix Windows impossible : %s", exc)
+        # Échec : IRIS parle quand même. Les points de terminaison Bluetooth disparaissent puis
+        # reviennent (constaté à une minute d'intervalle), donc on oublie le cache et on réessaiera
+        # à la phrase suivante.
+        self._sortie_routee = ""
+        repli = self._replier_sur_defaut(sapi, jetons)
+        if self._sortie_avertie != voulu:
+            self._sortie_avertie = voulu
+            ou = f" (voix renvoyée vers « {repli} »)" if repli else ""
+            msg = (
+                f"Sortie audio « {voulu} » introuvable — lunettes éteintes ou hors de portée : "
+                f"IRIS parle par le haut-parleur par défaut{ou}."
+            )
+            log.warning(msg)
+            try:
+                self.hub.publish("tts.fallback", reason=msg)
+            except Exception:
+                pass
 
     def _pick_default_voice(self) -> None:
         if self._engine is None or self.settings.user.tts_voice:
@@ -184,6 +312,9 @@ class TextToSpeech:
                 self._engine.runAndWait()
             except Exception as exc:
                 log.warning("erreur TTS: %s", exc)
+                # la phrase a pu échouer parce que la sortie assignée est morte en cours de route
+                # (lunettes éteintes) : on oublie le routage pour le refaire à la phrase suivante
+                self._sortie_routee = ""
             finally:
                 self.speaking = False
                 if self._queue.empty():

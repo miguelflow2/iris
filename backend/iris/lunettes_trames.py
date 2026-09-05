@@ -71,21 +71,6 @@ def decrire(trame: bytes) -> str:
     return mot + ", contenu " + contenu.hex() + " (sens inconnu)"
 
 
-def evenement(trame: bytes) -> dict | None:
-    """Un événement des lunettes autre que la batterie, ou None.
-
-    On ne devine pas ce qu'il veut dire. Tant que personne n'a associé un geste à un contenu, la
-    seule chose honnête est de rapporter le contenu tel quel. C'est aussi ce qui permettra de
-    dresser la table geste par geste : toucher la branche, voir quel contenu arrive."""
-    lu = lire(trame)
-    if not lu or not lu["crc_valide"] or lu["commande"] != 0x73:
-        return None
-    contenu = lu["contenu"]
-    if len(contenu) == 3 and contenu[0] == 0x05:
-        return None  # c'est la batterie, elle a son propre chemin
-    return {"commande": lu["commande"], "contenu": contenu.hex(), "octets": list(contenu)}
-
-
 def batterie(trame: bytes) -> int | None:
     """Le niveau de batterie annoncé par une trame, ou None si elle dit autre chose.
 
