@@ -285,3 +285,70 @@ def test_le_verrou_ne_se_bloque_plus_pour_toujours(app, monkeypatch):
     etat = voice.start()
     assert etat["state"] == "off" and "lunettes" in (etat["error"] or "").lower()
     assert voice.stopped_by_user is False, "le chien de garde doit pouvoir reessayer"
+
+
+# --------------------------------------------------------------------------- le moteur figé au démarrage
+# Bogue du 5 septembre 2026, et il rendait la voix TOTALEMENT inutilisable. Le moteur est choisi une
+# seule fois, dans start(), appelé une seconde apres le lancement — avant que les 41 Mo du modele
+# Vosk soient lus. model_ready() etait alors faux, IRIS se rabattait sur le nuage, et n'y revenait
+# JAMAIS. Releve sur la machine de Miguel : 83 s de retard, 3414 blocs perdus, quatre par seconde en
+# continu, et pas un seul « Dis-moi Iris » entendu de la matinee.
+def test_le_moteur_repasse_en_local_des_que_le_modele_est_pret(app, monkeypatch):
+    voice = app.state.ctx.voice
+    voice.engine = "google"
+    monkeypatch.setattr(voice, "model_ready", lambda: True)
+    app.state.ctx.settings.update({"stt_engine": "auto"})
+
+    voice._reconsiderer_le_moteur()
+    assert voice.engine == "vosk", "le nuage capture 6 s puis attend le reseau : la file deborde"
+
+
+def test_le_choix_explicite_de_lutilisateur_est_respecte(app, monkeypatch):
+    """Quelqu'un qui a demande Google exprès ne doit pas se faire ramener en local sans le vouloir."""
+    voice = app.state.ctx.voice
+    voice.engine = "google"
+    monkeypatch.setattr(voice, "model_ready", lambda: True)
+    app.state.ctx.settings.update({"stt_engine": "google"})
+
+    voice._reconsiderer_le_moteur()
+    assert voice.engine == "google"
+
+
+def test_sans_modele_on_ne_bascule_pas(app, monkeypatch):
+    voice = app.state.ctx.voice
+    voice.engine = "google"
+    monkeypatch.setattr(voice, "model_ready", lambda: False)
+    app.state.ctx.settings.update({"stt_engine": "auto"})
+
+    voice._reconsiderer_le_moteur()
+    assert voice.engine == "google"
+
+
+def test_deja_en_local_ne_coute_rien(app, monkeypatch):
+    """Le controle tourne a chaque tour de boucle : il doit sortir immediatement."""
+    voice = app.state.ctx.voice
+    voice.engine = "vosk"
+    appels = []
+    monkeypatch.setattr(voice, "model_ready", lambda: appels.append(1) or True)
+
+    voice._reconsiderer_le_moteur()
+    assert appels == [], "sortir avant meme d'interroger le modele"
+
+
+def test_une_file_pleine_garde_le_son_le_plus_recent(app):
+    """En jetant l'audio qui ARRIVE, IRIS gardait cent secondes de son perime et restait
+    indefiniment en retard. Pour un mot d'activation, le son d'il y a une minute ne vaut rien."""
+    import queue as _q
+
+    voice = app.state.ctx.voice
+    voice._audio = _q.Queue(maxsize=3)
+    voice._native_rate = 16000
+    for octet in (1, 2, 3):
+        voice._audio.put_nowait(bytes([octet, 0]))
+
+    voice._callback(memoryview(bytes([9, 0])), 1, None, None)
+
+    restant = [voice._audio.get_nowait() for _ in range(voice._audio.qsize())]
+    assert restant[-1] == bytes([9, 0]), "le bloc neuf doit etre entre"
+    assert bytes([1, 0]) not in restant, "le plus vieux doit etre sorti"
+    assert voice.dropped == 1

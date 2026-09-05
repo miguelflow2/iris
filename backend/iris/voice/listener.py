@@ -571,10 +571,21 @@ class VoiceListener:
         try:
             self._audio.put_nowait(self._resample(bytes(indata)))
         except queue.Full:
-            # Le décodage a pris du retard : on perd de l'audio. Silencieux auparavant, donc invisible.
+            # File pleine : on jette le PLUS VIEUX, pas le plus récent.
+            #
+            # C'est l'inverse d'avant, et la différence est tout sauf théorique. En jetant l'audio
+            # qui arrive, IRIS gardait cent secondes de son périmé et restait indéfiniment en
+            # retard : le 5 septembre 2026, elle traitait ce qui avait été dit une minute et demie
+            # plus tôt, et n'a pas entendu un seul « Dis-moi Iris » de la matinée. Pour un mot
+            # d'activation, le son d'il y a une minute ne vaut rien. Celui de maintenant vaut tout.
+            try:
+                self._audio.get_nowait()
+                self._audio.put_nowait(self._resample(bytes(indata)))
+            except (queue.Empty, queue.Full):
+                pass
             self.dropped += 1
             if self.dropped % 40 == 1:
-                log.warning("audio en retard : %d bloc(s) perdu(s), le décodage ne suit pas", self.dropped)
+                log.warning("audio en retard : %d bloc(s) perime(s) jete(s), le decodage ne suit pas", self.dropped)
 
     def _input_device(self, sd) -> int | None:
         """Index du micro choisi (ex. lunettes appairées en casque Bluetooth), sinon None = défaut système."""
@@ -755,6 +766,7 @@ class VoiceListener:
                     self.error = verrou
                     self.hub.publish("voice.glasses_required", text=verrou)
                     break
+                self._reconsiderer_le_moteur()
                 self._wake_cycle()
         except Exception as exc:  # pragma: no cover
             log.exception("boucle vocale interrompue")
@@ -771,6 +783,33 @@ class VoiceListener:
             self._set_state("off")
 
     # ------------------------------------------------------------------ cycles
+    def _reconsiderer_le_moteur(self) -> None:
+        """Repasse au moteur hors ligne dès que le modèle est chargé.
+
+        Bogue constaté le 5 septembre 2026, et il rendait la voix TOTALEMENT inutilisable. Le moteur
+        est choisi une seule fois, dans `start()`, appelé une seconde après le lancement — bien
+        avant que les 41 Mo du modèle Vosk soient lus. À cet instant `model_ready()` est faux, IRIS
+        se rabat sur le nuage, et n'y revenait JAMAIS, même une fois le modèle prêt.
+
+        Les conséquences se lisaient dans l'état : chaque tentative de réveil capturait six secondes
+        puis attendait un aller-retour réseau, pendant que la file d'audio débordait. Relevé sur la
+        machine de Miguel : 83 secondes de retard, 3414 blocs perdus, quatre par seconde en continu,
+        et pas un seul « Dis-moi Iris » entendu de la matinée.
+
+        On regarde donc à chaque tour. C'est une comparaison de deux booléens : ça ne coûte rien."""
+        if self.engine == "vosk":
+            return
+        if self.settings.user.stt_engine not in ("auto", "vosk") or not self.model_ready():
+            return
+        try:
+            nouveau = self._choose_engine()
+        except Exception:
+            return
+        if nouveau == "vosk":
+            self.engine = "vosk"
+            log.info("modèle hors ligne prêt : le mot d'activation repasse en local")
+            self.hub.publish("voice.state", **self.status())
+
     def _wake_cycle(self) -> None:
         """Attend le mot d'activation puis traite la commande."""
         self._set_state("wake")
