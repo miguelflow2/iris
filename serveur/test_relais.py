@@ -218,3 +218,77 @@ def test_un_serveur_injoignable_ne_coupe_pas_le_service(relais, monkeypatch):
     monkeypatch.setattr(relais.httpx, "Client", FauxClient)
     relais._CACHE.clear()
     assert relais.abonnement("replis@exemple.com")["plan"] == "premium"
+
+
+# --------------------------------------------------------------------------- l'argent réellement dépensé
+# La clé qui paie est celle de Miguel, personnellement. Un quota en NOMBRE DE REQUÊTES ne le protège
+# pas : une question courte et une demande avec capture d'écran, mémoire et long historique comptent
+# toutes les deux pour un, alors que la seconde peut coûter cent fois la première.
+def test_le_plafond_de_jetons_arrete_un_abonne(relais):
+    from fastapi import HTTPException
+
+    relais.PLAFONDS_JETONS["gratuit"] = 1000
+    relais.enregistrer_jetons("gourmand@exemple.com", 1200)
+    with pytest.raises(HTTPException) as leve:
+        relais.consommer("gourmand@exemple.com", "gratuit")
+    assert leve.value.status_code == 429
+    assert "onsommation" in leve.value.detail, "le message doit se distinguer du quota de requêtes"
+
+
+def test_les_deux_refus_ne_disent_pas_la_meme_chose(relais):
+    """Dire « quota atteint » à quelqu'un qui en est à sa dixième requête lui ferait croire à une panne."""
+    from fastapi import HTTPException
+
+    relais.QUOTAS["gratuit"] = 1
+    relais.PLAFONDS_JETONS["gratuit"] = 10 ** 9
+    relais.consommer("compteur@exemple.com", "gratuit")
+    with pytest.raises(HTTPException) as leve:
+        relais.consommer("compteur@exemple.com", "gratuit")
+    assert "requêtes" in leve.value.detail
+
+
+def test_le_plafond_global_coupe_tout_le_monde(relais):
+    """Le dernier rempart : celui qui empêche un compte OpenRouter d'être vidé pendant une nuit."""
+    from fastapi import HTTPException
+
+    relais.PLAFOND_GLOBAL = 500
+    relais.enregistrer_jetons("quelquun@exemple.com", 600)
+    with pytest.raises(HTTPException) as leve:
+        relais.consommer("quelquun.dautre@exemple.com", "entreprise")
+    assert leve.value.status_code == 503
+
+
+def test_les_jetons_sannoncent_dans_le_flux(relais):
+    """OpenRouter met la consommation dans le dernier bloc, parce que le client demande include_usage."""
+    saut = chr(10)
+    dernier = 'data: {"choices":[],"usage":{"total_tokens":4321}}' + saut + saut
+    assert relais.jetons_du_flux(dernier.encode()) == 4321
+    milieu = 'data: {"choices":[{"delta":{"content":"bon"}}]}' + saut + saut
+    assert relais.jetons_du_flux(milieu.encode()) == 0, 'un bloc ordinaire ne compte rien'
+    assert relais.jetons_du_flux(('data: pas du json' + saut).encode()) == 0
+    assert relais.jetons_du_flux(('data: [DONE]' + saut).encode()) == 0
+    assert relais.jetons_du_flux(b'') == 0
+
+
+def test_une_reponse_sans_consommation_ne_casse_rien(relais):
+    """Tous les modèles ne renvoient pas d'usage : l'absence ne doit jamais lever."""
+    assert relais.jetons_de(None) == 0
+    assert relais.jetons_de({}) == 0
+    assert relais.jetons_de({"usage": None}) == 0
+    assert relais.jetons_de({"usage": {"total_tokens": "abc"}}) == 0
+    assert relais.jetons_de({"usage": {"total_tokens": 12}}) == 12
+
+
+def test_le_compteur_repart_au_mois_suivant(relais, monkeypatch):
+    relais.enregistrer_jetons("mensuel@exemple.com", 900)
+    monkeypatch.setattr(relais, "_mois", lambda: "2099-12")
+    relais.enregistrer_jetons("mensuel@exemple.com", 5)
+    compteurs = relais._lire("quotas.json")
+    assert compteurs["mensuel@exemple.com|jetons"] == 5, "un nouveau mois efface l'ancien compte"
+
+
+def test_letat_de_sante_dit_ce_qui_protege(client, relais):
+    """Miguel doit pouvoir vérifier d'un coup d'oeil que le rempart est bien en place."""
+    corps = client.get("/sante").json()
+    assert corps["plafond_global"] == relais.PLAFOND_GLOBAL
+    assert "consomme" in corps

@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import time
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -61,6 +62,31 @@ MODELES_PAR_PLAN: dict[str, list[str]] = {
     "entreprise": ["anthropic/claude-opus-5", "anthropic/claude-sonnet-5", "google/gemini-2.5-flash"] + GRATUITS,
 }
 QUOTAS = {"gratuit": 300, "pro": 600, "premium": 1000, "entreprise": 1500}
+
+# Un quota en NOMBRE DE REQUÊTES ne protège pas grand-chose. Une question courte et une demande
+# accompagnée d'une capture d'écran, de la mémoire et d'un long historique comptent toutes les deux
+# pour un : la seconde peut coûter cent fois la première. Comme la clé qui paie est celle de
+# Miguel, il faut aussi compter les jetons.
+#
+# Ces plafonds sont des FILETS, pas des prévisions : personne ne peut deviner la consommation réelle
+# avant d'avoir des clients. Miguel doit les ajuster à partir de sa vraie facture OpenRouter. Le
+# service dit à son démarrage lesquels sont actifs.
+def _plafond(nom: str, defaut: int) -> int:
+    try:
+        return int(os.environ.get(nom, "") or defaut)
+    except ValueError:
+        return defaut
+
+
+PLAFONDS_JETONS = {
+    "gratuit": _plafond("VELA_JETONS_GRATUIT", 2_000_000),
+    "pro": _plafond("VELA_JETONS_PRO", 5_000_000),
+    "premium": _plafond("VELA_JETONS_PREMIUM", 8_000_000),
+    "entreprise": _plafond("VELA_JETONS_ENTREPRISE", 15_000_000),
+}
+# Le dernier rempart : tous abonnés confondus. C'est celui qui empêche un compte OpenRouter d'être
+# vidé pendant une nuit. 0 le désactive, et le service le signale au démarrage.
+PLAFOND_GLOBAL = _plafond("VELA_JETONS_TOTAL", 30_000_000)
 
 _verrou = Lock()
 
@@ -192,20 +218,83 @@ def lire_jeton(jeton: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- quotas
+def _mois() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
 def consommer(identite: str, plan: str) -> tuple[int, int]:
-    """Incrémente le compteur du mois. Lève une 429 quand la limite du plan est franchie."""
+    """Vérifie les deux plafonds du mois, puis compte une requête de plus.
+
+    Deux refus distincts, et il faut qu'ils se distinguent dans le message : dépasser son nombre de
+    requêtes n'a rien à voir avec dépasser sa consommation. Quelqu'un à qui on dit « quota atteint »
+    alors qu'il en est à sa dixième requête du mois croira à une panne."""
     limite = QUOTAS.get(plan, QUOTAS["gratuit"])
-    mois = datetime.now(timezone.utc).strftime("%Y-%m")
+    plafond = PLAFONDS_JETONS.get(plan, PLAFONDS_JETONS["gratuit"])
     with _verrou:
         compteurs = _lire("quotas.json")
-        if compteurs.get("mois") != mois:
-            compteurs = {"mois": mois}
+        if compteurs.get("mois") != _mois():
+            compteurs = {"mois": _mois()}
+
+        jetons = int(compteurs.get(identite + "|jetons", 0))
+        if plafond and jetons >= plafond:
+            raise HTTPException(429, "Consommation mensuelle atteinte pour le plan {}. Elle repart au début du mois prochain.".format(plan))
+        total = int(compteurs.get("tous|jetons", 0))
+        if PLAFOND_GLOBAL and total >= PLAFOND_GLOBAL:
+            log.error("PLAFOND GLOBAL ATTEINT (%s jetons) : le service refuse tout le monde.", total)
+            raise HTTPException(503, "Le service est temporairement indisponible. Réessayez plus tard.")
+
         utilise = int(compteurs.get(identite, 0)) + 1
         if utilise > limite:
             raise HTTPException(429, "Quota mensuel atteint ({} requêtes pour le plan {}).".format(limite, plan))
         compteurs[identite] = utilise
         _ecrire("quotas.json", compteurs)
     return utilise, limite
+
+
+def enregistrer_jetons(identite: str, jetons: int) -> None:
+    """Ajoute les jetons réellement consommés, une fois la réponse rendue.
+
+    On compte après coup, jamais avant : personne ne sait ce que coûtera une réponse tant qu'elle
+    n'est pas écrite. La conséquence assumée est qu'une requête peut dépasser le plafond ; c'est la
+    SUIVANTE qui sera refusée. Un dépassement d'une requête vaut mieux qu'un refus à l'aveugle."""
+    if jetons <= 0:
+        return
+    with _verrou:
+        compteurs = _lire("quotas.json")
+        if compteurs.get("mois") != _mois():
+            compteurs = {"mois": _mois()}
+        compteurs[identite + "|jetons"] = int(compteurs.get(identite + "|jetons", 0)) + jetons
+        compteurs["tous|jetons"] = int(compteurs.get("tous|jetons", 0)) + jetons
+        _ecrire("quotas.json", compteurs)
+
+
+def jetons_de(charge: dict | None) -> int:
+    """Le nombre de jetons annoncé par le service en amont, ou 0 s'il n'en dit rien."""
+    try:
+        return int((charge or {}).get("usage", {}).get("total_tokens") or 0)
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
+def jetons_du_flux(ligne: bytes) -> int:
+    """Les jetons annoncés dans une ligne de flux SSE. OpenRouter les envoie dans le dernier bloc,
+    parce que le client demande stream_options.include_usage."""
+    texte = ligne.decode("utf-8", errors="ignore")
+    if "usage" not in texte:
+        return 0
+    total = 0
+    for morceau in texte.splitlines():
+        morceau = morceau.strip()
+        if not morceau.startswith("data:"):
+            continue
+        corps = morceau[5:].strip()
+        if not corps or corps == "[DONE]":
+            continue
+        try:
+            total = max(total, jetons_de(json.loads(corps)))
+        except ValueError:
+            continue
+    return total
 
 
 def modele_autorise(demande: str, plan: str) -> str:
@@ -215,7 +304,19 @@ def modele_autorise(demande: str, plan: str) -> str:
 
 
 # --------------------------------------------------------------------------- l'application
-app = FastAPI(title="Relais VELA", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def au_demarrage(_app: FastAPI):
+    """Une protection silencieuse n'en est pas une : on dit au démarrage ce qui tient vraiment."""
+    if not PLAFOND_GLOBAL:
+        log.warning("AUCUN plafond global de jetons (VELA_JETONS_TOTAL=0) : rien n'arretera la depense.")
+    else:
+        log.info("plafond global : %s jetons par mois, tous abonnes confondus", PLAFOND_GLOBAL)
+    log.info("plafonds par abonne : %s", PLAFONDS_JETONS)
+    log.info("ces valeurs sont des filets, a ajuster sur la vraie facture OpenRouter")
+    yield
+
+
+app = FastAPI(title="Relais VELA", docs_url=None, redoc_url=None, lifespan=au_demarrage)
 
 
 class Appareil(BaseModel):
@@ -225,7 +326,14 @@ class Appareil(BaseModel):
 
 @app.get("/sante")
 def sante():
-    return {"ok": True, "amont": bool(CLE_AMONT)}
+    compteurs = _lire("quotas.json")
+    return {
+        "ok": True,
+        "amont": bool(CLE_AMONT),
+        "voix": bool(CLE_VOIX),
+        "plafond_global": PLAFOND_GLOBAL,
+        "consomme": int(compteurs.get("tous|jetons", 0)) if compteurs.get("mois") == _mois() else 0,
+    }
 
 
 @app.post("/api/appareil")
@@ -345,7 +453,9 @@ async def completions(request: Request, authorization: str | None = Header(defau
     if not charge.get("stream"):
         async with httpx.AsyncClient(timeout=180) as client:
             reponse = await client.post(AMONT + "/chat/completions", json=charge, headers=entetes)
-        return JSONResponse(reponse.json(), status_code=reponse.status_code)
+        rendu = reponse.json()
+        enregistrer_jetons(identite, jetons_de(rendu))
+        return JSONResponse(rendu, status_code=reponse.status_code)
 
     async def flux():
         async with httpx.AsyncClient(timeout=None) as client:
@@ -356,7 +466,11 @@ async def completions(request: Request, authorization: str | None = Header(defau
                     message = "Le service IA a refusé la demande ({}).".format(amont.status_code)
                     yield ("data: " + json.dumps({"error": {"message": message}}) + "\n\n").encode()
                     return
+                jetons = 0
                 async for morceau in amont.aiter_bytes():
+                    jetons = max(jetons, jetons_du_flux(morceau))
                     yield morceau
+                # Une fois le dernier octet parti : ce que la réponse a réellement coûté.
+                enregistrer_jetons(identite, jetons)
 
     return StreamingResponse(flux(), media_type="text/event-stream")
