@@ -144,10 +144,10 @@ bande passante de votre hébergement.
 Sur `plans.html`, chacun doit ouvrir PayPal **dans un nouvel onglet**, avec le bon montant déjà
 rempli et la devise CAD :
 
-- [ ] S'abonner · 19,99 $ → `paypal.me/irisvela461/19.99CAD`
-- [ ] S'abonner · 29,99 $ → `paypal.me/irisvela461/29.99CAD`
-- [ ] S'abonner · 99,99 $ → `paypal.me/irisvela461/99.99CAD`
-- [ ] Acheter les lunettes · 839 $ → `paypal.me/irisvela461/839.00CAD`
+- [ ] S'abonner · 19,99 $ (Pro) → `paypal.me/irisvela461/19.99CAD`
+- [ ] S'abonner · 29,99 $ (Premium) → `paypal.me/irisvela461/29.99CAD`
+- [ ] S'abonner · 99,99 $ (Entreprise) → `paypal.me/irisvela461/99.99CAD`
+- [ ] Acheter les lunettes · 250 $ → `paypal.me/irisvela461/250.00CAD`
 - [ ] Le lien « S'abonner ou acheter les lunettes » de l'accueil mène bien à la section d'achat.
 - [ ] Le plan Gratuit n'a **aucun** bouton de paiement.
 

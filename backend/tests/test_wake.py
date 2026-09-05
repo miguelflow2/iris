@@ -192,3 +192,50 @@ def test_les_mots_darret_sont_ceux_des_reglages(app):
     # Le piège : ces phrases contiennent un mot d'arrêt mais sont des commandes.
     for commande in ("arrête la musique", "stop le minuteur", "ouvre spotify", ""):
         assert not voice._est_arret(commande), commande
+
+
+# --------------------------------------------------------------------------- le verrou des lunettes
+# Décision commerciale de Miguel : « il faudrait sans faute qu'IRIS marche quand on est connecté
+# avec des lunettes », pour que personne ne se dise que l'application suffit. Le verrou porte sur
+# le pilotage vocal, pas sur le chat écrit.
+def test_sans_lunettes_la_voix_refuse_de_demarrer(app):
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    etat = voice.start()
+    assert etat["state"] == "off"
+    assert "lunettes" in (etat["error"] or "").lower()
+    assert voice.running is False
+
+
+def test_le_message_dit_ce_qui_reste_possible(app):
+    """Un refus sec ferait croire à une panne. Le chat écrit, lui, reste ouvert."""
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    message = voice.lunettes_requises()
+    assert "VELA" in message and "écrit" in message
+
+
+def test_avec_les_lunettes_le_verrou_seffance(app):
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: True
+    assert voice.lunettes_requises() is None
+
+
+def test_lechappatoire_de_demonstration_existe_et_reste_hors_interface(app):
+    """Sur scène, une déconnexion Bluetooth ne doit pas faire taire IRIS."""
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    app.state.ctx.settings.update({"demo_sans_lunettes": True})
+    assert voice.lunettes_requises() is None
+
+    reglages = Path(__file__).resolve().parents[2] / "renderer" / "src" / "views" / "SettingsView.tsx"
+    assert "demo_sans_lunettes" not in reglages.read_text(encoding="utf-8"),         "ce réglage ne doit apparaître dans aucun écran vu par un client"
+
+
+def test_letat_publie_la_raison_du_verrou(app):
+    """L'interface doit pouvoir expliquer le silence plutôt que de laisser croire à un bogue."""
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    assert voice.status()["glasses_required"]
+    voice.glasses_connected = lambda: True
+    assert voice.status()["glasses_required"] is None

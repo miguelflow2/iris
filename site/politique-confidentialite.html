@@ -161,16 +161,35 @@
 
       <h2 id="tiers">5. Les tiers : qui reçoit quoi, et quand</h2>
       <p>
-        IRIS ne s’adresse qu’aux services que vous avez configurés, avec les clés que vous fournissez. Nous
-        ne sommes pas intermédiaires de ces échanges&nbsp;: votre ordinateur parle directement au
-        fournisseur.
+        <strong>VELA est intermédiaire de vos échanges avec l’intelligence artificielle.</strong> C’est la
+        contrepartie directe du fait que vous n’avez aucune clé à fournir&nbsp;: l’accès est compris dans
+        votre forfait, donc il passe par nos serveurs. Il faut le dire clairement plutôt que de le laisser
+        deviner.
+      </p>
+      <p>
+        Ce que le relais fait&nbsp;: il reçoit votre demande, vérifie à quel forfait votre appareil a droit,
+        choisit le modèle correspondant, et transmet. Ce qu’il ne fait pas&nbsp;: <strong>il ne conserve ni
+        vos demandes ni les réponses.</strong> Ce qui reste après le passage, ce sont des compteurs — combien
+        de requêtes ce mois-ci, pour appliquer le quota de votre forfait — et les journaux techniques
+        habituels d’un serveur.
+      </p>
+      <p>
+        Deux façons d’éviter cet intermédiaire, si vous préférez. Configurez votre propre clé dans
+        <span class="mono">Réglages › Moteurs IA</span>&nbsp;: votre ordinateur parle alors directement au
+        fournisseur, sans passer par nous. Ou activez le <strong>mode 100&nbsp;% local</strong>&nbsp;: plus
+        rien ne sort de l’appareil, ni vers nous ni vers personne.
       </p>
       <dl>
+        <dt>VELA — <span class="mono">relais.vela.app</span></dt>
+        <dd>Le relais compris dans votre forfait, utilisé par défaut. Reçoit le texte de vos demandes et,
+          selon vos consentements, les images jointes, les captures d’écran et les extraits de mémoire —
+          puis les transmet à OpenRouter sans les garder. Reçoit aussi un identifiant d’appareil et, si
+          vous l’avez renseigné, le courriel de votre achat, pour reconnaître votre forfait.</dd>
         <dt>OpenRouter — <span class="mono">openrouter.ai</span></dt>
-        <dd>Service par défaut, qui achemine vos demandes vers le modèle choisi. Reçoit le texte de vos
-          demandes, et selon vos consentements, les images jointes, les captures d’écran et les extraits de
-          mémoire. Un en-tête identifie l’application (« IRIS (VELA) »)&nbsp;; il ne contient aucune
-          donnée personnelle.</dd>
+        <dd>Destinataire final des demandes acheminées par notre relais, ou destinataire direct si vous
+          utilisez votre propre clé. Achemine vers le modèle choisi. Reçoit les mêmes catégories de données.
+          Un en-tête identifie l’application (« IRIS (VELA) »)&nbsp;; il ne contient aucune donnée
+          personnelle.</dd>
         <dt>Anthropic, OpenAI, Google — modèles Claude, GPT, Gemini</dt>
         <dd>Uniquement si vous configurez l’un de ces agents directement, avec votre propre clé. Reçoivent
           les mêmes catégories de données que ci-dessus, selon vos consentements.</dd>

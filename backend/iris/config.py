@@ -180,6 +180,16 @@ class UserSettings(BaseModel):
     # Fenêtre de dialogue : après une réponse, IRIS reste ouverte ce nombre de secondes. On enchaîne
     # sans redire son nom, chaque échange relance le compte, « arrête » la referme. 0 = désactivée.
     voice_conversation_seconds: int = 45
+    # Le pilotage vocal exige des lunettes VELA connectées. C'est une décision commerciale
+    # assumée : IRIS est ce qu'il y a DANS les lunettes, et sans elles il ne reste qu'une
+    # application de plus. Le chat écrit, lui, reste ouvert — l'application téléchargée depuis
+    # le site doit pouvoir montrer quelque chose, et des lunettes en charge ne doivent pas
+    # transformer le produit en brique.
+    require_glasses: bool = True
+    # Échappatoire de démonstration, volontairement absente de l'interface : sur scène, une
+    # déconnexion Bluetooth ne doit pas faire taire IRIS. Se modifie dans settings.json ou par
+    # PATCH /api/settings. À ne jamais documenter côté client.
+    demo_sans_lunettes: bool = False
     # confirmation avant d'exécuter une commande : toujours / seulement les commandes dangereuses / jamais
     confirm_commands: Literal["always", "dangerous", "never"] = "dangerous"
     claude_effort: Literal["low", "medium", "high"] = "medium"

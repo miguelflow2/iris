@@ -14,7 +14,7 @@ from .events import EventHub
 DATA_TYPES: dict[str, dict] = {
     "transcript": {
         "label": "Texte de vos demandes",
-        "description": "Ce que vous tapez ou dictez, envoyé à l'IA que vous avez choisie.",
+        "description": "Ce que vous tapez ou dictez, envoyé à l'IA qui répond — par défaut le relais VELA compris dans votre forfait, qui transmet sans conserver.",
     },
     "audio_raw": {
         "label": "Audio brut du micro",

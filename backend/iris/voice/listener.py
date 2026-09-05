@@ -160,8 +160,24 @@ class VoiceListener:
         self._last_peak = 0  # pic de la dernière commande (pour signaler un micro trop faible)
         self._level_sent = 0.0
         self.paused_until = 0.0  # pause temporaire (bouton « Arrêter l'écoute ») : l'écoute reprend automatiquement après
+        # Renseigné par AppContext : dit si des lunettes VELA sont connectées. Absent = pas de vérification.
+        self.glasses_connected: Callable[[], bool] | None = None
 
     # ------------------------------------------------------------------ état
+    def lunettes_requises(self) -> str | None:
+        """Message à afficher si le pilotage vocal est verrouillé faute de lunettes, sinon None.
+
+        La voix est ce qu'on vend avec les lunettes. Sans elles, il resterait une assistante de
+        bureau de plus, et plus aucune raison d'acheter la monture. Le chat écrit reste ouvert :
+        il faut bien que l'application montre quelque chose avant l'achat."""
+        u = self.settings.user
+        if not u.require_glasses or u.demo_sans_lunettes:
+            return None
+        if self.glasses_connected is None or self.glasses_connected():
+            return None
+        return ("Connectez vos lunettes VELA pour parler à IRIS. "
+                "Le chat écrit reste disponible sans elles.")
+
     def model_ready(self) -> bool:
         return stt.model_dir(self.settings.models_dir, self.settings.user.language) is not None
 
@@ -175,6 +191,7 @@ class VoiceListener:
 
     def status(self) -> dict:
         return {
+            "glasses_required": self.lunettes_requises(),
             "state": self.state,
             "engine": self.engine,
             "error": self.error,
@@ -246,6 +263,17 @@ class VoiceListener:
         if self.settings.user.privacy_mode:
             self.error = "Mode confidentiel actif : le micro est coupé. Désactivez-le dans Confidentialité pour écouter."
             self.stopped_by_user = True
+            self._set_state("off")
+            return self.status()
+        # Le verrou des lunettes vient après les réglages de l'utilisateur : quand quelqu'un a lui-même
+        # coupé son micro, la bonne explication est la sienne, pas notre condition commerciale. Il passe
+        # en revanche avant le choix du moteur — inutile de réclamer un modèle vocal à qui n'a pas le
+        # droit de parler.
+        verrou = self.lunettes_requises()
+        if verrou:
+            self.error = verrou
+            self.stopped_by_user = True
+            self.hub.publish("voice.glasses_required", text=verrou)
             self._set_state("off")
             return self.status()
         self.error = None
@@ -487,6 +515,11 @@ class VoiceListener:
             if self._one_shot:
                 self._command_cycle()
             while not self._stop.is_set() and not self._one_shot:
+                verrou = self.lunettes_requises()
+                if verrou:  # lunettes débranchées en cours de route : on rend la main proprement
+                    self.error = verrou
+                    self.hub.publish("voice.glasses_required", text=verrou)
+                    break
                 self._wake_cycle()
         except Exception as exc:  # pragma: no cover
             log.exception("boucle vocale interrompue")

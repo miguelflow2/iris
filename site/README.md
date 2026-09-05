@@ -68,7 +68,7 @@ python -m http.server 8080
 | `lunettes.html` | **Fiche du produit** : hero d'achat, galerie des six photos, contenu de l'envoi, caractéristiques vérifiées, ce que les lunettes changent avec IRIS, les trois étapes de l'achat |
 | `confidentialite.html` | La confidentialité vérifiable expliquée simplement + démonstration interactive du registre chaîné |
 | `fonctionnalites.html` | Tableau complet de ce qu'IRIS sait faire, avec le plan requis, et ce qui n'existe pas encore |
-| `plans.html` | Plans et prix exacts, boutons de paiement PayPal, offre groupée, comportement du quota |
+| `plans.html` | Les **quatre plans** (Gratuit, Pro, Premium, Entreprise), prix exacts, boutons de paiement PayPal, carte des lunettes à 250 $, « l'accès à l'IA est compris », comportement du quota |
 | `installer.html` | Installation pas à pas pour un débutant + section développeurs (commandes réelles du dépôt) |
 | `contact.html` | Courriel, téléphone et formulaire fonctionnel (ouvre le logiciel de courriel du visiteur) |
 | `politique-confidentialite.html` | Ce que le logiciel fait des données, vérifié dans le code : local, chiffrement, consentements, tiers, registre, rétention, droits |
@@ -237,27 +237,50 @@ contact » dans `assets/site.js`, plus les `href` `mailto:` des pages.
 
 Le visiteur doit pouvoir acheter sans chercher. Trois entrées, dans cet ordre :
 
-1. **Le hero de l'accueil** — photo, prix (839 $), bouton « Acheter · 839 $ » qui ouvre PayPal, et
+1. **Le hero de l'accueil** — photo, prix (250 $), bouton « Acheter · 250 $ » qui ouvre PayPal, et
    un second bouton vers la fiche du produit. Le bouton d'achat tient au-dessus de la ligne de
    flottaison à 1440 × 900, à 860 × 900 et à 375 × 812 (vérifié ; à 375 × 667 il affleure le bas).
 2. **`lunettes.html`** — la fiche : galerie, contenu de l'envoi, caractéristiques, et le même bouton
    d'achat répété en tête et à la fin, dans la section « L'achat ».
 3. **Le bas de l'accueil** (`.rappel-achat`) et **`plans.html#acheter`**, pour qui descend jusque-là.
 
-Le parcours annoncé est celui qui existe vraiment, et il est écrit tel quel partout : **PayPal, puis
-un reçu par courriel, puis une clé d'activation par courriel**, et la livraison convenue par courriel
-au cas par cas. Aucun panier, aucun suivi de colis, aucun prélèvement récurrent. Si un jour un vrai
-tunnel de commande existe, c'est ce texte qu'il faudra remplacer — aux trois endroits ci-dessus.
+Le parcours annoncé est celui qui existe vraiment, et il est écrit tel quel partout. **Les lunettes :**
+PayPal, puis un reçu par courriel, puis la livraison convenue par courriel au cas par cas — aucune clé
+n'est due, puisque rien n'est abonné. **L'abonnement, séparément :** PayPal, reçu par courriel, puis une
+clé d'activation par courriel. Aucun panier, aucun suivi de colis, aucun prélèvement récurrent. Si un
+jour un vrai tunnel de commande existe, c'est ce texte qu'il faudra remplacer — aux trois endroits
+ci-dessus.
 
 `plans.html` et les deux pages produit portent quatre liens `paypal.me`, en dur, identiques à ceux
 que l'application construit elle-même (`payment_link()` dans `backend/iris/plans.py`) :
 
 | Bouton | Lien | Où |
 |---|---|---|
-| S'abonner · 19,99 $ | `https://paypal.me/irisvela461/19.99CAD` | `plans.html` |
-| S'abonner · 29,99 $ | `https://paypal.me/irisvela461/29.99CAD` | `plans.html` |
-| S'abonner · 99,99 $ | `https://paypal.me/irisvela461/99.99CAD` | `plans.html` |
-| Acheter · 839 $ | `https://paypal.me/irisvela461/839.00CAD` | `index.html` (× 2), `lunettes.html` (× 2), `plans.html` |
+| S'abonner · 19,99 $ (Pro) | `https://paypal.me/irisvela461/19.99CAD` | `plans.html` |
+| S'abonner · 29,99 $ (Premium) | `https://paypal.me/irisvela461/29.99CAD` | `plans.html` |
+| S'abonner · 99,99 $ (Entreprise) | `https://paypal.me/irisvela461/99.99CAD` | `plans.html` |
+| Acheter · 250 $ (lunettes) | `https://paypal.me/irisvela461/250.00CAD` | `index.html` (× 2), `lunettes.html` (× 2), `plans.html` |
+
+### Les quatre plans, et l'offre groupée qui n'existe plus
+
+Les paliers s'appelaient Gratuit / Essentiel / Pro / Ultra. Ils s'appellent maintenant **Gratuit / Pro /
+Premium / Entreprise**, aux mêmes prix (0, 19,99, 29,99, 99,99 $) : le nom « Pro » a donc **changé de
+palier** — il désigne aujourd'hui l'ancien Essentiel à 19,99 $. Attention en relisant de vieux textes.
+Les noms, les prix, les quotas et le contenu de chaque palier viennent de `PLANS` dans
+`backend/iris/plans.py` et doivent y rester identiques, au mot près : c'est le même argumentaire que
+la vue Abonnement de l'application.
+
+**L'offre groupée « lunettes + 12 mois Pro » à 839 $ a été retirée du site** (septembre 2026), en même
+temps que `LUNETTES = {"price": 250.0}` est apparu dans `plans.py`. Son montant n'était défendable que
+tant que les lunettes n'avaient pas de prix affiché. **Aucun prix de remplacement n'a été calculé** :
+si une offre groupée revient, c'est une décision de Miguel, avec un montant qu'il arrête lui-même.
+
+**L'accès à l'IA est fourni avec l'abonnement**, et le site le dit sur l'accueil, sur `plans.html` et
+sur `fonctionnalites.html` : le client ne crée aucun compte chez un fournisseur d'IA et ne colle aucune
+clé. C'est `serveur/relais.py` qui détient la clé et choisit le modèle selon le plan. Toute page qui
+redemanderait une clé au visiteur contredit ça — c'est pour cette raison que l'étape « Clé OpenRouter »
+de `installer.html` a été remplacée par « Votre compte » (courriel d'achat + mot de passe), conforme à
+`renderer/src/views/Onboarding.tsx`.
 
 Format : `https://paypal.me/<compte>/<montant à deux décimales><devise>`. Tous s'ouvrent dans un
 nouvel onglet avec `rel="noopener noreferrer"`. Le plan Gratuit n'a évidemment aucun bouton.
@@ -291,13 +314,12 @@ Ces points-là ne sont pas des oublis : ce sont des décisions commerciales qui 
 site. Rien n'a été inventé pour les combler, et les pages sont écrites de façon à ne pas mentir en
 attendant.
 
-1. **Le prix des lunettes seules.** Il n'existe pas. Le seul prix connu et payable aujourd'hui est
-   l'offre groupée à **839 $** (lunettes + 12 mois du plan Pro), et c'est ce que les deux pages
-   produit annoncent. `docs/finance/build_plan_financier.py` contient bien une ligne « Lunettes
-   seules », mais c'est une **hypothèse de tableur**, pas un prix arrêté, et le coût de revient qui
-   la sous-tend porte sur un modèle à caméra qui n'est pas celui qu'on vend. Tant que le prix n'est
-   pas fixé, **ne pas afficher de montant « lunettes seules »** : il faudrait un quatrième lien
-   `paypal.me` et une décision sur ce que devient l'abonnement dans ce cas.
+1. **Une éventuelle offre groupée.** Le prix des lunettes est fixé : **250 $**, seules. L'ancienne offre
+   « lunettes + 12 mois Pro » à 839 $ a donc été retirée du parcours d'achat, faute d'arithmétique
+   défendable. Si Miguel veut de nouveau vendre matériel et abonnement ensemble, c'est **à lui** de
+   fixer le montant et la durée : rien n'a été recalculé ici, et aucun rabais n'a été inventé. Il
+   faudrait alors un cinquième lien `paypal.me`, une ligne dans `plans.py` et le texte des trois
+   entrées du parcours d'achat.
 2. **Le contenu exact de la boîte.** `lunettes.html` liste la monture, l'étui de charge avec son
    câble et l'étui rigide de rangement — c'est ce que **montrent les photos**, et la page dit
    explicitement que le contenu exact est confirmé par courriel avant l'expédition. Confirmer ce qui
@@ -314,26 +336,47 @@ attendant.
 
 ## Ce qui reste à faire avant publication
 
-1. **Héberger l'installeur** — voir la section `telechargement/` ci-dessus, et `DEPLOIEMENT.md`.
-2. **Remplir l'encadré des mentions légales** puis le supprimer, et faire relire les deux pages
+1. **⚠ La politique de confidentialité contredit maintenant le relais.** `politique-confidentialite.html`,
+   section 5, dit : « IRIS ne s'adresse qu'aux services que vous avez configurés, avec les clés que vous
+   fournissez. **Nous ne sommes pas intermédiaires de ces échanges** : votre ordinateur parle directement
+   au fournisseur. » Ce n'est plus vrai : `relay_server = "https://relais.vela.app"` est la valeur par
+   défaut de `backend/iris/config.py`, et `serveur/relais.py` reçoit les demandes, choisit le modèle selon
+   l'abonnement et les transmet avec **la clé de VELA**. VELA est donc bien intermédiaire. Le relais dit
+   ne conserver aucune conversation (« il transmet, il ne garde pas », seuls les compteurs restent) — c'est
+   cela qu'il faut écrire, et le faire relire avant la première vente. Les pages légales n'ont
+   volontairement pas été retouchées ici : c'est une décision juridique, pas rédactionnelle.
+2. **Héberger l'installeur** — voir la section `telechargement/` ci-dessus, et `DEPLOIEMENT.md`.
+3. **Remplir l'encadré des mentions légales** puis le supprimer, et faire relire les deux pages
    légales par un juriste avant la première vente.
-3. **Adresse du site** — `robots.txt` et `sitemap.xml` contiennent `https://vela-iris.netlify.app` :
+4. **Adresse du site** — `robots.txt` et `sitemap.xml` contiennent `https://vela-iris.netlify.app` :
    à remplacer par l'adresse retenue.
-4. **Taxes** — `plans.html` indique « Prix en dollars canadiens, taxes en sus ». Confirmer le régime de
+5. **Taxes** — `plans.html` indique « Prix en dollars canadiens, taxes en sus ». Confirmer le régime de
    taxes applicable (TPS/TVQ) avant d'encaisser un premier paiement, et le cas échéant afficher les
    montants toutes taxes comprises.
-5. **Renouvellement automatique** — aujourd'hui le renouvellement est manuel, dit tel quel sur le site.
+6. **Renouvellement automatique** — aujourd'hui le renouvellement est manuel, dit tel quel sur le site.
    Un compte PayPal Business avec abonnements, ou Stripe, permettrait de l'automatiser.
-6. **Signature de code** — tant que l'installeur n'est pas signé, Windows affiche un avertissement
+7. **Signature de code** — tant que l'installeur n'est pas signé, Windows affiche un avertissement
    SmartScreen. C'est expliqué au visiteur dans `installer.html`, étape 2 ; ce paragraphe pourra être
    retiré une fois le certificat en place.
-7. **Versions macOS et Linux** — les cartes de la page Installer disent « en préparation » et
+8. **Versions macOS et Linux** — les cartes de la page Installer disent « en préparation » et
    recueillent les courriels intéressés. À remplacer par un vrai bouton le jour où ces versions
    existent.
-8. **Droits sur les photos du produit** — les six images de `assets/photos/` sont celles du fabricant
+9. **Droits sur les photos du produit** — les six images de `assets/photos/` sont celles du fabricant
    du matériel, pas les nôtres. Obtenir son **accord écrit** pour l'usage commercial, ou faire
    photographier les lunettes par VELA et remplacer les fichiers, **avant toute campagne ou publicité**.
    Voir la section « Les photos du produit » ci-dessus.
+10. **La voix ElevenLabs n'est pas encore fournie comme les modèles le sont.** Le site promet, dès le
+    plan Pro, « la voix naturelle ElevenLabs » — et c'est bien ce que dit `plans.py`. Mais
+    `backend/iris/voice/elevenlabs.py` lit toujours la clé dans `ELEVENLABS_API_KEY`, sur la machine du
+    client, sans passer par le relais. Tant que VELA ne livre pas cette clé avec l'application, un abonné
+    Pro paie une voix qu'il n'entendra pas : IRIS retombera sur la voix de Windows. À régler dans le code,
+    pas sur le site.
+11. **« Comment on s'abonne » décrit encore le parcours manuel** (PayPal → reçu par courriel → clé
+    `IRIS-…` à coller), ce qui reste exact aujourd'hui : `server/README.md` rappelle que sans compte
+    PayPal Business, aucun webhook n'arrive. Mais `renderer/src/views/Onboarding.tsx` annonce déjà au
+    client que « votre abonnement s'activera tout seul, sans clé à recopier », et `backend/iris/licence.py`
+    sait aller chercher la clé. **Le jour où le serveur de licences est en ligne, ce texte devient faux** —
+    il faudra réécrire les trois étapes de `plans.html#acheter`.
 
 ## Publier
 
@@ -362,7 +405,8 @@ sous-dossier.
 - **Aucune caractéristique matérielle non mesurée par VELA.** Une ligne vide qui dit « non mesuré »
   vaut mieux qu'un chiffre recopié d'une fiche commerciale. C'est la même règle que le registre
   d'IRIS : rien qui ne se vérifie.
-- Aucun prix inventé. Le seul prix des lunettes est l'offre groupée à 839 $.
+- Aucun prix inventé. Les lunettes valent **250 $**, seules ; les quatre abonnements valent 0, 19,99,
+  29,99 et 99,99 $ par mois. Il n'existe aucune offre groupée et aucun rabais.
 - Aucun chiffre, témoignage, logo de client ou récompense inventé.
 - Les prix et quotas viennent de `backend/iris/plans.py` et de `docs/PLANS.md` : si le code change,
   mettre `plans.html` à jour.

@@ -87,6 +87,8 @@ class AppContext:
         self.tasks = TaskService(self.db, self.crypto, self.hub, self.chat, announce=self._announce)
         self.voice = VoiceListener(self.settings, self.hub, self.consent, self.capture, self.tts, self._voice_command)
         self.glasses = GlassesService(self.settings, self.hub, self.capture)
+        # Le verrou du pilotage vocal a besoin de savoir si les lunettes sont là.
+        self.voice.glasses_connected = lambda: self.glasses.connected
         self.routines = RoutineService(self.db, self.hub)
         self.reminders = ReminderService(self.db, self.hub, announce=self._announce)
         self.chat.routines = self.routines
