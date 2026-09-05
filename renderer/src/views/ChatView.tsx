@@ -112,7 +112,8 @@ const STYLE_EXEMPLE: React.CSSProperties = {
 }
 
 export function ChatView(): JSX.Element {
-  const { agents, settings, toast, voice, ttsSpeaking, consent, setView, micLevel, updateSettings } = useStore()
+  const { agents, settings, status, toast, voice, ttsSpeaking, consent, setView, micLevel, updateSettings } = useStore()
+  const plan = status?.plan
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -655,13 +656,10 @@ export function ChatView(): JSX.Element {
             </>
           ) : null}
           <div className="title">{showVoiceConv ? 'Échanges vocaux' : active?.title || 'Nouvelle conversation'}</div>
-          <select className="select" style={{ width: 232, flex: 'none' }} value={agentChoice} onChange={(e) => { setAgentChoice(e.target.value); if (activeId && !showVoiceConv) api.patch(`/api/conversations/${activeId}`, { agent: e.target.value }) }}>
-            <option value="auto">IRIS choisit l’IA (recommandé)</option>
-            {agents.map((a) => (
-              <option key={a.name} value={a.name} disabled={!a.ready}>{a.label}{a.ready ? '' : ' (à configurer)'}</option>
-            ))}
-          </select>
-          {readyAgents.length === 0 ? <button className="btn sm" onClick={() => setView('agents')}>Connecter une IA</button> : null}
+          {/* Aucun sélecteur de modèle : le forfait décide quelle IA répond, et le relais VELA
+              l'applique. Choisir entre des noms de modèles n'a jamais aidé personne à formuler
+              sa demande. On affiche seulement ce à quoi le forfait donne droit. */}
+          {plan ? <span className="pill" title={`Le modèle est choisi selon votre forfait ${plan.label}.`}>{plan.label}</span> : null}
           {showVoiceConv && activeId ? <button className="btn ghost sm" title="Efface toutes vos commandes vocales passées. Sans effet sur vos conversations écrites." onClick={async () => { if (window.confirm('Effacer tout l’historique de vos commandes vocales ?')) { await api.delete(`/api/conversations/${activeId}`); openVoiceConversation() } }}>Vider l’historique</button> : null}
         </div>
 

@@ -44,6 +44,7 @@ class WebAgent:
         self._pw = None
         self._ctx = None
         self._page = None
+        self._visible = False  # fenêtre affichée ? (voir _browser)
         self.error: str | None = None
         self.last_url = ""
 
@@ -70,8 +71,16 @@ class WebAgent:
             raise value
         return value
 
-    def _browser(self):
-        """Contexte Chrome persistant (cookies et sessions conservés), fenêtre visible."""
+    def _browser(self, visible: bool = False):
+        """Contexte Chrome persistant : cookies et sessions conservés d'une fois sur l'autre.
+
+        Invisible par défaut. Quand IRIS va chercher une information, personne n'a envie de voir
+        une fenêtre s'ouvrir et défiler : on veut la réponse. La fenêtre ne s'affiche que pour une
+        connexion à un compte, parce qu'il faut alors pouvoir reprendre la main — un captcha, une
+        double authentification. Changer de mode referme le contexte : Chrome ne partage pas un
+        même profil entre deux instances."""
+        if self._ctx is not None and self._visible != visible:
+            self.close()
         if self._ctx is not None:
             try:
                 if self._page is None or self._page.is_closed():
@@ -87,7 +96,7 @@ class WebAgent:
         last_exc: Exception | None = None
         for channel in ("chrome", "msedge", None):
             try:
-                kwargs = dict(headless=False, viewport={"width": 1280, "height": 860}, args=["--disable-blink-features=AutomationControlled"])
+                kwargs = dict(headless=not visible, viewport={"width": 1280, "height": 860}, args=["--disable-blink-features=AutomationControlled"])
                 if channel:
                     kwargs["channel"] = channel
                 self._ctx = self._pw.chromium.launch_persistent_context(str(self.profile_dir), **kwargs)
@@ -100,12 +109,28 @@ class WebAgent:
         pages = self._ctx.pages
         self._page = pages[0] if pages else self._ctx.new_page()
         self._page.set_default_timeout(15000)
+        self._visible = visible
         return self._page
 
     # ------------------------------------------------------------------ opérations
     @staticmethod
     def _clean(text: str) -> str:
         return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", text or "")).strip()
+
+    def search(self, query: str, max_chars: int = 4000) -> dict:
+        """Cherche sur le web et rend le texte des résultats. Aucune fenêtre ne s'ouvre.
+
+        Personne n'a envie de voir défiler les recherches d'IRIS : on veut la réponse. Le
+        navigateur travaille en arrière-plan, et seul le résultat remonte."""
+        from urllib.parse import quote_plus
+
+        def job():
+            page = self._browser()
+            page.goto("https://duckduckgo.com/html/?q=" + quote_plus(query), wait_until="domcontentloaded")
+            page.wait_for_timeout(600)
+            return {"query": query, "url": page.url, "text": self._clean(page.inner_text("body"))[:max_chars]}
+
+        return self._run(job)
 
     def open(self, url: str) -> dict:
         url = (url or "").strip()
@@ -270,7 +295,9 @@ class WebAgent:
         profile = next((p for p in SITE_PROFILES.values() if p["match"] in url.lower() or p["match"] in key.lower()), None)
 
         def job():
-            page = self._browser()
+            # Connexion à un compte : la fenêtre s'affiche, l'utilisateur doit pouvoir reprendre
+            # la main sur un captcha ou une double authentification.
+            page = self._browser(visible=True)
             page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(800)
             if profile and profile["logged_in"](page.url):

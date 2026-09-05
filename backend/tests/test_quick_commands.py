@@ -137,3 +137,41 @@ def test_les_cas_simples_restent_instantanes(phrase, attendu):
     """Le filet local garde son intérêt : ces demandes-là n'ont pas besoin d'un modèle."""
     cmd = match(phrase, app_resolver=resolveur)
     assert cmd is not None and cmd.tool == attendu
+
+
+# --------------------------------------------------------------------------- l'heure ailleurs
+# Constat réel : « quelle heure est-il en Chine ? » renvoyait l'heure de Trois-Rivières. La
+# reconnaissance locale voyait « quelle heure » et s'arrêtait là. Une réponse fausse dite avec
+# assurance est pire qu'une absence de réponse.
+@pytest.mark.parametrize(
+    "phrase, zone",
+    [
+        ("quelle heure est il en chine", "Asia/Shanghai"),
+        ("quelle heure est-il à Tokyo ?", "Asia/Tokyo"),
+        ("il est quelle heure à Paris", "Europe/Paris"),
+        ("quelle heure est il au maroc", "Africa/Casablanca"),
+        ("quelle heure est il en afrique du sud", "Africa/Johannesburg"),
+    ],
+)
+def test_lheure_dun_autre_pays_est_juste(phrase, zone):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    cmd = match(phrase)
+    assert cmd is not None and cmd.kind == "heure"
+    attendu = datetime.now(ZoneInfo(zone))
+    assert str(attendu.hour) in cmd.reply, f"{phrase} -> {cmd.reply} (attendu {attendu.hour} h)"
+
+
+@pytest.mark.parametrize("phrase", ["quelle heure est il au burkina faso", "quelle heure est il a kuala lumpur",
+                                    "quel jour on est en chine"])
+def test_un_lieu_inconnu_part_au_modele_plutot_que_de_mentir(phrase):
+    """Ne pas savoir est acceptable. Servir l'heure d'ici sous un autre nom ne l'est pas."""
+    assert match(phrase) is None
+
+
+@pytest.mark.parametrize("phrase", ["quelle heure est il", "il est quelle heure a peu pres",
+                                    "il est quelle heure a present"])
+def test_sans_lieu_cest_bien_lheure_dici(phrase):
+    cmd = match(phrase, now=MIDI)
+    assert cmd is not None and "12 heures 53" in cmd.reply

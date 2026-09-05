@@ -230,3 +230,40 @@ def test_la_consigne_de_pilotage_interdit_le_clic_a_laveugle():
     assert "take_screenshot" in CONSIGNE_PILOTAGE and "VÉRIFIER" in CONSIGNE_PILOTAGE
     assert "jamais au hasard" in CONSIGNE_PILOTAGE
     assert "recherche sur le web" in CONSIGNE_PILOTAGE, "sa bibliothèque n'est pas sur le web"
+
+
+# --------------------------------------------------------------------------- accès au web
+# Constat réel : « quelle heure est-il en Chine ? » ne déclenchait aucun outil web, parce que les
+# outils n'étaient offerts que si la demande contenait « site », « portail », « omnivox »… IRIS
+# répondait donc de mémoire, et se trompait. Demande de Miguel : « elle doit être connectée à
+# internet, elle doit avoir accès ».
+def test_la_recherche_web_fait_partie_des_outils():
+    from types import SimpleNamespace
+
+    from iris.tools import WEB_TOOLS, tool_specs
+
+    noms = {s.name for s in tool_specs(SimpleNamespace(create_task=None))}
+    assert "web_search" in noms, "IRIS doit pouvoir chercher elle-même"
+    assert "web_search" in WEB_TOOLS
+
+
+def test_le_mode_local_retire_bien_le_web():
+    """« Rien ne sort de cet ordinateur » doit rester vrai, y compris pour une recherche."""
+    from types import SimpleNamespace
+
+    from iris.tools import tool_specs
+
+    noms = {s.name for s in tool_specs(SimpleNamespace(create_task=None), web=False)}
+    assert not any(n.startswith("web_") for n in noms)
+
+
+def test_le_navigateur_travaille_sans_se_montrer():
+    """Demande de Miguel : « pas besoin de montrer les recherches, l'utilisateur voit le résultat »."""
+    import inspect
+
+    from iris.web import WebAgent
+
+    assert inspect.signature(WebAgent._browser).parameters["visible"].default is False
+    # La connexion à un compte fait exception : captcha, double authentification.
+    source = inspect.getsource(WebAgent.login)
+    assert "visible=True" in source

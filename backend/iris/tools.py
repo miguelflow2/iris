@@ -206,6 +206,13 @@ TOOL_SPECS: list[ToolSpec] = [
         _obj({"text": {"type": "string"}, "minutes": {"type": "number"}, "at": {"type": "string"}}, ["text"]),
     ),
     ToolSpec(
+        "web_search",
+        "Cherche sur le web et renvoie le texte des résultats. Aucune fenêtre ne s'ouvre : l'utilisateur ne voit que ta réponse. "
+        "Utilise-le dès que la réponse dépend d'une information que tu n'as pas de façon certaine : actualité, prix, horaires, "
+        "météo, résultat sportif, fait daté, ou tout ce qui a pu changer depuis ton entraînement. Mieux vaut chercher que deviner.",
+        _obj({"query": {"type": "string", "description": "Ce qu'il faut chercher"}}, ["query"]),
+    ),
+    ToolSpec(
         "web_open",
         "Ouvre une page web dans le navigateur piloté par IRIS (Chrome) et renvoie son titre. Pour naviguer sur un site (Omnivox, portails, formulaires), préfère les outils web_* au contrôle d'écran.",
         _obj({"url": {"type": "string"}}, ["url"]),
@@ -272,7 +279,10 @@ TOOL_SPECS: list[ToolSpec] = [
 # pour des tâches qui n'en ont aucun besoin (trace réelle : une simple demande YouTube a fini en clics à l'aveugle).
 SCREEN_TOOLS = {"take_screenshot", "screen_info", "mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text"}
 KEYBOARD_TOOLS = {"type_text", "press_keys"}
-WEB_TOOLS = {"web_open", "web_login", "web_read", "web_click", "web_fill", "web_screenshot"}
+# Tous les outils du navigateur. « web_back » et « web_press » y manquaient : en mode 100 % local,
+# le modèle se voyait encore offrir deux outils web, alors que la promesse est que rien ne sort.
+WEB_TOOLS = {"web_search", "web_open", "web_login", "web_read", "web_click", "web_fill",
+             "web_screenshot", "web_back", "web_press"}
 
 
 def tool_specs(ctx: ToolContext, *, screen: bool = True, keyboard: bool = True, web: bool = True) -> list[ToolSpec]:
@@ -333,6 +343,10 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
             if ctx.web is None:
                 return _err("Navigateur piloté indisponible.")
             try:
+                if name == "web_search":
+                    r = await asyncio.to_thread(ctx.web.search, args.get("query", ""))
+                    ctx.consent.log("web_navigation", agent=ctx.agent, detail="recherche : " + r["query"])
+                    return json.dumps(r, ensure_ascii=False)
                 if name == "web_open":
                     r = await asyncio.to_thread(ctx.web.open, args.get("url", ""))
                     ctx.consent.log("web_navigation", agent=ctx.agent, detail=r["url"])

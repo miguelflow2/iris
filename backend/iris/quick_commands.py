@@ -108,6 +108,71 @@ def _strip_trailing(text: str) -> str:
     return out
 
 
+# Fuseaux horaires. Constat réel : « quelle heure est-il en Chine ? » renvoyait l'heure de
+# Trois-Rivières, parce que la reconnaissance locale voyait « quelle heure » et s'arrêtait là.
+# Une réponse fausse dite avec assurance est pire qu'une absence de réponse.
+FUSEAUX: dict[str, str] = {
+    # Amériques
+    "quebec": "America/Toronto", "montreal": "America/Toronto", "toronto": "America/Toronto",
+    "trois rivieres": "America/Toronto", "ottawa": "America/Toronto", "new york": "America/New_York",
+    "vancouver": "America/Vancouver", "calgary": "America/Edmonton", "winnipeg": "America/Winnipeg",
+    "halifax": "America/Halifax", "mexique": "America/Mexico_City", "bresil": "America/Sao_Paulo",
+    "sao paulo": "America/Sao_Paulo", "los angeles": "America/Los_Angeles", "chicago": "America/Chicago",
+    "haiti": "America/Port-au-Prince", "argentine": "America/Argentina/Buenos_Aires",
+    # Europe
+    "france": "Europe/Paris", "paris": "Europe/Paris", "belgique": "Europe/Brussels",
+    "bruxelles": "Europe/Brussels", "suisse": "Europe/Zurich", "geneve": "Europe/Zurich",
+    "angleterre": "Europe/London", "londres": "Europe/London", "royaume uni": "Europe/London",
+    "espagne": "Europe/Madrid", "madrid": "Europe/Madrid", "allemagne": "Europe/Berlin",
+    "berlin": "Europe/Berlin", "italie": "Europe/Rome", "rome": "Europe/Rome",
+    "portugal": "Europe/Lisbon", "lisbonne": "Europe/Lisbon", "grece": "Europe/Athens",
+    "ukraine": "Europe/Kyiv", "russie": "Europe/Moscow", "moscou": "Europe/Moscow",
+    # Afrique
+    "maroc": "Africa/Casablanca", "casablanca": "Africa/Casablanca", "algerie": "Africa/Algiers",
+    "tunisie": "Africa/Tunis", "senegal": "Africa/Dakar", "dakar": "Africa/Dakar",
+    "cote d ivoire": "Africa/Abidjan", "abidjan": "Africa/Abidjan", "cameroun": "Africa/Douala",
+    "congo": "Africa/Kinshasa", "kinshasa": "Africa/Kinshasa", "nigeria": "Africa/Lagos",
+    "egypte": "Africa/Cairo", "afrique du sud": "Africa/Johannesburg", "kenya": "Africa/Nairobi",
+    # Asie et Océanie
+    "chine": "Asia/Shanghai", "pekin": "Asia/Shanghai", "beijing": "Asia/Shanghai",
+    "shanghai": "Asia/Shanghai", "shenzhen": "Asia/Shanghai", "hong kong": "Asia/Hong_Kong",
+    "japon": "Asia/Tokyo", "tokyo": "Asia/Tokyo", "coree": "Asia/Seoul", "seoul": "Asia/Seoul",
+    "inde": "Asia/Kolkata", "vietnam": "Asia/Ho_Chi_Minh", "thailande": "Asia/Bangkok",
+    "bangkok": "Asia/Bangkok", "singapour": "Asia/Singapore", "dubai": "Asia/Dubai",
+    "emirats": "Asia/Dubai", "israel": "Asia/Jerusalem", "turquie": "Europe/Istanbul",
+    "istanbul": "Europe/Istanbul", "australie": "Australia/Sydney", "sydney": "Australia/Sydney",
+    "nouvelle zelande": "Pacific/Auckland",
+}
+# Ce qui suit « à » sans désigner un lieu : « à peu près », « à présent »...
+_PAS_UN_LIEU = {"peu", "pres", "present", "maintenant", "cet", "cette", "la", "le", "quelle", "quel", "combien"}
+_AILLEURS = re.compile(r"\b(?:en|au|aux|a|chez|dans|sur)\s+([a-z]{2,})")
+
+
+def fuseau_demande(raw: str) -> tuple[str | None, bool]:
+    """(fuseau IANA, un ailleurs est-il évoqué ?) pour une question d'heure ou de date.
+
+    Trois cas. Un lieu connu : on répond juste, hors ligne, grâce à zoneinfo. Un lieu inconnu :
+    on ne répond pas, la question part au modèle — plutôt que de servir l'heure d'ici sous un
+    autre nom. Aucun lieu : c'est bien l'heure locale qu'on demande."""
+    for nom in sorted(FUSEAUX, key=len, reverse=True):  # « afrique du sud » avant « sud »
+        if re.search(rf"\b{re.escape(nom)}\b", raw):
+            return FUSEAUX[nom], True
+    for suite in _AILLEURS.findall(raw):
+        if suite not in _PAS_UN_LIEU:
+            return None, True
+    return None, False
+
+
+def _clock_reply_ailleurs(zone: str) -> str | None:
+    """Heure d'un fuseau. None si les données de fuseaux manquent : mieux vaut se taire."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return _clock_reply(datetime.now(ZoneInfo(zone)))
+    except Exception:
+        return None
+
+
 def _clock_reply(now: datetime) -> str:
     heure = now.hour
     minute = now.minute
@@ -153,8 +218,17 @@ def match(text: str, app_resolver=None, now: datetime | None = None) -> QuickCom
 
     # ------------------------------------------------------------------ heure et date
     if re.search(r"\b(quelle heure|il est quelle heure|heure est il|heure qu il est)\b", raw):
+        zone, ailleurs = fuseau_demande(raw)
+        if zone:
+            dit = _clock_reply_ailleurs(zone)
+            return QuickCommand(reply=dit, kind="heure") if dit else None
+        if ailleurs:
+            return None  # un lieu qu'on ne connaît pas : au modèle de répondre, jamais l'heure d'ici
         return QuickCommand(reply=_clock_reply(now), kind="heure")
     if re.search(r"\b(quelle date|quel jour|quelle est la date|on est quel jour|date d aujourd hui)\b", raw):
+        _, ailleurs = fuseau_demande(raw)
+        if ailleurs:
+            return None
         return QuickCommand(reply=_date_reply(now), kind="date")
 
     words = raw.split()

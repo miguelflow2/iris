@@ -801,8 +801,13 @@ class ChatService:
             system = self._system_prompt(agent_name, connector.supports_tools, memory_ctx, source)
             if is_screen:
                 system += "\n\n" + CONSIGNE_PILOTAGE
-            is_web = connector.supports_tools and (_has(low_text, WEB_KEYWORDS) or (self.web is not None and any(n in low_text for n in self.web.site_names())))
-            if is_web:
+            # Le navigateur est offert par défaut, pas seulement quand la demande contient
+            # « site » ou « portail ». Constat réel : « quelle heure est-il en Chine ? » ne
+            # déclenchait aucun outil web, et IRIS répondait de mémoire — donc faux. Une
+            # assistante qui a accès au web doit pouvoir décider elle-même d'aller vérifier.
+            is_web = connector.supports_tools and self.web is not None and not self.settings.user.local_only
+            # La consigne détaillée, elle, ne sert que pour une vraie navigation sur un site connu.
+            if is_web and (_has(low_text, WEB_KEYWORDS) or any(n in low_text for n in self.web.site_names())):
                 sites = ", ".join(self.web.site_names()) if self.web is not None else ""
                 system += (
                     "\n\nNAVIGATION WEB : utilise les outils web_* (navigateur piloté, fenêtre visible) plutôt que le contrôle "
