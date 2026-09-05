@@ -65,7 +65,14 @@ class LicenceSync:
             import httpx
 
             with httpx.Client(timeout=TIMEOUT) as client:
-                resp = client.get(f"{base}/api/licence", params={"email": u.licence_email})
+                # En POST, avec le courriel dans le CORPS. En GET il partait dans l'URL, où il
+                # se retrouvait dans les journaux du serveur, ceux de tout intermédiaire, et dans
+                # les en-têtes de provenance. Un courriel est une donnée personnelle : elle n'a
+                # rien à faire dans une adresse. Le GET reste accepté par les serveurs plus
+                # anciens, d'où le repli.
+                resp = client.post(f"{base}/api/licence", json={"email": u.licence_email})
+                if resp.status_code in (404, 405):
+                    resp = client.get(f"{base}/api/licence", params={"email": u.licence_email})
             if resp.status_code == 404:
                 return self._resultat("aucun abonnement", "Aucun abonnement actif pour ce courriel.")
             resp.raise_for_status()

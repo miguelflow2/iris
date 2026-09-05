@@ -197,6 +197,9 @@ def test_le_plan_vient_du_serveur_de_licences(relais, monkeypatch):
         def __init__(self, **_): pass
         def __enter__(self): return self
         def __exit__(self, *_): return False
+        # Le relais interroge en POST : un courriel dans une URL finirait dans tous les journaux
+        # traverses. Le GET reste servi pour les serveurs plus anciens.
+        def post(self, *_a, **_k): return FausseReponse()
         def get(self, *_a, **_k): return FausseReponse()
 
     monkeypatch.setattr(relais.httpx, "Client", FauxClient)
@@ -213,6 +216,7 @@ def test_un_serveur_injoignable_ne_coupe_pas_le_service(relais, monkeypatch):
         def __init__(self, **_): pass
         def __enter__(self): return self
         def __exit__(self, *_): return False
+        def post(self, *_a, **_k): raise OSError("réseau coupé")
         def get(self, *_a, **_k): raise OSError("réseau coupé")
 
     monkeypatch.setattr(relais.httpx, "Client", FauxClient)

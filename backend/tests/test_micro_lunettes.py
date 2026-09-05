@@ -133,14 +133,26 @@ def test_le_micro_disparu_est_dit_a_lutilisateur(app, evenements):
     assert "M01 Pro_F444" in textes[0] and "lunettes" in textes[0].lower()
 
 
-def test_le_micro_disparu_nest_dit_quune_fois_par_demarrage(app, evenements):
-    """`_input_device` est appelé deux fois par `start()` (choix du moteur, puis ouverture) : deux
-    fenêtres d'alerte pour un seul démarrage feraient passer l'avertissement pour un bogue."""
+def test_le_meme_avertissement_nest_jamais_repete(app, evenements):
+    """Le chien de garde relance l'écoute toutes les 20 s tant qu'elle ne tourne pas : sans ce
+    filtre, un micro absent ferait surgir la même fenêtre trois fois par minute, et un
+    avertissement qu'on apprend à ignorer ne vaut pas mieux que le silence qu'on corrige."""
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({"audio_input_device": "Casque (M01 Pro_F444 Hands-Free"})
+    for _ in range(3):
+        voice._input_device(_Sd(SANS_LUNETTES))
+    assert len(_alertes(evenements)) == 1
+
+
+def test_un_micro_qui_remarche_rouvre_le_droit_de_prevenir(app, evenements):
+    """Sinon une panne qui revient des heures plus tard serait filtrée comme un doublon et Miguel
+    ne saurait jamais que ses lunettes ont décroché."""
     voice = app.state.ctx.voice
     app.state.ctx.settings.update({"audio_input_device": "Casque (M01 Pro_F444 Hands-Free"})
     voice._input_device(_Sd(SANS_LUNETTES))
+    voice._alertes_dites.clear()  # ce que fait `_run` dès que le flux s'ouvre pour de bon
     voice._input_device(_Sd(SANS_LUNETTES))
-    assert len(_alertes(evenements)) == 1
+    assert len(_alertes(evenements)) == 2
 
 
 def test_le_micro_devenu_muet_arrete_lecoute_et_dit_quoi_faire(app, evenements):
@@ -153,7 +165,13 @@ def test_le_micro_devenu_muet_arrete_lecoute_et_dit_quoi_faire(app, evenements):
     voice._stop.clear()
     assert voice._read(timeout=0.01) is None
     assert voice._stop.is_set(), "l'écoute doit se dénouer, pas continuer dans le vide"
-    assert voice.stopped_by_user, "sinon le chien de garde relance toutes les 20 s sur un micro mort"
+    # Arbitrage du 5 septembre 2026, contre la version precedente de ce test. On ne pose PAS
+    # `stopped_by_user` : ce drapeau empeche le chien de garde de jamais reessayer, et IRIS se
+    # tairait definitivement parce que des lunettes ont manque d'air une fois. Le 8 septembre,
+    # devant les dragons, une assistante qui reessaie toutes les vingt secondes vaut infiniment
+    # mieux qu'une assistante muette pour de bon. Ce que le drapeau evitait — l'alerte repetee —
+    # est traite ailleurs : `_alerter` ne redit rien deux fois.
+    assert not voice.stopped_by_user, "se taire pour toujours est pire que reessayer"
     textes = _alertes(evenements)
     assert len(textes) == 1
     assert "M01 Pro_F444" in textes[0] and "rallumez" in textes[0].lower()

@@ -27,7 +27,7 @@ Légende : ✅ livré dans IRIS · 🔧 partiel · ⏳ à construire (dépendanc
 |---|---|---|---|
 | Le temps est la contrainte n°1 (46,5 %) | Déléguer à la voix pendant qu'on fait autre chose : tâches longues, routines, rappels, résumé de journée | ✅ | Pro |
 | 5 à 10 outils déconnectés (facturation, projets, courriels) | Connecteur universel d'agents + navigation web avec comptes enregistrés (portails, CRM, banque en lecture) + routines multi-outils | ✅ base · ⏳ connecteurs natifs (courriel, calendrier, facturation) | Essentiel (web) · Ultra (connecteurs natifs, à venir) |
-| Réseaux sociaux = tâche marketing la plus frustrante (64 %) | Capture POV + montage assisté par IA, publication programmée | ⏳ Phase 3 (dépend de la caméra des lunettes et du SDK du fournisseur) | Ultra |
+| ~~Réseaux sociaux : capture POV + montage assisté~~ | **Retiré le 5 septembre 2026.** Cette promesse supposait une caméra. Les lunettes VELA n'en ont pas, et sept pages du site en font un argument de vente — « des lunettes qui vous écoutent, sans jamais vous regarder ». Vendre l'un et promettre l'autre était intenable. | — | — |
 | Usage non gouverné de l'IA = risque de sécurité | Gouvernance intégrée : aucune action sans demande explicite, confirmation des commandes dangereuses, registre exportable (audit), mode 100 % local, clés dans le coffre système | ✅ · ⏳ politique d'entreprise (liste d'agents autorisés, export centralisé, multi-comptes) | Tous (gouvernance) · Ultra (politique d'entreprise, à venir) |
 
 ## Répartition finale par plan (ce que le code applique aujourd'hui)

@@ -18,17 +18,20 @@ Vérifiez que `site/` contient bien ces éléments :
 
 ```
 site/
-  index.html  confidentialite.html  fonctionnalites.html  plans.html
-  installer.html  contact.html  politique-confidentialite.html  mentions-legales.html
-  assets/         (style.css, site.js)
+  index.html  lunettes.html  fonctionnalites.html  confidentialite.html  plans.html
+  installer.html  contact.html  suivi.html  merci.html
+  politique-confidentialite.html  mentions-legales.html          (onze pages)
+  assets/         (style.css, site.js, photos/)
   telechargement/ (IRIS-Setup-0.1.0.exe)
-  _headers        (en-têtes de sécurité)
-  robots.txt
+  _headers        (en-têtes de sécurité et politique de cache)
+  robots.txt  sitemap.xml
 ```
 
-Les fichiers `.md` (`README.md`, `DEPLOIEMENT.md`) peuvent rester : ils ne sont pas servis comme
-pages et ne dérangent rien. Si vous préférez qu'ils ne soient pas accessibles publiquement,
-retirez-les du dossier avant de le déposer.
+**⚠ Retirez `README.md` et `DEPLOIEMENT.md` du dossier avant de le déposer.** Un hébergeur
+statique sert ces fichiers en texte brut à qui devine leur adresse (`/README.md`) : ils ne sont
+pas des pages, mais ils sont bel et bien publics. Or `README.md` contient des informations
+internes — dont le fait que les droits sur les photos du produit ne sont pas encore réglés. Le
+plus simple : copiez `site/` ailleurs, supprimez-y les deux `.md`, déposez cette copie.
 
 ### 2. Déposer le dossier
 
@@ -133,23 +136,33 @@ bande passante de votre hébergement.
 
 ### Les pages
 
-- [ ] Les huit pages s'ouvrent : accueil, confidentialité, ce qu'IRIS fait, plans, installer,
-      contact, politique de confidentialité, mentions légales.
+- [ ] Les onze pages s'ouvrent : accueil, les lunettes, ce qu'IRIS fait, confidentialité, plans,
+      installer, contact, suivre ma commande, merci, politique de confidentialité, mentions légales.
 - [ ] L'adresse commence bien par `https://` et le cadenas s'affiche.
 - [ ] Le menu fonctionne sur téléphone : ouvrez le site sur votre cellulaire, appuyez sur « Menu ».
 - [ ] Aucune barre de défilement horizontale sur téléphone.
+- [ ] Dans l'onglet Réseau du navigateur, `style.css?v=…` et `site.js?v=…` portent bien le **même**
+      numéro que celui inscrit dans le README (aujourd'hui `v=5`).
 
-### Les six boutons de paiement
+### Les sept boutons de paiement
 
-Sur `plans.html`, chacun doit ouvrir PayPal **dans un nouvel onglet**, avec le bon montant déjà
-rempli et la devise CAD :
+Chacun doit ouvrir PayPal **dans un nouvel onglet**, avec le bon montant déjà rempli et la
+devise CAD. Il n'existe que quatre liens distincts, mais ils sont posés à sept endroits :
 
-- [ ] S'abonner · 19,99 $ (Pro) → `paypal.me/irisvela461/19.99CAD`
-- [ ] S'abonner · 29,99 $ (Premium) → `paypal.me/irisvela461/29.99CAD`
-- [ ] S'abonner · 99,99 $ (Entreprise) → `paypal.me/irisvela461/99.99CAD`
-- [ ] Acheter les lunettes · 250 $ → `paypal.me/irisvela461/250.00CAD`
-- [ ] Le lien « S'abonner ou acheter les lunettes » de l'accueil mène bien à la section d'achat.
+- [ ] `plans.html` — S'abonner · 19,99 $ (Pro) → `paypal.me/irisvela461/19.99CAD`
+- [ ] `plans.html` — S'abonner · 29,99 $ (Premium) → `paypal.me/irisvela461/29.99CAD`
+- [ ] `plans.html` — S'abonner · 99,99 $ (Entreprise) → `paypal.me/irisvela461/99.99CAD`
+- [ ] `plans.html` — Acheter les lunettes · 250 $ → `paypal.me/irisvela461/250.00CAD`
+- [ ] `index.html` — les **deux** boutons « Acheter · 250 $ » (le hero, puis le rappel du bas)
+- [ ] `lunettes.html` — les **deux** boutons « Acheter · 250 $ » (le hero, puis la section « L'achat »)
 - [ ] Le plan Gratuit n'a **aucun** bouton de paiement.
+
+### Le suivi de commande
+
+- [ ] `suivi.html` affiche bien l'encadré jaune « le suivi automatique n'est pas encore branché ».
+- [ ] Le formulaire refuse un champ vide, puis, avec un numéro et un courriel valides, renvoie vers
+      le courriel **sans** rien afficher dans l'adresse de la page (ni `?`, ni `#`).
+- [ ] `merci.html` s'ouvre depuis les liens « Vous venez de payer ? » de l'accueil et de la fiche.
 
 **N'allez pas jusqu'au paiement.** Vérifiez seulement que la page PayPal s'ouvre au bon montant,
 puis fermez l'onglet.

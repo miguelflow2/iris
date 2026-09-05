@@ -239,3 +239,49 @@ def test_letat_publie_la_raison_du_verrou(app):
     assert voice.status()["glasses_required"]
     voice.glasses_connected = lambda: True
     assert voice.status()["glasses_required"] is None
+
+
+# --------------------------------------------------------------------------- la preuve de presence
+# Erreur de conception trouvee par une relecture adverse. Le verrou exigeait une preuve Bluetooth
+# BASSE ENERGIE, alors qu'IRIS parle et ecoute par le Bluetooth CLASSIQUE. Le 5 septembre 2026, les
+# services du fabricant ont disparu du canal basse energie pendant que le casque fonctionnait
+# parfaitement : le verrou aurait fait taire IRIS sur scene, sans raison.
+def test_le_micro_des_lunettes_prouve_leur_presence(app, monkeypatch):
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False  # aucune preuve basse energie
+    app.state.ctx.settings.update({"glasses": {"address": "65:A2:9F:5C:F4:44", "name": "M01 Pro_F444", "auto_connect": True}})
+    monkeypatch.setattr(voice, "mic_devices", lambda: ["Microphone (High Definition Audio)",
+                                                       "Casque (M01 Pro_F444 Hands-Free AG Audio)"])
+    assert voice.lunettes_presentes() is True
+    assert voice.lunettes_requises() is None, "le micro des lunettes suffit a prouver qu'elles sont la"
+
+
+def test_le_nom_tronque_par_windows_est_reconnu(app, monkeypatch):
+    """Windows coupe les noms MME a 31 caracteres : « Casque (M01 Pro_F444 Hands-Free »."""
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    app.state.ctx.settings.update({"glasses": {"address": "x", "name": "M01 Pro_F444", "auto_connect": True}})
+    monkeypatch.setattr(voice, "mic_devices", lambda: ["Casque (M01 Pro_F444 Hands-Free"])
+    assert voice.lunettes_presentes() is True
+
+
+def test_sans_lunettes_nulle_part_le_verrou_tient(app, monkeypatch):
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    app.state.ctx.settings.update({"glasses": {"address": "x", "name": "M01 Pro_F444", "auto_connect": True}})
+    monkeypatch.setattr(voice, "mic_devices", lambda: ["Microphone (High Definition Audio Device)"])
+    assert voice.lunettes_presentes() is False
+    assert voice.lunettes_requises() is not None
+
+
+def test_le_verrou_ne_se_bloque_plus_pour_toujours(app, monkeypatch):
+    """Sur scene, se taire definitivement est pire que reessayer : le chien de garde doit pouvoir
+    relancer des que les lunettes reviennent."""
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False
+    monkeypatch.setattr(voice, "mic_devices", lambda: [])
+    app.state.ctx.settings.update({"glasses": {"address": "x", "name": "M01 Pro_F444", "auto_connect": True}})
+    voice.stopped_by_user = False
+    etat = voice.start()
+    assert etat["state"] == "off" and "lunettes" in (etat["error"] or "").lower()
+    assert voice.stopped_by_user is False, "le chien de garde doit pouvoir reessayer"

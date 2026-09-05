@@ -9,12 +9,13 @@ dépendance, aucun outil de compilation, aucun appel réseau. Il s'ouvre tel que
 `assets/style.css` et `assets/site.js` sont appelés avec un **numéro de version** :
 
 ```html
-<link rel="stylesheet" href="assets/style.css?v=4">
-<script src="assets/site.js?v=4"></script>
+<link rel="stylesheet" href="assets/style.css?v=5">
+<script src="assets/site.js?v=5"></script>
 ```
 
-*(Numéro en vigueur : **v=4**, depuis l'ajout des pages `suivi.html` et `merci.html` en
-septembre 2026.)*
+*(Numéro en vigueur : **v=5**, depuis la relecture du 4 septembre 2026 : ajout de
+`color-scheme: dark` et plafonnement de la longueur de ligne dans `.callout`, `.demo-note` et
+`.steps-list`.)*
 
 **Chaque fois que vous modifiez la CSS ou le JavaScript, incrémentez ce numéro dans les onze
 pages.** Sinon, le navigateur d'un visiteur déjà venu continue de servir l'ancienne feuille depuis
@@ -25,16 +26,16 @@ verts, parce que la vieille feuille ne connaissait pas la classe `.v-grand`).
 En une commande, depuis `site/` :
 
 ```bash
-# remplacer 4 par l'ancien numéro et 5 par le nouveau
-sed -i 's/style\.css?v=4/style.css?v=5/; s/site\.js?v=4/site.js?v=5/' *.html
-grep -c 'v=5' *.html    # doit afficher 2 pour chacune des onze pages
+# remplacer 5 par l'ancien numéro et 6 par le nouveau
+sed -i 's/style\.css?v=5/style.css?v=6/; s/site\.js?v=5/site.js?v=6/' *.html
+grep -c 'v=6' *.html    # doit afficher 2 pour chacune des onze pages
 ```
 
 En PowerShell :
 
 ```powershell
 Get-ChildItem *.html | ForEach-Object {
-  (Get-Content $_ -Raw) -replace 'style\.css\?v=4','style.css?v=5' -replace 'site\.js\?v=4','site.js?v=5' |
+  (Get-Content $_ -Raw) -replace 'style\.css\?v=5','style.css?v=6' -replace 'site\.js\?v=5','site.js?v=6' |
     Set-Content $_ -Encoding utf8
 }
 ```
@@ -487,6 +488,39 @@ attendant.
     `politique-confidentialite.html` décrit aujourd'hui un logiciel qui garde tout sur l'appareil du
     client. Il faudra y ajouter ce que le serveur de commandes garde, combien de temps, et comment on
     en demande la suppression — et le faire relire en même temps que le point 1.
+
+### Relevé de la relecture du 4 septembre 2026
+
+Le point 1 ci-dessus a été **appliqué en partie** : `contact.html` (« Mes données partent-elles chez
+VELA ? ») et `mentions-legales.html` (§ 2 et § 6) affirmaient encore qu'IRIS n'envoie rien à VELA,
+ce que la section 5 de la politique contredisait depuis sa correction. Les trois passages disent
+maintenant la même chose que la politique. **À faire relire par le juriste en même temps qu'elle.**
+
+Trois choses ont aussi été trouvées, qui ne se règlent pas dans le site :
+
+14. **⚠ Ce que le site ne dit nulle part, et qu'un acheteur québécois doit savoir avant de payer.**
+    Le mot « livraison » apparaît partout, mais **le site n'indique à aucun endroit qui paie
+    l'expédition ni combien elle coûte** — l'acheteur voit « 250 $, taxes en sus » et ne peut pas
+    calculer ce qu'il va débourser. Il n'y a pas non plus de **politique de retour ou d'annulation**,
+    ni de **délai de livraison annoncé**, ni d'**adresse du commerçant** (le bloc jaune des mentions
+    légales attend encore la forme juridique, le NEQ et l'adresse). Une vente de bien matériel à
+    distance à un consommateur québécois est un *contrat conclu à distance* au sens de la *Loi sur la
+    protection du consommateur* : ces informations font partie de celles à communiquer **avant** que
+    le contrat se forme, et leur absence ouvre un droit de résolution. Rien n'a été inventé ici pour
+    combler ces vides — aucun montant de livraison, aucun délai, aucune clause de retour. **C'est le
+    premier sujet à porter au juriste, avant la première vente.**
+
+15. **`backend/iris/plans.py` promet une caméra dans les lunettes.** La liste `contents` du plan
+    Entreprise contient « Création de contenu POV + montage IA (à venir, **caméra des lunettes
+    VELA**) ». Cette ligne s'affiche dans la vue Abonnement de l'application. Le site, lui, écrit
+    « aucune caméra » sur sept pages et en a fait son slogan. Un client qui voit les deux a raison de
+    ne plus croire ni l'un ni l'autre. À trancher dans le code, pas sur le site.
+    (`docs/POSITIONNEMENT-PLANS.md` porte la même mention.)
+
+16. **`README.md` et `DEPLOIEMENT.md` partent avec le site si on dépose le dossier tel quel.** Un
+    hébergeur statique les sert en texte brut à `/README.md`. Ce fichier-ci dit publiquement que les
+    droits sur les photos du produit ne sont pas réglés. `DEPLOIEMENT.md` a été corrigé pour le
+    signaler ; **retirer les deux `.md` du dossier avant de le déposer.**
 
 ## Publier
 

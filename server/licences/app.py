@@ -122,6 +122,19 @@ def creer_app(cfg: Config | None = None, base: Base | None = None,
         return JSONResponse({"recu": True, **public}, status_code=200)
 
     # ================================================================== licence (IRIS)
+    @app.post("/api/licence")
+    async def lire_licence_post(requete: Request):
+        """Même chose, mais le courriel voyage dans le corps.
+
+        C'est la forme à préférer : en GET, l'adresse du client se retrouve dans les journaux du
+        serveur, dans ceux de tout intermédiaire, et dans les en-têtes de provenance. Le GET
+        ci-dessous reste servi pour les versions d'IRIS déjà installées."""
+        try:
+            corps = await requete.json()
+        except Exception:
+            corps = {}
+        return lire_licence(requete, str((corps or {}).get("email") or ""))
+
     @app.get("/api/licence")
     def lire_licence(requete: Request, email: str = ""):
         """Ce qu'IRIS appelle au démarrage pour s'activer toute seule.

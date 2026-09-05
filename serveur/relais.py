@@ -137,7 +137,10 @@ def _demander_au_serveur_de_licences(courriel: str) -> dict | None:
         return frais[1]
     try:
         with httpx.Client(timeout=8) as client:
-            reponse = client.get(base + "/api/licence", params={"email": courriel})
+            # En POST : un courriel dans une URL finit dans tous les journaux traversés.
+            reponse = client.post(base + "/api/licence", json={"email": courriel})
+            if reponse.status_code in (404, 405):
+                reponse = client.get(base + "/api/licence", params={"email": courriel})
         etat = {"plan": "gratuit", "expires": ""} if reponse.status_code == 404 else {
             "plan": reponse.json().get("plan", "gratuit"),
             "expires": reponse.json().get("expires", ""),
@@ -349,6 +352,16 @@ def enregistrer_appareil(corps: Appareil):
         "expires": etat["expires"],
         "modeles": MODELES_PAR_PLAN[etat["plan"]],
     }
+
+
+@app.post("/api/licence")
+async def licence_post(request: Request):
+    """Même réponse, courriel dans le corps : une adresse n'a rien à faire dans une URL."""
+    try:
+        corps = await request.json()
+    except Exception:
+        corps = {}
+    return licence(str((corps or {}).get("email") or ""))
 
 
 @app.get("/api/licence")

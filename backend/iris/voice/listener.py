@@ -241,7 +241,7 @@ class VoiceListener:
         self.level = 0  # niveau du micro (pic récent, 0-32767) pour l'indicateur de Paramètres › Voix
         self.device_name = ""  # micro réellement ouvert
         self._last_block = 0.0  # heure du dernier bloc reçu du micro : sert à repérer sa disparition
-        self._micro_absent_signale = False  # une seule alerte « micro introuvable » par démarrage d'écoute
+        self._alertes_dites: set[str] = set()  # avertissements micro déjà publiés (voir `_alerter`)
         self._mono_annonce = False  # le compromis mono des lunettes ne s'explique qu'une fois par session
         self._last_peak = 0  # pic de la dernière commande (pour signaler un micro trop faible)
         self._level_sent = 0.0
@@ -250,6 +250,26 @@ class VoiceListener:
         self.glasses_connected: Callable[[], bool] | None = None
 
     # ------------------------------------------------------------------ état
+    def lunettes_presentes(self) -> bool:
+        """Les lunettes sont-elles là ? Deux preuves valent, et la seconde compte plus que la première.
+
+        Le lien Bluetooth basse énergie, quand il existe. Et surtout le MICRO : IRIS parle et
+        écoute par le Bluetooth classique, et c'est ce lien-là qui prouve le mieux que les lunettes
+        sont sur le nez. N'exiger que la preuve basse énergie aurait fait taire IRIS le jour où les
+        services du fabricant ont disparu — ce qui est arrivé le 5 septembre 2026, en pleine
+        séance de mise au point, alors que le casque fonctionnait parfaitement."""
+        if self.glasses_connected is not None and self.glasses_connected():
+            return True
+        nom = (self.settings.user.glasses.name or "").strip().lower()
+        if not nom:
+            return False
+        peripheriques = [d.lower() for d in self.mic_devices()]
+        if any(nom in d for d in peripheriques):
+            return True
+        # Windows tronque les noms MME à 31 caractères : « Casque (M01 Pro_F444 Hands-Free ».
+        tete = nom.split()[0]
+        return len(tete) >= 3 and any(tete in d for d in peripheriques)
+
     def lunettes_requises(self) -> str | None:
         """Message à afficher si le pilotage vocal est verrouillé faute de lunettes, sinon None.
 
@@ -259,7 +279,7 @@ class VoiceListener:
         u = self.settings.user
         if not u.require_glasses or u.demo_sans_lunettes:
             return None
-        if self.glasses_connected is None or self.glasses_connected():
+        if self.glasses_connected is None or self.lunettes_presentes():
             return None
         return ("Connectez vos lunettes VELA pour parler à IRIS. "
                 "Le chat écrit reste disponible sans elles.")
@@ -372,8 +392,11 @@ class VoiceListener:
         # droit de parler.
         verrou = self.lunettes_requises()
         if verrou:
+            # Sans stopped_by_user : sur scène, se taire définitivement est bien pire que
+            # réessayer. Le chien de garde repassera toutes les vingt secondes, et start() ressort
+            # aussitôt tant que la condition tient — ça ne coûte rien. Le drapeau servait à éviter
+            # un flot d'alertes ; c'est l'alerte qu'il faut taire, pas l'écoute.
             self.error = verrou
-            self.stopped_by_user = True
             self.hub.publish("voice.glasses_required", text=verrou)
             self._set_state("off")
             return self.status()
@@ -393,9 +416,6 @@ class VoiceListener:
         self.stopped_by_user = False
         self.paused_until = 0.0
         self._started_at = time.time()
-        # Chaque démarrage a droit à sa propre alerte : si les lunettes sont encore absentes au
-        # redémarrage suivant, il faut le redire, sinon on retombe dans le silence qu'on corrige.
-        self._micro_absent_signale = False
         self._last_block = 0.0
         self._stop.clear()
         self._ptt.clear()
@@ -570,24 +590,31 @@ class VoiceListener:
             self._signaler_micro_absent(demande)
         return idx
 
+    def _alerter(self, texte: str) -> None:
+        """Publie un avertissement micro dans l'interface, sans jamais répéter le même.
+
+        Le chien de garde (`main.py`, `_voice_watchdog`) relance l'écoute toutes les 20 s tant
+        qu'elle ne tourne pas : sans ce filtre, un micro absent ferait surgir les mêmes fenêtres
+        trois fois par minute jusqu'à ce que Miguel abandonne — et un avertissement qu'on apprend à
+        ignorer ne vaut pas mieux que le silence qu'on corrige ici. La mémoire est effacée dès que
+        le micro remarche (`_run`, après `stream.start()`), pour qu'une panne qui revient plus tard
+        soit bien redite."""
+        if texte in self._alertes_dites:
+            return
+        self._alertes_dites.add(texte)
+        self.hub.publish("voice.warning", text=texte)
+
     def _signaler_micro_absent(self, demande: str) -> None:
-        """Dit dans l'interface que le micro demandé a disparu — une fois par démarrage d'écoute.
+        """Dit dans l'interface que le micro demandé a disparu.
 
         Se rabattre en silence sur le micro par défaut était le pire des comportements : IRIS
         continuait d'écouter, mais l'ORDINATEUR, pendant que Miguel parlait dans ses lunettes.
-        Aucune erreur nulle part, et l'impression que le mot d'activation ne marche plus.
-        Une fois par démarrage seulement : `_input_device` est appelé deux fois par `start()`
-        (une fois par `_narrowband_input`, une fois par `_run`)."""
+        Aucune erreur nulle part, et l'impression que le mot d'activation ne marche plus."""
         log.warning("micro « %s » introuvable, micro par défaut utilisé", demande)
-        if self._micro_absent_signale:
-            return
-        self._micro_absent_signale = True
-        self.hub.publish(
-            "voice.warning",
-            text=(f"Le micro « {demande} » n'apparaît plus dans la liste des périphériques : vos "
-                  "lunettes sont peut-être éteintes, hors de portée ou déconnectées. IRIS écoute "
-                  "avec le micro de l'ordinateur en attendant ; rallumez les lunettes, puis "
-                  "relancez l'écoute pour repasser dessus."),
+        self._alerter(
+            f"Le micro « {demande} » n'apparaît plus dans la liste des périphériques : vos lunettes "
+            "sont peut-être éteintes, hors de portée ou déconnectées. IRIS écoute avec le micro de "
+            "l'ordinateur en attendant ; rallumez les lunettes, puis relancez l'écoute pour repasser dessus."
         )
 
     def _micro_perdu(self) -> bool:
@@ -608,12 +635,12 @@ class VoiceListener:
             "lunettes : rallumez-les, vérifiez la connexion Bluetooth, puis relancez l'écoute."
         )
         log.warning("micro muet depuis %.1f s (%s) : l'écoute s'arrête", depuis, nom)
-        self.hub.publish("voice.warning", text=self.error)
-        # `stopped_by_user` n'est pas tout à fait vrai, mais c'est le drapeau que lit le chien de
-        # garde (`main.py`, `_voice_watchdog`) : sans lui il relancerait l'écoute toutes les 20 s
-        # sur un périphérique mort, en redisant l'alerte à chaque fois. Même usage que le verrou des
-        # lunettes dans `start()`. C'est donc à l'utilisateur de relancer, comme le message le dit.
-        self.stopped_by_user = True
+        self._alerter(self.error)
+        # On ne pose PAS `stopped_by_user` : ce drapeau empêcherait le chien de garde de jamais
+        # réessayer, et IRIS se tairait définitivement parce que des lunettes ont manqué d'air une
+        # fois. Sur scène, c'est le pire résultat possible. Le drapeau servait à éviter que
+        # l'alerte se répète toutes les vingt secondes — mais c'est l'alerte qu'il faut taire, pas
+        # l'écoute, et `_alerter` sait déjà ne rien redire deux fois.
         self._stop.set()
         return True
 
@@ -697,6 +724,13 @@ class VoiceListener:
             # l'établissement du lien mains libres prend jusqu'à 2 s — MICRO_MUET laisse la marge.
             self._last_block = time.time()
             stream.start()
+            # Le micro marche : on oublie les avertissements déjà dits, pour qu'une panne qui
+            # reviendrait plus tard soit bien redite. Mais SEULEMENT si c'est bien le micro
+            # demandé qui s'est ouvert : quand on a dû se rabattre sur un autre, l'avertissement
+            # reste vrai, et l'effacer le ferait répéter à chaque tour du chien de garde.
+            demande = (self.settings.user.audio_input_device or "").strip().lower()
+            if not demande or demande in (self.device_name or "").lower():
+                self._alertes_dites.clear()
         except Exception as exc:
             demande = (self.settings.user.audio_input_device or "").strip()
             if demande:
@@ -705,7 +739,7 @@ class VoiceListener:
             else:
                 self.error = f"Micro indisponible : {exc}"
             # Un « state: off » dans le statut ne se remarque pas ; l'écoute qui ne démarre pas, si.
-            self.hub.publish("voice.warning", text=self.error)
+            self._alerter(self.error)
             self._thread = None
             self._set_state("off")
             return

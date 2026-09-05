@@ -44,8 +44,15 @@ class FauxClient:
     def __exit__(self, *a):
         return False
 
+    def post(self, url, json=None):
+        """IRIS interroge d'abord en POST : le courriel voyage dans le corps, pas dans l'adresse."""
+        FauxClient.appels.append({"url": url, "json": json, "methode": "POST"})
+        if isinstance(FauxClient.reponse, Exception):
+            raise FauxClient.reponse
+        return FauxClient.reponse
+
     def get(self, url, params=None):
-        FauxClient.appels.append({"url": url, "params": params})
+        FauxClient.appels.append({"url": url, "params": params, "methode": "GET"})
         if isinstance(FauxClient.reponse, Exception):
             raise FauxClient.reponse
         return FauxClient.reponse
@@ -78,7 +85,9 @@ def test_activation_automatique(sync: LicenceSync):
     assert sync.plans.plan == "pro"
     assert sync.settings.user.license_key == cle
     # le courriel du client est bien celui envoyé au serveur
-    assert FauxClient.appels[-1]["params"] == {"email": "client@exemple.ca"}
+    dernier = FauxClient.appels[-1]
+    assert dernier["methode"] == "POST", "le courriel ne doit pas partir dans l'adresse"
+    assert dernier["json"] == {"email": "client@exemple.ca"}
 
 
 def test_deuxieme_verification_ne_change_rien(sync: LicenceSync):
@@ -199,3 +208,43 @@ def test_cle_falsifiee_refusee():
     assert vk(f"IRIS-{altere}-{cle[coupe + 1:]}") is None
     # préfixe absent
     assert vk(cle[5:]) is None
+
+
+# --------------------------------------------------------------------------- le courriel dans l'URL
+# Trouve par la relecture finale du site : IRIS interrogeait le serveur de licences en GET, avec
+# « ?email=... ». Un courriel est une donnee personnelle : dans une URL, il se retrouve dans les
+# journaux du serveur, dans ceux de tout intermediaire traverse, et dans les en-tetes de
+# provenance. La politique de confidentialite du site affirmait par ailleurs le contraire.
+def test_le_courriel_voyage_dans_le_corps_pas_dans_ladresse():
+    import inspect
+
+    from iris import licence
+
+    source = inspect.getsource(licence.LicenceSync.sync)
+    envoi = source[source.index("client.post"):source.index("client.post") + 200]
+    assert 'json={"email"' in envoi, "le courriel doit partir dans le corps"
+    avant_post = source[:source.index("client.post")]
+    assert "client.get" not in avant_post, "le POST doit etre essaye en premier"
+
+
+def test_le_serveur_de_licences_accepte_les_deux_formes():
+    """Le GET reste servi : les IRIS deja installees l'utilisent encore."""
+    from pathlib import Path as _P
+
+    app = _P(__file__).resolve().parents[2] / "server" / "licences" / "app.py"
+    source = app.read_text(encoding="utf-8")
+    assert '@app.post("/api/licence")' in source
+    assert '@app.get("/api/licence")' in source
+
+
+# --------------------------------------------------------------------------- aucune camera promise
+# Sept pages du site vendent l'absence de camera — « des lunettes qui vous ecoutent, sans jamais
+# vous regarder ». Le plan Entreprise promettait pourtant « creation de contenu POV + montage IA
+# (a venir, camera des lunettes VELA) », affiche dans l'ecran Abonnement. Vendre l'un et promettre
+# l'autre etait intenable.
+def test_aucun_forfait_ne_promet_de_camera():
+    from iris.plans import PLANS
+
+    for nom, plan in PLANS.items():
+        for ligne in plan["contents"]:
+            assert "caméra" not in ligne.lower() and "camera" not in ligne.lower(),                 "le forfait {} promet une camera : {}".format(nom, ligne)

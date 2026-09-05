@@ -5,6 +5,12 @@
    ========================================================================= */
 
 :root {
+  /* Le site n'existe qu'en sombre. Le déclarer sert aux éléments que le navigateur
+     dessine lui-même et que la feuille de style n'atteint pas : la barre de
+     défilement, la liste déroulante d'un <select>, le remplissage automatique des
+     champs. Sans cette ligne, ils arrivent en clair sur un site sombre. */
+  color-scheme: dark;
+
   /* --- les quatre couleurs de la marque, tirées du logo lui-même --- */
   --creme: #F8F0E7;        /* la grand-voile sur fond sombre, et tout le texte courant */
   --encre: #1B140E;        /* le fond, et le texte posé sur le terracotta */
@@ -95,6 +101,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 
 .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 .narrow { max-width: 780px; }
+/* Les notes libres d'une colonne étroite — pas celles rangées dans une carte,
+   où le plafond laisserait un vide à droite. À 14 px, une note occupait toute la
+   colonne de 732 px, soit plus de 100 caractères par ligne. */
+.wrap.narrow > p.small { max-width: 74ch; }
 
 .skip {
   position: absolute; left: -9999px; top: 0; z-index: 100;
@@ -243,6 +253,10 @@ p { margin: 0 0 14px; }
   font-family: var(--mono); font-size: 15px; font-weight: 600;
 }
 .steps-list h3 { margin-bottom: 6px; }
+/* Même plafond de longueur de ligne que .doc p : dans un .wrap large (1072 px),
+   un paragraphe d'étape atteignait 126 caractères par ligne, l'œil perdait la
+   ligne suivante. 74 caractères est la mesure retenue partout sur le site. */
+.steps-list p { max-width: 74ch; }
 
 /* ----------------------------------------------------------------- tableau */
 .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); }
@@ -309,7 +323,7 @@ td.price .pay { display: flex; margin-top: 10px; font-family: var(--font); }
 .demo-status { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 14px; background: var(--panel); }
 .demo-status.ok { color: var(--accent-3); }
 .demo-status.bad { color: var(--danger); }
-.demo-note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.demo-note { font-size: 13px; color: var(--muted); margin: 10px 0 0; max-width: 74ch; }
 
 /* --------------------------------------------------------------- code */
 pre {
@@ -332,6 +346,9 @@ kbd {
 }
 .callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
 .callout p:last-child { margin-bottom: 0; }
+/* L'encadré occupe toute la largeur — c'est voulu, il doit se voir — mais son
+   texte, lui, s'arrête à la même mesure que le reste du site. */
+.callout p, .callout li { max-width: 74ch; }
 
 .band {
   border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
@@ -427,7 +444,9 @@ input.invalide:focus, textarea.invalide:focus { box-shadow: 0 0 0 3px var(--dang
 }
 .doc h2:first-of-type { border-top: none; padding-top: 0; margin-top: 26px; }
 .doc h3 { font-size: 16px; margin: 22px 0 8px; }
-.doc p, .doc li { max-width: 74ch; }
+/* Les <dd> aussi : la section 5 de la politique en est faite, et sans plafond
+   ses définitions couraient sur 96 caractères par ligne. */
+.doc p, .doc li, .doc dd { max-width: 74ch; }
 .doc ul { padding-left: 22px; margin: 0 0 14px; }
 .doc li { margin-bottom: 7px; }
 .doc dl { margin: 0 0 16px; }
@@ -920,7 +939,7 @@ details.plus .plus-body p:last-child, details.plus .plus-body ul:last-child { ma
   background: var(--bg); border: 2px solid var(--accent-line);
 }
 .etats > li > h3 { margin: 0 0 6px; font-size: 17px; }
-.etats > li > p { margin: 0 0 8px; color: var(--text-2); font-size: 14.5px; }
+.etats > li > p { margin: 0 0 8px; color: var(--text-2); font-size: 14.5px; max-width: 74ch; }
 .etats > li > p:last-child { margin-bottom: 0; }
 /* « Ce qu'on ignore encore » : la moitié utile de chaque étape, en retrait
    pour qu'on la lise comme une réserve et non comme une promesse. */

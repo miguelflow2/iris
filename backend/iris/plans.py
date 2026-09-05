@@ -97,7 +97,6 @@ PLANS: dict[str, dict] = {
             "Tout Premium",
             "Claude Opus 5",
             "Connecteurs d'agents de code et outils PME (à venir)",
-            "Création de contenu POV + montage IA (à venir, caméra des lunettes VELA)",
             "Politique de gouvernance d'entreprise et export d'audit (à venir)",
         ],
         "api_cost": 62.0,
