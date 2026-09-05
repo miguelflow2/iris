@@ -15,42 +15,44 @@ import { SettingsView } from './views/SettingsView'
 import { TasksView } from './views/TasksView'
 import { WatchesView } from './views/WatchesView'
 
-// Navigation groupée par moment d'usage : ce qu'on fait maintenant, ce qui tourne sans
-// nous, ce qu'IRIS garde et peut prouver, puis les réglages. Chaque libellé est aussi le
-// titre de la page qui s'ouvre, pour que la barre se lise comme le sommaire du produit.
-// Les identifiants de vue ne changent jamais : seuls les groupes et les libellés bougent.
-const NAV: { group: string; items: { id: View; label: string; icon: string }[] }[] = [
+// Navigation : cinq entrées, pas dix. Une barre latérale qui énumère « Routines », « Tâches »,
+// « Surveillances », « Confidentialité », « Mémoire », « Moteurs IA », « Abonnement » et
+// « Paramètres » demande à l'utilisateur de deviner où chercher avant même d'avoir parlé. Ce qui
+// va ensemble se regroupe, et les pages secondaires deviennent des onglets à l'intérieur.
+// Les identifiants de vue ne changent jamais : seul l'emballage bouge.
+type Entree = { id: View; label: string; icon: string; onglets?: { id: View; label: string }[] }
+
+const NAV: Entree[] = [
+  { id: 'chat', label: 'Conversation', icon: '◎' },
+  { id: 'glasses', label: 'Lunettes', icon: '◠' },
+  { id: 'memory', label: 'Mémoire', icon: '◫' },
   {
-    group: 'Parler et agir',
-    items: [
-      { id: 'chat', label: 'Conversations', icon: '◎' },
-      { id: 'routines', label: 'Routines et rappels', icon: '⟳' }
+    id: 'routines',
+    label: 'Elle travaille seule',
+    icon: '⟳',
+    onglets: [
+      { id: 'routines', label: 'Routines et rappels' },
+      { id: 'tasks', label: 'Tâches' },
+      { id: 'watches', label: 'Surveillances' }
     ]
   },
   {
-    group: 'IRIS travaille seule',
-    items: [
-      { id: 'tasks', label: 'Tâches', icon: '◷' },
-      { id: 'watches', label: 'Surveillances', icon: '◉' }
-    ]
-  },
-  {
-    group: 'Preuve et mémoire',
-    items: [
-      { id: 'privacy', label: 'Confidentialité', icon: '◈' },
-      { id: 'memory', label: 'Mémoire', icon: '◫' }
-    ]
-  },
-  {
-    group: 'Réglages',
-    items: [
-      { id: 'agents', label: 'Moteurs IA', icon: '⌘' },
-      { id: 'glasses', label: 'Lunettes', icon: '◠' },
-      { id: 'plan', label: 'Abonnement', icon: '★' },
-      { id: 'settings', label: 'Paramètres', icon: '⚙' }
+    id: 'settings',
+    label: 'Réglages',
+    icon: '⚙',
+    onglets: [
+      { id: 'settings', label: 'Paramètres' },
+      { id: 'privacy', label: 'Confidentialité' },
+      { id: 'plan', label: 'Abonnement' },
+      { id: 'agents', label: 'Moteurs IA' }
     ]
   }
 ]
+
+/** L'entrée de la barre latérale à laquelle appartient la vue ouverte. */
+function entreeDe(view: View): Entree | undefined {
+  return NAV.find((e) => e.id === view || (e.onglets || []).some((o) => o.id === view))
+}
 
 export default function App(): JSX.Element {
   const store = useStore()
@@ -97,23 +99,18 @@ export default function App(): JSX.Element {
             savoir ce qu'elle est avant de lire la navigation. */}
         <div className="brand-claim">Assistante vocale qui agit sur votre ordinateur.</div>
         <div className="nav-scroll">
-        {NAV.flatMap((section) => [
-          <div key={`g-${section.group}`} className="nav-group">{section.group}</div>,
-          ...section.items.map((item) => (
-          <button key={item.id} className={`nav-btn ${view === item.id ? 'active' : ''}`} onClick={() => setView(item.id)}>
-            <span style={{ width: 16, textAlign: 'center', color: 'var(--muted)' }}>{item.icon}</span>
-            {item.label}
-            {item.id === 'agents' ? (
-              <span className="badge" title={`${agentsReady.length} moteur${agentsReady.length > 1 ? 's' : ''} IA prêt${agentsReady.length > 1 ? 's' : ''} à répondre`}>
-                {agentsReady.length}
-              </span>
-            ) : null}
-            {item.id === 'glasses' && status?.glasses?.connected ? <span className="badge" style={{ color: 'var(--accent-2)' }}>●</span> : null}
-            {item.id === 'privacy' && settings?.local_only ? <span className="badge">local</span> : null}
-            {item.id === 'plan' && status?.plan ? <span className="badge">{status.plan.label}</span> : null}
-          </button>
-          ))
-        ])}
+        {NAV.map((item) => {
+          const actif = entreeDe(view)?.id === item.id
+          return (
+            <button key={item.id} className={`nav-btn ${actif ? 'active' : ''}`} onClick={() => setView(item.id)}>
+              <span style={{ width: 16, textAlign: 'center', color: 'var(--muted)' }}>{item.icon}</span>
+              {item.label}
+              {item.id === 'glasses' && status?.glasses?.connected ? <span className="badge" style={{ color: 'var(--accent-2)' }}>●</span> : null}
+              {item.id === 'settings' && settings?.local_only ? <span className="badge">local</span> : null}
+              {item.id === 'settings' && status?.plan ? <span className="badge">{status.plan.label}</span> : null}
+            </button>
+          )
+        })}
         </div>
         <button className={`btn sm ${settings?.privacy_mode ? 'danger' : ''}`} style={{ margin: '0 10px 10px', justifyContent: 'center' }} title="Coupe le micro et empêche toute écoute ou capture tant qu’il est actif" onClick={() => store.updateSettings({ privacy_mode: !settings?.privacy_mode })}>
           {settings?.privacy_mode ? '🔴 Mode confidentiel : micro coupé' : '🎙 Passer en mode confidentiel'}
@@ -169,7 +166,22 @@ export default function App(): JSX.Element {
           <div className="ver">IRIS {appInfo?.version || ''}</div>
         </div>
       </aside>
-      <main className="main">{content}</main>
+      <main className="main">
+        {(() => {
+          const onglets = entreeDe(view)?.onglets
+          if (!onglets) return content
+          return (
+            <>
+              <div className="row" style={{ gap: 6, padding: '10px 16px 0', flexWrap: 'wrap' }}>
+                {onglets.map((o) => (
+                  <button key={o.id} className={`btn sm ${view === o.id ? 'primary' : 'ghost'}`} onClick={() => setView(o.id)}>{o.label}</button>
+                ))}
+              </div>
+              {content}
+            </>
+          )
+        })()}
+      </main>
 
       {settings && !settings.onboarded ? <Onboarding /> : null}
 
