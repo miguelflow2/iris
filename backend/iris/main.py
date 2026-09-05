@@ -517,17 +517,47 @@ def create_app(
     app.state.ctx = ctx
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+    def _vient_de_cet_ordinateur(request: Request) -> bool:
+        """La requête part-elle bien de cette machine, sans intermédiaire ?
+
+        Un mandataire ou un tunnel se signale par l'un de ces en-têtes. On les traite comme
+        « pas local » même quand la connexion arrive par la boucle locale : derrière un tunnel,
+        TOUT semble venir de 127.0.0.1, et s'y fier reviendrait à ne rien vérifier."""
+        import ipaddress
+
+        for entete in ("x-forwarded-for", "x-real-ip", "cf-connecting-ip", "forwarded", "x-forwarded-host"):
+            if request.headers.get(entete):
+                return False
+        hote = (request.client.host if request.client else "") or ""
+        try:
+            return ipaddress.ip_address(hote).is_loopback
+        except ValueError:
+            # Pas une adresse IP : la requête n'a pas traversé le réseau du tout. C'est le cas d'un
+            # client interne, en mémoire. Une vraie connexion distante porte toujours une adresse.
+            return True
+
     def require_token(request: Request) -> None:
         if token is None:
             return
         header = request.headers.get("authorization", "")
         supplied = header[7:] if header.lower().startswith("bearer ") else request.query_params.get("token", "")
-        # Un jeton de session ouvert avec le mot de passe donne les mêmes droits : c'est par là
-        # que passe le téléphone, pour que l'adresse seule ne suffise jamais.
+        # Une session ouverte avec le mot de passe donne les mêmes droits : c'est par là que passe
+        # le téléphone.
         if supplied and supplied != token and ctx.comptes.session_valide(supplied):
             return
         if supplied != token:
             raise HTTPException(status_code=401, detail="jeton de session invalide")
+        # Jeton maître accepté — mais IRIS écrit elle-même ce jeton dans l'adresse qu'elle donne au
+        # téléphone (« /m?token=… »). Une adresse finit dans un historique, une capture d'écran, un
+        # message qu'on s'envoie à soi-même. Tant qu'aucun mot de passe n'existe, c'est le seul
+        # secret dont on dispose et il faut bien s'en contenter. Dès qu'il en existe un, ce jeton
+        # cesse de valoir depuis l'extérieur : sinon le mot de passe ne protégerait rien du tout,
+        # et la promesse écrite dans docs/ACCES-DISTANT.md serait fausse.
+        if ctx.comptes.configure and not _vient_de_cet_ordinateur(request):
+            raise HTTPException(
+                status_code=401,
+                detail="Depuis un autre appareil, connectez-vous avec votre mot de passe.",
+            )
 
     auth = [Depends(require_token)]
 

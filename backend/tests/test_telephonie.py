@@ -572,3 +572,33 @@ def test_un_identifiant_qui_nest_pas_un_account_sid_est_signale(iris: Telephonis
         iris.configurer_twilio("SK" + "0" * 32, TOKEN, EXPEDITEUR)
     with pytest.raises(TelephonieNonConfiguree, match="tous les deux"):
         iris.configurer_twilio(SID, "", EXPEDITEUR)
+
+
+# --------------------------------------------------------------------------- l'accord porte sur la voie
+# Defaut trouve par une relecture adverse le 2026-09-05. L'empreinte du brouillon couvrait le
+# genre, le numero et le texte — pas la VOIE d'acheminement. Un accord donne pour un brouillon
+# prepare sur l'iPhone, ou c'est Miguel qui appuie lui-meme sur « envoyer », restait donc valable
+# si le reglage basculait ensuite sur Twilio, qui envoie tout seul et fait payer. Approuver un
+# geste ne vaut pas approuver un autre geste.
+def test_changer_de_voie_invalide_laccord():
+    from iris.telephonie import Brouillon
+
+    par_le_telephone = Brouillon(genre="sms", numero="+18195242804", texte="a demain", voie="iphone")
+    par_le_service = Brouillon(genre="sms", numero="+18195242804", texte="a demain", voie="twilio")
+    assert par_le_telephone.empreinte != par_le_service.empreinte
+
+
+def test_lempreinte_couvre_toujours_le_reste():
+    """Le correctif ne doit pas avoir affaibli ce qui marchait deja."""
+    from iris.telephonie import Brouillon
+
+    base = Brouillon(genre="sms", numero="+18195242804", texte="a demain", voie="iphone")
+    for autre in (
+        Brouillon(genre="sms", numero="+15145551234", texte="a demain", voie="iphone"),
+        Brouillon(genre="sms", numero="+18195242804", texte="a jamais", voie="iphone"),
+        Brouillon(genre="appel", numero="+18195242804", texte="a demain", voie="iphone"),
+    ):
+        assert base.empreinte != autre.empreinte
+
+    identique = Brouillon(genre="sms", numero="+18195242804", texte="a demain", voie="iphone")
+    assert base.empreinte == identique.empreinte, "le meme message doit rester approuvable"

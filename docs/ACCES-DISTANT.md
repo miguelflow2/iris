@@ -66,6 +66,13 @@ Le plan Personal est gratuit (6 utilisateurs, appareils illimités). Aucune cart
   (`.\scripts\autoriser-telephone.ps1 -Retirer`). Une porte de moins.
 - **Le mot de passe et la session ne changent pas.** L'écran de connexion d'IRIS reste exactement le
   même, la session dure toujours 30 jours. Le tunnel remplace le trajet, pas la serrure.
+- **Le jeton contenu dans l'adresse ne vaut plus depuis l'extérieur.** IRIS écrit elle-même un
+  jeton dans l'adresse qu'elle donne au téléphone (`/m?token=…`). Jusqu'au 5 septembre 2026, ce
+  jeton était accepté de n'importe où : quiconque avait vu l'adresse — un historique, une capture
+  d'écran, un message qu'on s'envoie à soi-même — commandait l'ordinateur **sans le mot de passe**,
+  et ce document affirmait le contraire. Corrigé : dès qu'un mot de passe existe, ce jeton ne vaut
+  plus que depuis la machine elle-même. De l'extérieur, seule une session ouverte avec le mot de
+  passe est acceptée.
 
 ## A.4 Les étapes, dans l'ordre
 
@@ -135,7 +142,10 @@ C'est la partie qui compte. Après cette installation :
   de retirer la règle de pare-feu qui, elle, l'exposait à tout ce qui se branchait chez vous
   (y compris à un invité, ou à un objet connecté douteux).
 - **Ce n'est pas un accès à votre écran.** Personne ne voit ce que vous faites sur l'ordinateur ;
-  seule l'interface d'IRIS est atteignable, et seulement après le mot de passe.
+  seule l'interface d'IRIS est atteignable, et seulement après le mot de passe — à condition qu'un
+  mot de passe existe. **Tant que vous n'en avez pas posé**, le jeton de l'adresse reste le seul
+  secret, et l'adresse seule suffit. C'est pourquoi il faut le poser avant de publier quoi que ce
+  soit, et pas après.
 
 ## A.7 Ce qu'il expose, en revanche — dit franchement
 

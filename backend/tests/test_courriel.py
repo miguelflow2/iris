@@ -412,3 +412,17 @@ def test_le_mode_local_empeche_tout_envoi(coffre, journal: Journal):
     with pytest.raises(ModeLocalActif):
         p.preparer("ami@exemple.com", "Objet", "Corps")
     assert journal.connexions == []
+
+
+# --------------------------------------------------------------------------- ce que l'etat revele
+# Defaut trouve par une relecture adverse le 2026-09-05 : etat() renvoyait SecretStore.mask(), qui
+# n'est pas une empreinte mais un EXTRAIT — quatre caracteres au debut, quatre a la fin. Sur un mot
+# de passe court, choisi par la personne plutot que genere, c'est deja trop. Et la docstring
+# promettait de ne jamais renvoyer le mot de passe.
+def test_letat_ne_laisse_filtrer_aucun_caractere_du_secret(postier):
+    import json
+
+    postier.configurer("miguel@exemple.com", "SoleilDeMai2026")
+    revele = json.dumps(postier.etat(), ensure_ascii=False)
+    for morceau in ("Soleil", "2026", "SoleilDeMai", "Sole", "l2026"):
+        assert morceau not in revele, "l'etat laisse filtrer : " + morceau

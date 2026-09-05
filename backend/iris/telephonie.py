@@ -398,6 +398,11 @@ class Brouillon:
     genre: str  # "sms" | "appel"
     numero: str  # E.164
     texte: str = ""
+    # Par où le message part. Défaut trouvé par une relecture adverse : sans ce champ dans
+    # l'empreinte, un accord donné pour un brouillon préparé sur l'iPhone — où c'est Miguel qui
+    # appuie sur « envoyer » — restait valable si le réglage basculait ensuite sur Twilio, qui
+    # envoie tout seul et fait payer. Approuver un geste ne vaut pas approuver un autre geste.
+    voie: str = ""
     identifiant: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     empreinte: str = ""
 
@@ -405,7 +410,7 @@ class Brouillon:
         object.__setattr__(self, "empreinte", self.calculer_empreinte())
 
     def calculer_empreinte(self) -> str:
-        return hashlib.sha256("\x1f".join([self.genre, self.numero, self.texte]).encode("utf-8")).hexdigest()
+        return hashlib.sha256("\x1f".join([self.genre, self.numero, self.texte, self.voie]).encode("utf-8")).hexdigest()
 
     @property
     def segments(self) -> int:
@@ -709,7 +714,7 @@ class Telephoniste:
                 f"Ce message fait {len(texte)} caractères, soit {segments} segments facturés séparément. "
                 f"Je m'arrête à {MAX_CARACTERES}. Raccourcis-le, ou envoie plutôt un courriel."
             )
-        return Brouillon(genre="sms", numero=numero, texte=texte)
+        return Brouillon(genre="sms", numero=numero, texte=texte, voie=self.fournisseur)
 
     def preparer_appel(self, numero: str) -> Brouillon:
         """Construit l'appel et ne compose RIEN."""
@@ -722,7 +727,8 @@ class Telephoniste:
                 "inconnu et ne pourrait pas te rappeler. Je prépare le numéro sur ton téléphone, "
                 "et c'est ta ligne qui appelle."
             )
-        return Brouillon(genre="appel", numero=normaliser_numero(numero, self.reglages().indicatif_pays))
+        return Brouillon(genre="appel", numero=normaliser_numero(numero, self.reglages().indicatif_pays),
+                         voie=self.fournisseur)
 
     # ------------------------------------------------------------------ accord
     async def demander_accord(self, brouillon: Brouillon, confirmer: ConfirmFn) -> Autorisation | None:

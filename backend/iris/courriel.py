@@ -379,7 +379,10 @@ class Postier:
         return {
             "configure": self.configure,
             "adresse": adresse,
-            "secret": self.secrets.mask(mdp) if mdp else "",
+            # mask() rend un EXTRAIT du secret : quatre caracteres au debut, quatre a la fin.
+            # Sur un mot de passe court, choisi par la personne plutot que genere, c'est deja trop,
+            # et la docstring promettait le contraire.
+            "secret": "\u2022" * 8 if mdp else "",
             "smtp_hote": r.smtp_hote,
             "smtp_port": r.smtp_port,
             "tls": r.tls,

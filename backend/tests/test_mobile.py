@@ -286,3 +286,40 @@ def test_le_jeton_est_relu_a_chaque_requete():
     """Après la connexion, le jeton change : des en-têtes figées enverraient l'ancien."""
     assert "function enTetes()" in PAGE
     assert "'Bearer ' + JETON" in PAGE
+
+
+# --------------------------------------------------------------------------- le jeton d'adresse
+# Defaut trouve par une relecture adverse le 2026-09-05. IRIS ecrit elle-meme son jeton maitre dans
+# l'adresse qu'elle donne au telephone (« /m?token=... »). Le serveur acceptait ce jeton de
+# n'importe ou : quiconque avait vu l'adresse — un historique, une capture d'ecran, un message
+# qu'on s'envoie a soi-meme — commandait l'ordinateur SANS le mot de passe. Et la documentation
+# affirmait le contraire a l'endroit exact ou le lecteur cherche a se rassurer.
+def test_le_jeton_dadresse_ne_vaut_plus_depuis_lexterieur(client, client_sans_jeton):
+    client.post("/api/compte", json={"nouveau": "motdepasse-solide"})
+
+    # Depuis un tunnel ou un mandataire : ces en-tetes trahissent un intermediaire.
+    for entete in ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "Forwarded"):
+        r = client_sans_jeton.get("/api/status?token=test-token", headers={entete: "203.0.113.7"})
+        assert r.status_code == 401, "le jeton d'adresse a suffi malgre " + entete
+        assert "mot de passe" in r.json()["detail"].lower(), "le refus doit dire quoi faire"
+
+
+def test_le_meme_jeton_marche_toujours_depuis_cet_ordinateur(client):
+    """L'application elle-meme s'en sert : la casser reviendrait a rendre IRIS inutilisable."""
+    client.post("/api/compte", json={"nouveau": "motdepasse-solide"})
+    assert client.get("/api/status").status_code == 200
+
+
+def test_sans_mot_de_passe_le_jeton_dadresse_reste_le_seul_secret(client_sans_jeton):
+    """Tant que personne n'a pose de mot de passe, ce jeton est tout ce qu'on a : le refuser
+    fermerait l'acces telephone a quelqu'un qui n'a encore rien configure."""
+    r = client_sans_jeton.get("/api/status?token=test-token", headers={"X-Forwarded-For": "203.0.113.7"})
+    assert r.status_code == 200
+
+
+def test_la_session_du_telephone_traverse_le_tunnel(client, client_sans_jeton):
+    """C'est la voie normale : mot de passe, puis session. Elle doit marcher de l'exterieur."""
+    client.post("/api/compte", json={"nouveau": "motdepasse-solide"})
+    session = client_sans_jeton.post("/api/compte/connexion", json={"mot_de_passe": "motdepasse-solide"}).json()["session"]
+    r = client_sans_jeton.get("/api/status", headers={"Authorization": "Bearer " + session, "X-Forwarded-For": "203.0.113.7"})
+    assert r.status_code == 200

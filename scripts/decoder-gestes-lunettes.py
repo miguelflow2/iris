@@ -6,8 +6,10 @@ Le principe : le script vous dit quoi faire et quand, puis étiquette lui-même 
 pendant chaque fenêtre. À la fin, il affiche la correspondance geste → code. C'est ce tableau
 qui permettra ensuite à IRIS de réagir aux boutons et aux mouvements de tête.
 
-Format de trame observé le 2026-09-04 :
-    bc <type> <longueur sur 2 octets, petit-boutiste> <données> <2 octets de contrôle>
+Format de trame, établi le 2026-09-04 et corrigé le 2026-09-05 :
+    bc <type> <longueur (2, petit-boutiste)> <CRC-16/MODBUS (2)> <données>
+Les octets de contrôle sont AVANT les données, pas après. Le décodage vit dans
+backend/iris/lunettes_trames.py, et il est gardé par des tests.
   · type 0x59 : flux continu à haute fréquence (télémétrie), ignoré ici, il noierait le reste ;
   · type 0x73 : événements rares — ce sont eux qui portent les gestes.
 
@@ -40,6 +42,36 @@ GESTES = [
     ("SECOUEZ la tête (non), trois fois", 7.0),
     ("RETIREZ les lunettes et posez-les", 6.0),
 ]
+
+
+def annoncer(numero: int, total: int) -> None:
+    """Dit le numéro de l'étape à voix haute.
+
+    Sans repère sonore, il faudrait garder les yeux sur l'écran tout en manipulant les lunettes —
+    or plusieurs gestes consistent justement à les mettre sur la tête. La voix installée sur ce
+    poste est anglophone : on ne lui fait dire qu'un numéro, ce qu'elle prononce correctement."""
+    try:
+        import subprocess
+
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-Command",
+             "Add-Type -AssemblyName System.Speech; "
+             "$v = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+             "$v.Rate = 1; $v.Speak('Step {} of {}')".format(numero, total)],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
+
+
+def bip(frequence: int = 880, duree: int = 180) -> None:
+    """Un bip aigu ouvre la fenêtre, un bip grave la referme."""
+    try:
+        import winsound
+
+        winsound.Beep(frequence, duree)
+    except Exception:
+        pass
 
 
 def adresse() -> str:
@@ -108,28 +140,71 @@ async def main() -> int:
     print("Préparez-vous : le script vous dira quoi faire, un geste à la fois.")
     print("Faites le geste UNE SEULE FOIS, au début de la fenêtre, puis ne touchez plus à rien.\n")
 
+    # Attendre que les lunettes se montrent, puis se connecter A L'OBJET RENVOYE PAR LE BALAYAGE.
+    #
+    # Premiere tentative : on balayait, on voyait les lunettes, puis on passait leur ADRESSE a
+    # BleakClient — qui refaisait sa propre recherche. Entre les deux, la fenetre d'annonce s'etait
+    # refermee, et la connexion echouait sur un « appareil introuvable » alors qu'on venait de les
+    # voir. find_device_by_address rend l'objet lui-meme : plus de seconde recherche, plus de course.
+    from bleak import BleakScanner
+
+    print("Recherche des lunettes... reveillez-les (eteignez-les puis rallumez-les).", flush=True)
+    appareil = None
+    for essai in range(45):  # jusqu'a six minutes
+        appareil = await BleakScanner.find_device_by_address(cible, timeout=8.0)
+        if appareil is not None:
+            break
+        print("  ... toujours rien ({} s ecoulees)".format((essai + 1) * 8), flush=True)
+    if appareil is None:
+        print("Les lunettes ne se sont pas montrees. Elles sont peut-etre dans leur etui, ou")
+        print("deja connectees a un telephone qui les garde pour lui.")
+        return 1
+    print("Trouvees. Connexion immediate...", flush=True)
+
     try:
-        async with BleakClient(cible, timeout=30.0) as client:
+        async with BleakClient(appareil, timeout=30.0) as client:
             if not client.is_connected:
                 print("Connexion refusée.")
                 return 1
-            await client.start_notify(CANAL_EVENEMENTS, au_signal)
-            print("Connecté et à l'écoute.\n")
+            # On s'abonne a TOUT ce qui notifie, pas au seul canal connu. Constat reel : apres
+            # un redemarrage, les lunettes n'exposaient plus de5bf729 et la capture s'arretait
+            # net alors que la connexion, elle, avait reussi.
+            abonnes = []
+            for service in client.services:
+                for car in service.characteristics:
+                    if 'notify' in car.properties or 'indicate' in car.properties:
+                        try:
+                            await client.start_notify(car, au_signal)
+                            abonnes.append(str(car.uuid).split('-')[0][-4:])
+                        except Exception:
+                            pass
+            print('Services exposes : ' + ', '.join(sorted({str(sv.uuid).split('-')[0][-4:] for sv in client.services})), flush=True)
+            if not abonnes:
+                print('Aucun canal de notification : rien a ecouter.', flush=True)
+                return 1
+            print('A l ecoute sur : ' + ', '.join(abonnes) + NL, flush=True)
             await asyncio.sleep(2.0)
 
+            print("  Dix secondes pour vous installer, les lunettes a portee de main.")
+            await asyncio.sleep(10.0)
+
             for numero, (nom, duree) in enumerate(GESTES, 1):
+                annoncer(numero, len(GESTES))
                 for compte in (3, 2, 1):
-                    print(f"\r  {numero}/{len(GESTES)} — {nom} … dans {compte}   ", end="", flush=True)
-                    await asyncio.sleep(1.0)
+                    print(f"\r  {numero}/{len(GESTES)} - {nom} ... dans {compte}   ", end="", flush=True)
+                    bip(440, 90)
+                    await asyncio.sleep(0.9)
                 geste_courant["nom"] = nom
-                print(f"\r  {numero}/{len(GESTES)} — {nom} : MAINTENANT" + " " * 20)
+                bip(1320, 250)
+                print(f"\r  {numero}/{len(GESTES)} - {nom} : MAINTENANT" + " " * 20)
                 await asyncio.sleep(duree)
+                bip(330, 120)
                 recues = len(releve[nom])
-                print(f"      → {recues} trame(s) reçue(s)")
+                print(f"      -> {recues} trame(s) recue(s)")
                 geste_courant["nom"] = "(entre deux gestes)"
                 await asyncio.sleep(1.5)
 
-            await client.stop_notify(CANAL_EVENEMENTS)
+            pass  # la deconnexion coupe les abonnements
     except Exception as exc:
         print(f"\nÉchec : {type(exc).__name__}: {exc}")
         return 1

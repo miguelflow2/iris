@@ -228,7 +228,17 @@ exhaustive :
 | `c6 d0` | `0xD0C6` | `0a 01` |
 
 Les « deux événements qui alternent » sont donc les codes **`0x03`** et **`0x0A`**, chacun avec
-la valeur `01`. Les scripts `decoder-gestes-lunettes.py` doivent être corrigés pour découper la
+la valeur `01`.
+
+Précision honnête sur cette reconstitution : `03 01` et `0a 01` sont les **seules** solutions
+sur une ou deux octets, et elles forment une paire cohérente (même second octet, deux codes
+différents). Un CRC de 16 bits admet évidemment des collisions sur des charges utiles plus
+longues — la recherche en a trouvé neuf sur trois octets pour chaque CRC, mais toutes
+commencent par un premier octet aberrant (`a1`, `a2`, `a4`, `a7`, `a8`, `ab`, `ad`, `ae`, `b6`)
+qui ne ressemble à aucun code d'événement. Le champ de longueur de ces trames n'ayant pas été
+consigné dans le relevé précédent, la lecture à deux octets reste une **déduction très
+probable**, pas un fait établi. Une nouvelle capture, avec les trames complètes, la confirmera
+en une seconde. Les scripts `decoder-gestes-lunettes.py` doivent être corrigés pour découper la
 trame au bon endroit, sinon ils étiquettent des CRC au lieu d'étiqueter des gestes.
 (Je n'ai touché à aucun de ces fichiers.)
 
