@@ -894,3 +894,57 @@ details.plus .plus-body p:last-child, details.plus .plus-body ul:last-child { ma
   .prix-bloc { padding: 16px 16px; }
   .pb-taxes { margin-bottom: 13px; }
 }
+
+/* =========================================================================
+   LE SUIVI DE COMMANDE — suivi.html et merci.html
+   Règle du bloc : rien ici ne dessine une progression. Pas de barre qui se
+   remplit, pas d'étape « en cours » qui clignote. La liste .etats est un
+   VOCABULAIRE (ce qu'une commande peut être), pas l'état d'une commande
+   précise : les pastilles sont donc toutes identiques et neutres. Le jour où
+   une vraie commande s'affiche, c'est .etats.reelle qui distinguera l'atteint
+   du pas-encore-atteint — et seulement à partir de faits datés.
+   Voir docs/SUIVI-COMMANDES.md.
+   ========================================================================= */
+.etats { list-style: none; padding: 0; margin: 0; }
+.etats > li {
+  position: relative;
+  margin-left: 8px;
+  padding: 0 0 26px 30px;
+  border-left: 2px solid var(--border-2);
+}
+/* Le dernier n'a pas de suite : le rail s'arrête à sa pastille. */
+.etats > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.etats > li::before {
+  content: ""; position: absolute; left: -9px; top: 5px;
+  width: 16px; height: 16px; border-radius: 999px;
+  background: var(--bg); border: 2px solid var(--accent-line);
+}
+.etats > li > h3 { margin: 0 0 6px; font-size: 17px; }
+.etats > li > p { margin: 0 0 8px; color: var(--text-2); font-size: 14.5px; }
+.etats > li > p:last-child { margin-bottom: 0; }
+/* « Ce qu'on ignore encore » : la moitié utile de chaque étape, en retrait
+   pour qu'on la lise comme une réserve et non comme une promesse. */
+.etats .ignore {
+  color: var(--muted); font-size: 13.5px;
+  border-left: 2px solid var(--border); padding-left: 12px;
+}
+.etats .ignore b { color: var(--text-2); font-weight: 600; }
+/* Les deux voies de traverse ne sont pas une suite : pas de rail entre elles. */
+.etats.detours > li { border-left-color: transparent; padding-bottom: 18px; }
+.etats > li.detour::before { border-color: rgba(233, 196, 106, 0.5); }
+
+/* Réponse de la page de suivi : même boîte que .form-reponse, mais elle peut
+   contenir un petit tableau (état, dates, transporteur) plutôt qu'une phrase. */
+.suivi-fiche { margin: 4px 0 0; display: grid; gap: 10px; }
+.suivi-fiche dl { display: grid; grid-template-columns: minmax(0, 13em) 1fr; gap: 4px 16px; margin: 0; }
+.suivi-fiche dt { color: var(--muted); font-size: 13.5px; }
+.suivi-fiche dd { margin: 0; font-size: 14.5px; color: var(--text); word-break: break-word; }
+/* Une valeur absente s'écrit, elle ne se cache pas et ne se devine pas. */
+.suivi-fiche dd.inconnu { color: var(--muted); font-style: italic; }
+.suivi-fiche .num { font-family: var(--mono); font-size: 14px; word-break: break-all; }
+
+@media (max-width: 560px) {
+  .etats > li { padding-left: 24px; }
+  .suivi-fiche dl { grid-template-columns: 1fr; gap: 2px; }
+  .suivi-fiche dt { margin-top: 8px; }
+}

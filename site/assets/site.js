@@ -103,6 +103,245 @@
     });
   }
 
+  /* --------------------------------------------------- suivi de commande
+     Page suivi.html. Deux comportements, selon qu'un serveur de suivi existe :
+
+       ADRESSE_SUIVI vide (aujourd'hui) — aucun appel réseau. Le formulaire
+         redit à la personne ce qu'elle a saisi et l'oriente vers le courriel.
+         Il n'affiche AUCUN état, AUCUNE date : on ne sait rien, on le dit.
+
+       ADRESSE_SUIVI renseignée — un POST JSON, et la fiche est remplie avec ce
+         que le serveur renvoie, sans jamais rien compléter ni calculer. Un
+         champ absent s'écrit « inconnue » ; il ne se devine pas.
+
+     Trois choses à ne pas casser en modifiant ce bloc :
+       1. POST, jamais GET. Le numéro de commande et le courriel ne doivent
+          apparaître ni dans l'adresse de la page, ni dans un journal de serveur.
+       2. Rien n'est écrit dans location ni dans history : cette page reste
+          partageable sans fuite.
+       3. Tout l'affichage passe par textContent. Le serveur est une source
+          externe : son texte ne devient jamais du HTML.
+
+     Le jour où l'adresse est renseignée, ajouter son origine à connect-src dans
+     _headers, sinon la politique de sécurité du contenu bloquera l'appel.
+     Architecture complète : docs/SUIVI-COMMANDES.md. */
+  var ADRESSE_SUIVI = '';
+  var DELAI_SUIVI = 12000;
+
+  var ETIQUETTES_ETAT = {
+    paiement_recu: 'Paiement reçu',
+    commandee_fournisseur: 'Commande passée au fournisseur',
+    expediee: 'Expédiée',
+    en_transit: 'En transit',
+    livree: 'Livrée',
+    annulee: 'Annulée',
+    probleme: 'Problème — un humain s’en occupe'
+  };
+
+  var suivi = document.getElementById('form-suivi');
+  if (suivi) {
+    var sortieSuivi = document.getElementById('reponse-suivi');
+    var avisSuivi = document.querySelector('[data-suivi-avis]');
+    // L'avertissement « pas encore branché » disparaît de lui-même le jour où
+    // le service existe : un seul endroit à modifier, pas deux textes à accorder.
+    if (ADRESSE_SUIVI && avisSuivi) avisSuivi.hidden = true;
+
+    var erreurChamp = function (champ, actif, idMsg) {
+      var msg = document.getElementById(idMsg);
+      if (msg) msg.hidden = !actif;
+      champ.classList.toggle('invalide', actif);
+      champ.setAttribute('aria-invalid', actif ? 'true' : 'false');
+    };
+
+    var vider = function () { while (sortieSuivi.firstChild) sortieSuivi.removeChild(sortieSuivi.firstChild); };
+
+    var ligne = function (dl, terme, valeur, inconnu, mono) {
+      var dt = document.createElement('dt');
+      dt.textContent = terme;
+      var dd = document.createElement('dd');
+      dd.textContent = valeur;
+      if (inconnu) dd.className = 'inconnu';
+      else if (mono) dd.className = 'num';
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    };
+
+    var paragraphe = function (texte, classe) {
+      var p = document.createElement('p');
+      p.style.margin = '0';
+      if (classe) p.className = classe;
+      p.textContent = texte;
+      return p;
+    };
+
+    // Lien de secours : le courriel, avec le numéro déjà dans le corps du message.
+    // Ce lien n'est PAS suivi automatiquement — la personne clique si elle veut.
+    // Rien n'entre donc dans l'historique du navigateur sans son geste.
+    var lienSecours = function (numero) {
+      var corps = [
+        'Numéro de commande : ' + numero,
+        '',
+        'Bonjour, où en est ma commande ?',
+        '',
+        '— Envoyé depuis la page de suivi du site VELA'
+      ].join('\r\n');
+      var a = document.createElement('a');
+      a.href = 'mailto:' + COURRIEL
+        + '?subject=' + encodeURIComponent('VELA — suivi de commande')
+        + '&body=' + encodeURIComponent(corps);
+      a.textContent = 'Nous écrire à propos de cette commande';
+      return a;
+    };
+
+    var afficher = function (classe, noeuds) {
+      vider();
+      sortieSuivi.hidden = false;
+      sortieSuivi.className = 'form-reponse' + (classe ? ' ' + classe : '');
+      noeuds.forEach(function (n) { sortieSuivi.appendChild(n); });
+    };
+
+    // Une fiche de commande, remplie uniquement avec ce que le serveur a dit.
+    var afficherFiche = function (d, numero) {
+      var bloc = document.createElement('div');
+      bloc.className = 'suivi-fiche';
+      var dl = document.createElement('dl');
+
+      var etat = String(d.etat || '');
+      ligne(dl, 'État', ETIQUETTES_ETAT[etat] || 'État inconnu', !ETIQUETTES_ETAT[etat]);
+      ligne(dl, 'Numéro de commande', String(d.numero || numero));
+
+      // Les dates : uniquement celles d'un fait qui a eu lieu. Aucune n'est
+      // calculée à partir d'une autre, et aucune moyenne n'est appliquée.
+      var dates = d.dates || {};
+      ligne(dl, 'Paiement reçu le', dates.paiement_recu || 'inconnue', !dates.paiement_recu);
+      ligne(dl, 'Passée au fournisseur le', dates.commandee_fournisseur || 'inconnue', !dates.commandee_fournisseur);
+      ligne(dl, 'Expédiée le', dates.expediee || 'inconnue', !dates.expediee);
+      ligne(dl, 'Livrée le', dates.livree || 'inconnue', !dates.livree);
+
+      ligne(dl, 'Transporteur', d.transporteur || 'inconnu', !d.transporteur);
+      ligne(dl, 'Numéro de suivi', d.suivi_numero || 'aucun pour l’instant', !d.suivi_numero, true);
+      // Cette ligne ne vient QUE du transporteur. Le serveur envoie null tant
+      // qu'aucun transporteur ne l'a annoncée ; on n'estime jamais nous-mêmes.
+      ligne(dl, 'Livraison estimée', d.livraison_estimee || 'inconnue', !d.livraison_estimee);
+
+      bloc.appendChild(dl);
+      // suivi_url vient du transporteur. On ne la fabrique jamais nous-mêmes, et
+      // on ne relaie que ce que le serveur a explicitement envoyé. Le schéma est
+      // vérifié ici : une réponse malveillante ne doit pas pouvoir poser un lien
+      // « javascript: » dans la page.
+      if (d.suivi_url && /^https?:\/\//i.test(String(d.suivi_url))) {
+        var lienT = document.createElement('a');
+        lienT.href = String(d.suivi_url);
+        lienT.target = '_blank';
+        lienT.rel = 'noopener noreferrer';
+        lienT.textContent = 'Suivre le colis chez le transporteur';
+        bloc.appendChild(lienT);
+      }
+      if (d.message) bloc.appendChild(paragraphe(String(d.message), 'small'));
+      bloc.appendChild(paragraphe(
+        'Ce que cette page ne dit pas, nous ne le savons pas non plus. '
+        + 'Nous vous écrivons dès qu’un état change.', 'small muted'));
+      bloc.appendChild(lienSecours(String(d.numero || numero)));
+      afficher('', [bloc]);
+    };
+
+    suivi.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var numeroChamp = document.getElementById('numero');
+      var courrielChamp = document.getElementById('courriel-suivi');
+      var numero = numeroChamp.value.trim();
+      var adresse = courrielChamp.value.trim();
+
+      var okNumero = numero.length > 0;
+      var okCourriel = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(adresse);
+      erreurChamp(numeroChamp, !okNumero, 'err-numero');
+      erreurChamp(courrielChamp, !okCourriel, 'err-courriel-suivi');
+      if (!okNumero || !okCourriel) {
+        afficher('erreur', [paragraphe(
+          'Il faut les deux : le numéro de commande et le courriel du paiement. '
+          + 'Le numéro seul ne donne accès à rien.')]);
+        (okNumero ? courrielChamp : numeroChamp).focus();
+        return;
+      }
+
+      // ---- aucun service de suivi : on le dit, on n'invente rien -------------
+      if (!ADRESSE_SUIVI) {
+        var rappel = document.createElement('p');
+        rappel.style.margin = '0';
+        rappel.appendChild(document.createTextNode('Vous avez saisi le numéro '));
+        var b = document.createElement('b');
+        b.className = 'mono';
+        b.textContent = numero;
+        rappel.appendChild(b);
+        rappel.appendChild(document.createTextNode('.'));
+        afficher('', [
+          paragraphe('Nous ne pouvons pas encore vous répondre automatiquement : le suivi en ligne '
+            + 'n’est pas branché, et nous préférons vous le dire plutôt que d’afficher une '
+            + 'progression qui ne voudrait rien dire.'),
+          rappel,
+          paragraphe('Écrivez-nous avec ce numéro et nous vous répondons nous-mêmes, avec ce que '
+            + 'nous savons vraiment ce jour-là.', 'small'),
+          lienSecours(numero)
+        ]);
+        return;
+      }
+
+      // ---- un service existe : POST, et rien que ce qu'il répond ------------
+      afficher('', [paragraphe('Recherche en cours…')]);
+      var stop = null;
+      var options = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero: numero, courriel: adresse })
+      };
+      if (typeof AbortController === 'function') {
+        stop = new AbortController();
+        options.signal = stop.signal;
+        setTimeout(function () { stop.abort(); }, DELAI_SUIVI);
+      }
+
+      fetch(ADRESSE_SUIVI, options)
+        .then(function (r) {
+          if (r.status === 429) {
+            afficher('erreur', [paragraphe('Trop de tentatives depuis cet appareil. '
+              + 'Attendez une minute, puis réessayez.')]);
+            return null;
+          }
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (d) {
+          if (!d) return;
+          // Réponse volontairement identique pour « numéro inconnu » et
+          // « le couple ne correspond pas » : rien à apprendre en tâtonnant.
+          if (!d.trouvee) {
+            afficher('erreur', [
+              paragraphe('Aucune commande ne correspond à ce numéro et à ce courriel. '
+                + 'Vérifiez que l’adresse est bien celle utilisée pour payer — c’est souvent celle '
+                + 'du compte PayPal, qui n’est pas toujours celle qu’on utilise tous les jours.'),
+              lienSecours(numero)
+            ]);
+            return;
+          }
+          afficherFiche(d, numero);
+        })
+        .catch(function () {
+          afficher('erreur', [
+            paragraphe('Le service de suivi ne répond pas en ce moment. Votre commande, elle, n’a '
+              + 'pas bougé : c’est cette page qui n’arrive pas à la lire.'),
+            lienSecours(numero)
+          ]);
+        });
+    });
+
+    ['numero', 'courriel-suivi'].forEach(function (id) {
+      var champ = document.getElementById(id);
+      if (champ) champ.addEventListener('input', function () {
+        erreurChamp(champ, false, 'err-' + id);
+      });
+    });
+  }
+
   /* ------------------------------------------------------------ SHA-256 */
   var K = new Uint32Array([
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,

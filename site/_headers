@@ -6,7 +6,15 @@
 # style-src autorise 'unsafe-inline' parce que les pages utilisent des attributs style= pour
 #   quelques ajustements de mise en page. Sans script en ligne, le risque est marginal.
 # form-action 'none' : aucun formulaire ne soumet quoi que ce soit ; celui de contact ouvre le
-#   logiciel de courriel du visiteur en JavaScript.
+#   logiciel de courriel du visiteur en JavaScript, et celui de suivi.html est traité en JavaScript
+#   lui aussi (submit annulé). Les deux restent donc compatibles avec form-action 'none'.
+#
+# ⚠ connect-src 'self' — à modifier le jour où le suivi de commande est branché.
+#   suivi.html appellera un service (POST JSON) dont l'adresse est la constante ADRESSE_SUIVI en
+#   haut du bloc « suivi de commande » de assets/site.js. Tant qu'elle est vide, aucune requête
+#   n'est émise et 'self' suffit. Dès qu'elle est renseignée, il faut ajouter cette origine ici —
+#   par exemple « connect-src 'self' https://licences.vela.app » — sinon le navigateur bloquera
+#   l'appel sans message visible pour le visiteur. Voir docs/SUIVI-COMMANDES.md.
 
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests

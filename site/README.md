@@ -9,11 +9,14 @@ dépendance, aucun outil de compilation, aucun appel réseau. Il s'ouvre tel que
 `assets/style.css` et `assets/site.js` sont appelés avec un **numéro de version** :
 
 ```html
-<link rel="stylesheet" href="assets/style.css?v=3">
-<script src="assets/site.js?v=3"></script>
+<link rel="stylesheet" href="assets/style.css?v=4">
+<script src="assets/site.js?v=4"></script>
 ```
 
-**Chaque fois que vous modifiez la CSS ou le JavaScript, incrémentez ce numéro dans les neuf
+*(Numéro en vigueur : **v=4**, depuis l'ajout des pages `suivi.html` et `merci.html` en
+septembre 2026.)*
+
+**Chaque fois que vous modifiez la CSS ou le JavaScript, incrémentez ce numéro dans les onze
 pages.** Sinon, le navigateur d'un visiteur déjà venu continue de servir l'ancienne feuille depuis
 son cache : le HTML neuf arrive, la vieille CSS n'a pas de règle pour les nouvelles classes, et le
 site s'affiche cassé — c'est exactement ce qui est arrivé en septembre 2026 (logo noir, accents
@@ -22,16 +25,16 @@ verts, parce que la vieille feuille ne connaissait pas la classe `.v-grand`).
 En une commande, depuis `site/` :
 
 ```bash
-# remplacer 3 par l'ancien numéro et 4 par le nouveau
-sed -i 's/style\.css?v=3/style.css?v=4/; s/site\.js?v=3/site.js?v=4/' *.html
-grep -c 'v=4' *.html    # doit afficher 2 pour chacune des neuf pages
+# remplacer 4 par l'ancien numéro et 5 par le nouveau
+sed -i 's/style\.css?v=4/style.css?v=5/; s/site\.js?v=4/site.js?v=5/' *.html
+grep -c 'v=5' *.html    # doit afficher 2 pour chacune des onze pages
 ```
 
 En PowerShell :
 
 ```powershell
 Get-ChildItem *.html | ForEach-Object {
-  (Get-Content $_ -Raw) -replace 'style\.css\?v=3','style.css?v=4' -replace 'site\.js\?v=3','site.js?v=4' |
+  (Get-Content $_ -Raw) -replace 'style\.css\?v=4','style.css?v=5' -replace 'site\.js\?v=4','site.js?v=5' |
     Set-Content $_ -Encoding utf8
 }
 ```
@@ -66,6 +69,8 @@ python -m http.server 8080
 |---|---|
 | `index.html` | Accueil : **hero produit** (photo des lunettes, prix, bouton d'achat), l'objet, IRIS comme ce qui vient avec, registre chaîné animé, photos, garanties, « Pourquoi VELA existe », plans, rappel d'achat |
 | `lunettes.html` | **Fiche du produit** : hero d'achat, galerie des six photos, contenu de l'envoi, caractéristiques vérifiées, ce que les lunettes changent avec IRIS, les trois étapes de l'achat |
+| `merci.html` | **Après le paiement** : le reçu PayPal, notre courriel, ce qu'il faut nous dire (monture, adresse), puis le suivi. En `noindex` |
+| `suivi.html` | **Suivre ma commande** : formulaire (numéro + courriel), les cinq états d'une commande et les deux voies de traverse, ce que la page ne fera jamais |
 | `confidentialite.html` | La confidentialité vérifiable expliquée simplement + démonstration interactive du registre chaîné |
 | `fonctionnalites.html` | Tableau complet de ce qu'IRIS sait faire, avec le plan requis, et ce qui n'existe pas encore |
 | `plans.html` | Les **quatre plans** (Gratuit, Pro, Premium, Entreprise), prix exacts, boutons de paiement PayPal, carte des lunettes à 250 $, « l'accès à l'IA est compris », comportement du quota |
@@ -77,7 +82,7 @@ python -m http.server 8080
 | `_headers` | En-têtes de sécurité au format Netlify (CSP, HSTS, anti-cadre) **et politique de cache** — voir l'avertissement en tête de ce fichier |
 | `robots.txt`, `sitemap.xml` | Indexation. **Contiennent l'adresse du site : à corriger si le domaine change.** |
 | `assets/style.css` | Système visuel, repris de `renderer/src/styles.css` (mêmes variables, même palette : crème, encre, terracotta) |
-| `assets/site.js` | Menu sur téléphone + démonstration du registre : SHA-256 implémenté dans la page |
+| `assets/site.js` | Menu sur téléphone + formulaire de contact + **formulaire de suivi de commande** + démonstration du registre : SHA-256 implémenté dans la page |
 | `assets/photos/` | Les six photos du produit, en 900 px et en 450 px (suffixe `-450`). **Droits à régler : voir plus bas.** |
 | `telechargement/` | L'installeur `IRIS-Setup-0.1.0.exe` servi par le bouton de `installer.html` (voir plus bas) |
 
@@ -104,6 +109,7 @@ en `file://` et hors ligne.
 | Bloc de prix | `.prix-bloc`, sur les deux pages produit | Le seul bloc du site cerné de terracotta : c'est là qu'on achète, ça doit se voir sans lire |
 | Registre chaîné animé | `index.html`, `.viz-chain` | Cinq blocs, quatre liens. Une boucle CSS de 9 s : la 2ᵉ entrée est réécrite, la cassure descend la chaîne bloc par bloc (`animation-delay: calc(var(--i) * 0.32s)`) |
 | Commande vocale animée | `index.html`, `.viz-voice` | Boucle de 8 s : onde sonore, phrase dévoilée de gauche à droite (`clip-path`), action, puis inscription au registre |
+| Échelle des états | `suivi.html`, `.etats` | Un rail et des pastilles, **volontairement toutes identiques** : c'est un vocabulaire, pas la progression d'une commande. Aucune animation, aucune barre qui se remplit |
 | Photos des lunettes | `index.html` (`.hp-photo`, `.pv-grappe`), `lunettes.html` (`.hp-photo`, `.galerie`), `fonctionnalites.html` (`.pv-vignette`) | Vraies photos du produit ; voir la section suivante |
 | Filigrane de la voile | pages secondaires, `.hero-voile-bg` | La voile se hisse une fois (`clip-path: inset()`), à 11 % d'opacité. **Les deux pages produit ne le portent pas** : la photo y est la vedette |
 | Pictogrammes | `index.html` et `lunettes.html`, `<symbol>` en haut du fichier, appelés par `<use href="#…">` | Icônes au trait. Même document, donc aucune requête réseau. `lunettes.html` n'embarque que les six dont il se sert |
@@ -162,7 +168,7 @@ jamais cassé. `lunettes-fond-sombre.jpg`, déjà photographiée sur fond noir, 
 **« Des lunettes qui vous écoutent, sans jamais vous regarder. »**
 
 Il est en `h1` sur l'accueil (`.hp-titre`, avec « écoutent » en terracotta) et en signature dans le
-pied de page des neuf pages. Il remplace « Parlez. Elle agit. Vous vérifiez. », qui empilait trois
+pied de page des onze pages. Il remplace « Parlez. Elle agit. Vous vérifiez. », qui empilait trois
 verbes et sonnait comme un logiciel plutôt que comme un objet à porter.
 
 Ce qu'il doit continuer de dire, si on le réécrit un jour :
@@ -233,6 +239,88 @@ Aucun service tiers, aucune inscription, aucun serveur : tout passe par `mailto:
 Pour changer l'adresse de destination : la constante `COURRIEL` en haut du bloc « formulaire de
 contact » dans `assets/site.js`, plus les `href` `mailto:` des pages.
 
+## Le suivi de commande — `suivi.html` et `merci.html`
+
+Ajoutées en septembre 2026. **L'architecture complète est dans `docs/SUIVI-COMMANDES.md`** : d'où
+viennent les données, quelles tables ajouter au serveur de licences, quels points d'entrée, comment
+un client est autorisé à voir sa commande, ce qui a été trouvé (et pas trouvé) sur Alibaba, et ce qui
+restera manuel. Ce qui suit ne décrit que la partie site.
+
+### La règle de ces deux pages
+
+> **On n'affiche que des faits datés. Ce qu'on ignore, on l'écrit « inconnu ».**
+
+Aucune date de livraison n'est calculée, aucun délai moyen n'est affiché, aucun transporteur n'est
+nommé avant qu'il y en ait un, et il n'y a **aucune barre de progression décorative**. Un faux
+« livraison prévue le 12 » est pire que « nous vous écrivons dès l'expédition ». C'est la même règle
+que le tableau de caractéristiques de `lunettes.html` (« non mesuré par VELA ») et que le registre
+chaîné d'IRIS : rien qui ne se vérifie.
+
+La liste `.etats` de `suivi.html` est pour cette raison présentée comme **un vocabulaire** — « voici
+ce qu'une commande peut être » — et pas comme l'état d'une commande précise. Ses pastilles sont
+toutes identiques et neutres ; aucune n'est « atteinte ». Chaque étape porte un paragraphe
+« Ce qu'on ignore encore » (`.ignore`), qui est la moitié utile de la page.
+
+### Ce que le formulaire fait aujourd'hui
+
+`assets/site.js`, bloc « suivi de commande », commence par :
+
+```js
+var ADRESSE_SUIVI = '';
+```
+
+**Tant que cette constante est vide, aucune requête réseau n'est émise.** Le formulaire vérifie les
+deux champs, redit à la personne le numéro qu'elle a saisi, et l'oriente vers le courriel avec un
+lien `mailto:` pré-rempli. Il n'affiche **aucun état et aucune date** : on ne sait rien, on le dit.
+
+L'avertissement jaune « le suivi automatique n'est pas encore branché » (`[data-suivi-avis]`)
+**disparaît tout seul** dès que la constante est renseignée : il n'y a pas deux textes à tenir
+d'accord.
+
+### Pour brancher le vrai suivi, le jour venu
+
+Trois gestes, pas un de plus :
+
+1. mettre l'adresse du service dans `ADRESSE_SUIVI` (ex. `https://licences.vela.app/api/commande/suivi`) ;
+2. **ajouter cette origine à `connect-src` dans `_headers`** — sinon la politique de sécurité du
+   contenu bloque l'appel *sans aucun message visible pour le visiteur* ;
+3. autoriser l'origine du site en CORS côté serveur, pour ce seul point d'entrée.
+
+`suivi.html` n'a pas besoin d'être retouchée : la fiche de résultat (`.suivi-fiche`) est déjà écrite.
+
+Le vocabulaire des états vit à **trois** endroits qui doivent rester d'accord : la table du §3 de
+`docs/SUIVI-COMMANDES.md`, la liste `.etats` de `suivi.html`, et l'objet `ETIQUETTES_ETAT` de
+`site.js`. Si un identifiant change, les trois changent.
+
+### Trois choses à ne pas casser dans ce bloc de JavaScript
+
+1. **POST, jamais GET.** Un GET mettrait le numéro de commande et le courriel dans l'URL : journaux
+   du serveur, historique du navigateur, en-tête `Referer`, presse-papier de qui copie l'adresse.
+   **Un numéro de commande dans un lien partageable est déjà une fuite.**
+2. **Rien n'est écrit dans `location` ni dans `history`.** Le lien `mailto:` de secours est un lien
+   que la personne **clique** — il n'est jamais suivi automatiquement, contrairement à celui du
+   formulaire de contact. Rien n'entre donc dans l'historique sans son geste.
+3. **Tout l'affichage passe par `textContent`.** Le serveur de suivi est une source externe, et les
+   événements d'un transporteur sont du texte écrit par quelqu'un d'autre : ils ne deviennent jamais
+   du HTML, et on ne recopie que les champs qu'on a décidé d'afficher.
+
+### `merci.html` n'est pas atteinte par une redirection
+
+Un lien `paypal.me` est un versement de personne à personne : **il ne ramène pas l'acheteur sur une
+page de retour**, et il ne collecte ni adresse de livraison ni monture. `merci.html` est donc
+atteinte par les liens posés sur l'accueil (`.rappel-achat`) et sur `lunettes.html` (section
+« L'achat »), pas par PayPal.
+
+C'est aussi pour ça que l'étape 3 de la page insiste autant sur la monture, l'adresse et le
+téléphone : **sans ce courriel, la commande ne peut pas partir**. Le jour où un vrai bouton PayPal
+Business remplacera `paypal.me`, PayPal fournira l'adresse, acceptera un `custom_id` et redirigera
+vers `merci.html` — et ce paragraphe-là deviendra inutile. C'est la décision la plus structurante du
+document d'architecture.
+
+`merci.html` porte `<meta name="robots" content="noindex, follow">` et n'est pas dans `sitemap.xml` :
+c'est une page d'après-paiement, pas une page à trouver dans un moteur de recherche. `suivi.html`,
+elle, est indexable et listée.
+
 ### Le parcours d'achat
 
 Le visiteur doit pouvoir acheter sans chercher. Trois entrées, dans cet ordre :
@@ -244,12 +332,19 @@ Le visiteur doit pouvoir acheter sans chercher. Trois entrées, dans cet ordre :
    d'achat répété en tête et à la fin, dans la section « L'achat ».
 3. **Le bas de l'accueil** (`.rappel-achat`) et **`plans.html#acheter`**, pour qui descend jusque-là.
 
+**Après le paiement**, deux liens discrets pointent vers `merci.html` et `suivi.html` : sous le bloc
+`.rappel-achat` de l'accueil, et à la fin de la section « L'achat » de `lunettes.html`. Le pied de
+page des onze pages porte « Suivre ma commande » dans la colonne « Nous joindre ». La barre de
+navigation n'a **pas** été touchée : à sept entrées elle est déjà pleine, et le suivi ne se cherche
+qu'après un achat.
+
 Le parcours annoncé est celui qui existe vraiment, et il est écrit tel quel partout. **Les lunettes :**
 PayPal, puis un reçu par courriel, puis la livraison convenue par courriel au cas par cas — aucune clé
 n'est due, puisque rien n'est abonné. **L'abonnement, séparément :** PayPal, reçu par courriel, puis une
-clé d'activation par courriel. Aucun panier, aucun suivi de colis, aucun prélèvement récurrent. Si un
-jour un vrai tunnel de commande existe, c'est ce texte qu'il faudra remplacer — aux trois endroits
-ci-dessus.
+clé d'activation par courriel. Aucun panier, aucun prélèvement récurrent, et **aucun suivi de colis
+automatique** : `suivi.html` explique les états, elle ne les lit pas encore. Si un jour un vrai tunnel
+de commande existe, c'est ce texte qu'il faudra remplacer — aux trois endroits ci-dessus, plus
+l'avertissement de `suivi.html`.
 
 `plans.html` et les deux pages produit portent quatre liens `paypal.me`, en dur, identiques à ceux
 que l'application construit elle-même (`payment_link()` dans `backend/iris/plans.py`) :
@@ -333,6 +428,12 @@ attendant.
 5. **Délai de livraison et politique de retour.** Le site dit « convenu par courriel, au cas par
    cas ». C'est honnête, mais un délai annoncé et une politique de retour rassurent davantage —
    et le droit québécois de la consommation en impose une part.
+6. **Le délai de réponse après un paiement.** `merci.html` n'en annonce aucun, parce qu'aucun n'a
+   été fixé. Si Miguel s'engage sur « une réponse sous 24 h ouvrables », il faut l'écrire à l'étape 2
+   de la page ; sinon il vaut mieux continuer à ne rien promettre.
+7. **Remplacer `paypal.me` par un vrai bouton PayPal Business** — ou accepter que l'adresse de
+   livraison continue d'arriver par courriel, une commande à la fois. Voir
+   `docs/SUIVI-COMMANDES.md`, §2.2 et §10.
 
 ## Ce qui reste à faire avant publication
 
@@ -377,6 +478,15 @@ attendant.
     client que « votre abonnement s'activera tout seul, sans clé à recopier », et `backend/iris/licence.py`
     sait aller chercher la clé. **Le jour où le serveur de licences est en ligne, ce texte devient faux** —
     il faudra réécrire les trois étapes de `plans.html#acheter`.
+12. **Le suivi de commande n'est pas branché.** `suivi.html` le dit elle-même, dans un encadré jaune,
+    et n'appelle aucun serveur. La marche à suivre pour le brancher — tables, points d'entrée,
+    autorisation, ce qui restera manuel — est dans `docs/SUIVI-COMMANDES.md`. Le prérequis absolu est
+    le même que pour les abonnements : **un compte PayPal Business avec un webhook configuré**, sans
+    quoi aucun événement n'arrive et rien de tout cela ne peut fonctionner.
+13. **Le jour où des commandes sont stockées, VELA conserve des données personnelles sur un serveur.**
+    `politique-confidentialite.html` décrit aujourd'hui un logiciel qui garde tout sur l'appareil du
+    client. Il faudra y ajouter ce que le serveur de commandes garde, combien de temps, et comment on
+    en demande la suppression — et le faire relire en même temps que le point 1.
 
 ## Publier
 
@@ -405,12 +515,17 @@ sous-dossier.
 - **Aucune caractéristique matérielle non mesurée par VELA.** Une ligne vide qui dit « non mesuré »
   vaut mieux qu'un chiffre recopié d'une fiche commerciale. C'est la même règle que le registre
   d'IRIS : rien qui ne se vérifie.
+- **Aucune date, aucun délai et aucun transporteur qui ne soient un fait constaté.** C'est la même
+  règle, appliquée au suivi de commande : « inconnue » est une réponse acceptable, une date inventée
+  ne l'est pas.
 - Aucun prix inventé. Les lunettes valent **250 $**, seules ; les quatre abonnements valent 0, 19,99,
   29,99 et 99,99 $ par mois. Il n'existe aucune offre groupée et aucun rabais.
 - Aucun chiffre, témoignage, logo de client ou récompense inventé.
 - Les prix et quotas viennent de `backend/iris/plans.py` et de `docs/PLANS.md` : si le code change,
   mettre `plans.html` à jour.
-- Le nom du fournisseur du matériel n'apparaît nulle part.
+- Le nom du fournisseur du matériel n'apparaît nulle part. Cela vaut aussi pour le suivi de
+  commande : ni le nom du fournisseur, ni sa référence de commande, ni une adresse de suivi qui
+  l'identifierait ne doivent sortir vers le client.
 - La section « Pourquoi VELA existe » de l'accueil raconte le parcours de Miguel à la première personne.
   Elle ne nomme **aucune entreprise, aucune personne**, ne raconte aucun conflit et n'accuse personne :
   elle parle de ce qu'il a voulu construire, jamais de ce que d'autres auraient mal fait. Toute
