@@ -399,6 +399,14 @@ class GlassesService:
             self.battery = niveau
             log.info("batterie des lunettes : %s %%", niveau)
             self._publish()
+            return
+        # Tout autre événement des lunettes est publié tel quel, sans être interprété : personne
+        # n'a encore associé un geste à un contenu. C'est ce qui permettra de dresser la table —
+        # toucher la branche, regarder quel contenu arrive.
+        evenement = lunettes_trames.evenement(brut)
+        if evenement is not None:
+            log.info("événement des lunettes : %s", evenement["contenu"])
+            self.hub.publish("glasses.event", **evenement)
 
     def _on_disconnect(self, _client) -> None:
         was = self.device

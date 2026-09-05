@@ -256,3 +256,44 @@ def test_la_description_de_loutil_previent_du_silence():
 
     envoi = next(s for s in TOOL_SPECS if s.name == "lunettes_envoyer")
     assert "aucune" in envoi.description.lower() and "réponse" in envoi.description.lower()
+
+
+# --------------------------------------------------------------------------- les gestes
+# docs/LUNETTES-DIAGNOSTIC.md affirmait que les gestes alternaient entre les codes « c0 80 » et
+# « c6 d0 ». C'etaient les deux octets de somme de controle, lus au mauvais endroit : ils changent
+# a chaque trame parce qu'ils dependent du contenu. Tant que personne n'a associe un geste a un
+# contenu, la seule chose honnete est de rapporter le contenu tel quel.
+def test_un_evenement_est_rapporte_sans_etre_interprete():
+    from iris.lunettes_trames import evenement, fabriquer
+
+    trame = fabriquer(0x73, bytes([0x03, 0x01]))
+    lu = evenement(trame)
+    assert lu is not None and lu["contenu"] == "0301"
+    assert lu["octets"] == [3, 1]
+
+
+def test_la_batterie_nest_pas_prise_pour_un_geste():
+    from iris.lunettes_trames import evenement, fabriquer
+
+    assert evenement(fabriquer(0x73, bytes([0x05, 80, 0x00]))) is None
+
+
+def test_une_trame_abimee_ne_produit_aucun_evenement():
+    """Sans le controle de somme, du bruit radio deviendrait un geste fantome."""
+    from iris.lunettes_trames import evenement, fabriquer
+
+    fausse = bytearray(fabriquer(0x73, bytes([0x03, 0x01])))
+    fausse[5] ^= 0xFF
+    assert evenement(bytes(fausse)) is None
+
+
+def test_iris_publie_le_geste_recu(app):
+    from iris.lunettes_trames import fabriquer
+
+    vus = []
+    app.state.ctx.hub.subscribe_sync(lambda nom, charge: vus.append((nom, charge))) if hasattr(
+        app.state.ctx.hub, "subscribe_sync") else None
+    verres = app.state.ctx.glasses
+    verres.battery = 50
+    verres._on_notify("de5bf729", bytearray(fabriquer(0x73, bytes([0x03, 0x01]))))
+    assert verres.battery == 50, "un geste ne doit pas toucher au niveau de batterie"

@@ -69,10 +69,21 @@ def decoupe(donnees: bytes) -> list[bytes]:
 
 
 def signature(trame: bytes) -> str:
-    """Ce qui identifie l'événement : le type et les premiers octets de données."""
+    """Ce qui identifie l'événement : le type, et la charge utile — pas la somme de contrôle.
+
+    Correction du 5 septembre 2026. Cette fonction lisait `trame[4:8]`, c'est-à-dire les deux
+    octets de contrôle SUIVIS des deux premiers octets de données. Les « codes de geste c0 80 et
+    c6 d0 » notés dans docs/LUNETTES-DIAGNOSTIC.md étaient donc des CRC : ils changent à chaque
+    trame parce qu'ils dépendent du contenu, ce qui donnait l'illusion de codes qui alternent.
+
+    Le format réel, vérifié en reconstruisant à l'identique une trame reçue :
+        bc | type | longueur (2, petit-boutiste) | CRC-16/MODBUS du contenu (2) | contenu
+    """
     if len(trame) < 6 or trame[0] != 0xBC:
         return trame.hex(" ")[:32]
-    return f"type 0x{trame[1]:02x} · {trame[4:8].hex(' ')}"
+    longueur = int.from_bytes(trame[2:4], "little")
+    contenu = trame[6:6 + longueur]
+    return f"type 0x{trame[1]:02x} · {contenu.hex(' ') or '(vide)'}"
 
 
 async def main() -> int:

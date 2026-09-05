@@ -63,17 +63,31 @@ Les lunettes émettent en continu sur `de5bf729-d711-4e47-af26-65e3012a5dc7`.
 394 trames capturées en 90 secondes. Format :
 
 ```
-bc <type> <longueur sur 2 octets, petit-boutiste> <données> <2 octets de contrôle>
+bc <type> <longueur sur 2 octets, petit-boutiste> <CRC-16/MODBUS sur 2 octets> <données>
 ```
+
+**Correction du 5 septembre 2026.** Ce document plaçait les octets de contrôle à la FIN de la
+trame. Ils sont en réalité AVANT les données. Le format ci-dessus a été vérifié de la seule façon
+qui vaille : en reconstruisant une trame reçue et en constatant qu'elle est identique, octet pour
+octet. La somme est un CRC-16/MODBUS petit-boutiste calculé sur le contenu seul — trouvée par
+recherche exhaustive sur quatorze variantes et six découpages, une seule combinaison colle.
+
+Le décodage vit désormais dans `backend/iris/lunettes_trames.py`, gardé par des tests.
 
 | Type | Fréquence | Nature |
 |---|---|---|
 | `0x59` | 386 trames, ~25 ms, par paires | Flux continu de télémétrie, 40 octets de charge utile |
 | `0x73` | 8 trames, isolées | **Événements discrets — les gestes de l'utilisateur** |
 
-Les événements observés alternent entre deux codes, `c0 80` et `c6 d0`, plus deux trames plus
-longues au début (`50 c7 01 01` et `63 c7 01 02`). Reste à savoir quel geste produit quel code :
-c'est l'objet de `scripts/decoder-gestes-lunettes.py`, qui étiquette les trames geste par geste.
+**Ce que ce document affirmait, et qui était faux.** « Les événements alternent entre deux codes,
+`c0 80` et `c6 d0` ». Ces deux valeurs sont des **sommes de contrôle**, pas des codes de geste :
+elles changent à chaque trame parce qu'elles dépendent du contenu, ce qui donnait l'illusion de
+codes qui alternent. Le script les étiquetait comme des gestes ; il a été corrigé.
+
+Ce qu'on sait vraiment du type `0x73` : son contenu `05 BB 00` porte le niveau de batterie, où
+`BB` est le pourcentage. Observé quatre fois, de 86 % à 83 %, à raison d'environ une trame par
+dizaine de minutes. Les autres contenus de ce type restent à identifier — il faut une nouvelle
+capture, maintenant que le découpage est juste.
 
 ## Ce qui reste à établir
 

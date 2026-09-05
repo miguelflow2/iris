@@ -686,12 +686,12 @@ class Telephoniste:
     def _garde(self) -> None:
         """Tout ce qui doit être vrai avant même de rédiger. Lève une phrase française, sinon rien."""
         raison = self.pourquoi_pas_pret()
+        # Le mode local d'abord, et avec sa propre exception : ce n'est pas une configuration
+        # manquante mais un choix de l'utilisateur, et l'interface doit pouvoir les distinguer.
+        if raison and self.mode_local and self.fournisseur != "iphone":
+            raise ModeLocalActif(raison)
         if raison:
             raise TelephonieNonConfiguree(raison)
-        if self.mode_local and self.fournisseur != "iphone":
-            raise ModeLocalActif(
-                "Le mode local est actif : rien ne quitte cet ordinateur, donc je n'envoie aucun message."
-            )
         # Vérifiée AVANT la confirmation : mieux vaut dire « limite atteinte » tout de suite que de
         # faire relire un message à voix haute pour le refuser ensuite.
         self.compteur.verifier()
