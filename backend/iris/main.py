@@ -174,6 +174,11 @@ class AppContext:
         self.chat.traduction = self.traduction
         self.chat.voice = self.voice
         self.chat.opencode = self.opencode
+        # Accord vocal, dans les deux sens : le chat dépose sa demande de confirmation dans le fil
+        # vocal, et le fil vocal résout le futur du chat quand Miguel a répondu « oui » ou « non ».
+        # Sans ce pont, une confirmation ne pouvait venir que d'un clic — inutilisable à la voix.
+        self.voice._resoudre_confirmation = self.chat.resolve_confirm
+        self.chat.set_sink_confirm_vocal(self.voice.file_confirmation_vocale)
         self.plans = PlanService(self.db, self.settings, self.hub, secrets=self.secrets)
         self.chat.plans = self.plans
         self.tts.plans = self.plans

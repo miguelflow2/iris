@@ -6,6 +6,7 @@ import asyncio
 import difflib
 import json
 import logging
+import concurrent.futures as _cf
 import queue
 import re
 import threading
@@ -15,6 +16,7 @@ from typing import Awaitable, Callable
 
 from ..capture import CaptureIndicator
 from ..config import Settings
+from .accord import interpreter_accord
 from ..consent import ConsentGate
 from ..events import EventHub
 from . import stt
@@ -260,6 +262,11 @@ class VoiceListener:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._ptt = threading.Event()
+        # Accord vocal : le chat y dépose une demande de confirmation, ce fil la pose à voix haute
+        # et écoute oui/non, puis résout via `_resoudre_confirmation`. File thread-safe parce que le
+        # dépôt vient du fil du chat et la lecture, de ce fil-ci.
+        self._confirmations_vocales: queue.Queue = queue.Queue()
+        self._resoudre_confirmation = None  # callback(confirm_id, ok) -> chat.resolve_confirm
         self._one_shot = False
         self._audio: "queue.Queue[bytes]" = queue.Queue(maxsize=400)
         self._vosk: stt.VoskEngine | None = None
@@ -976,6 +983,66 @@ class VoiceListener:
             return "Je n'ai rien entendu, le micro capte tres faiblement."
         return "Je n'ai rien entendu."
 
+    def file_confirmation_vocale(self, confirm_id: str, titre: str, detail: str) -> None:
+        """Point d'entrée du chat : « pose cette question à voix haute et réponds-moi ».
+
+        Ne bloque pas l'appelant (le fil du chat) : il dépose et repart. C'est ce fil-ci qui, entre
+        deux tours de sa boucle d'attente, prend la demande et y répond."""
+        self._confirmations_vocales.put((confirm_id, titre, detail))
+
+    def _vider_audio(self) -> None:
+        """Jette l'audio en attente : on ne prend pas pour réponse ce qui a été dit AVANT la question."""
+        try:
+            while True:
+                self._audio.get_nowait()
+        except queue.Empty:
+            pass
+
+    def _demander_accord_vocal(self, titre: str, detail: str) -> bool:
+        """Pose la question, écoute « oui » ou « non ». Dans le doute, c'est non.
+
+        C'est la seule voie par laquelle un courriel part, un SMS s'envoie, un identifiant s'importe,
+        quand Miguel parle au lieu de cliquer. Elle penche donc du côté sûr : un silence, une réponse
+        ambiguë, un micro qui lâche — tout cela vaut « non »."""
+        detail = (detail or "").strip()
+        base = f"{titre}. {detail}. Je le fais ? Dis oui ou non." if detail else f"{titre}. Je le fais ? Dis oui ou non."
+        for essai in (1, 2):
+            self._say(base if essai == 1 else "Je n'ai pas compris. Dis oui, ou non.")
+            self._vider_audio()  # après avoir parlé : on n'écoute pas notre propre voix
+            texte = self._listen_command()
+            if texte:
+                self.hub.publish("voice.transcript", text=texte)
+            verdict = interpreter_accord(texte)
+            if verdict is not None:
+                return verdict
+        return False
+
+    def _attendre_commande(self, future) -> dict:
+        """Attend la fin de la commande en restant DISPONIBLE pour un accord vocal.
+
+        Le cœur du correctif. Avant, ce fil se bloquait sur `future.result()` pendant toute la
+        commande ; si celle-ci demandait un accord, elle attendait un clic que la voix ne pouvait
+        pas donner, et tout se figeait jusqu'au délai. Maintenant il fait de petits tours : à chaque
+        tour, s'il y a une demande d'accord, il la pose et y répond ; sinon il regarde si la commande
+        est finie."""
+        while True:
+            try:
+                confirm_id, titre, detail = self._confirmations_vocales.get_nowait()
+            except queue.Empty:
+                confirm_id = None
+            if confirm_id is not None:
+                ok = self._demander_accord_vocal(titre, detail)
+                if self._resoudre_confirmation is not None:
+                    try:
+                        self._resoudre_confirmation(confirm_id, ok)
+                    except Exception as exc:  # pragma: no cover
+                        log.warning("résolution d'accord vocal impossible : %s", exc)
+                continue
+            try:
+                return future.result(timeout=0.2) or {}
+            except _cf.TimeoutError:
+                continue
+
     def _listen_command(self, primed: bytes = b"") -> str:
         """Capture une phrase et la transcrit. Fin detectee par le silence, sortie rapide si personne ne parle."""
         if self.engine != "vosk":
@@ -1093,7 +1160,7 @@ class VoiceListener:
         if self.loop is not None:
             try:
                 future = asyncio.run_coroutine_threadsafe(self.on_command(text), self.loop)
-                reply = future.result(timeout=600) or {}
+                reply = self._attendre_commande(future)
             except Exception as exc:
                 log.warning("commande vocale en erreur: %s", exc)
                 reply = {"text": "Désolée, je n'ai pas pu traiter cette demande.", "spoken": False}

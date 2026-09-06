@@ -219,6 +219,10 @@ class ChatService:
         self.capture = capture
         self._running: dict[str, asyncio.Task] = {}
         self._confirms: dict[str, asyncio.Future] = {}
+        # Par la voix, personne ne clique : ce puits laisse le fil vocal poser la question et
+        # écouter la réponse. Trou trouvé le 5 septembre 2026 — un accord vocal était impossible,
+        # ce qui rendait courriel, SMS et import d'identifiants inutilisables sans écran.
+        self._sink_confirm_vocal = None
         # injecté par TaskService : (titre, instructions, agent) -> dict tâche
         self.create_task_fn: Callable[[str, str, str], Awaitable[dict]] | None = None
         self.routines = None  # RoutineService (injecté)
@@ -258,7 +262,7 @@ class ChatService:
         if quick.tool:
             ctx = ToolContext(
                 settings=self.settings, consent=self.consent, capture=self.capture, memory=self.memory, agent="local",
-                confirm=lambda title, detail: self._confirm(conv_id, title, detail), create_task=self.create_task_fn,
+                confirm=lambda title, detail: self._confirm(conv_id, title, detail, source), create_task=self.create_task_fn,
                 routines=self.routines, reminders=self.reminders, watches=self.watches,
                 glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
                 traduction=self.traduction, voice=self.voice, web=self.web,
@@ -296,7 +300,7 @@ class ChatService:
         self.hub.publish("chat.started", conversation_id=conv_id, message_id=assistant_id, agent="routine", model="", reason=f"routine « {routine['name']} »")
         ctx = ToolContext(
             settings=self.settings, consent=self.consent, capture=self.capture, memory=self.memory, agent="routine",
-            confirm=lambda title, detail: self._confirm(conv_id, title, detail), create_task=self.create_task_fn,
+            confirm=lambda title, detail: self._confirm(conv_id, title, detail, source), create_task=self.create_task_fn,
             routines=None, reminders=self.reminders, watches=self.watches,
             glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
             traduction=self.traduction, voice=self.voice, web=self.web,
@@ -674,12 +678,24 @@ class ChatService:
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------ confirmations
-    async def _confirm(self, conv_id: str, title: str, detail: str) -> bool:
+    def set_sink_confirm_vocal(self, cb) -> None:
+        """Le fil vocal s'enregistre ici pour pouvoir demander l'accord à voix haute."""
+        self._sink_confirm_vocal = cb
+
+    async def _confirm(self, conv_id: str, title: str, detail: str, source: str = "text") -> bool:
         loop = asyncio.get_running_loop()
         confirm_id = uuid.uuid4().hex
         fut: asyncio.Future = loop.create_future()
         self._confirms[confirm_id] = fut
         self.hub.publish("chat.confirm", conversation_id=conv_id, confirm_id=confirm_id, title=title, detail=detail)
+        # L'écran marche toujours. Par la voix, on demande EN PLUS à voix haute : l'écran et la
+        # voix résolvent le même futur (resolve_confirm), le premier arrivé gagne, l'autre est
+        # un non-effet.
+        if source == "voice" and self._sink_confirm_vocal is not None:
+            try:
+                self._sink_confirm_vocal(confirm_id, title, detail)
+            except Exception as exc:  # pragma: no cover
+                log.warning("demande d'accord vocal impossible : %s", exc)
         try:
             return bool(await asyncio.wait_for(fut, timeout=180))
         except asyncio.TimeoutError:
@@ -896,7 +912,7 @@ class ChatService:
                     capture=self.capture,
                     memory=self.memory,
                     agent=agent_name,
-                    confirm=lambda title, detail: self._confirm(conv_id, title, detail),
+                    confirm=lambda title, detail: self._confirm(conv_id, title, detail, source),
                     create_task=self.create_task_fn,
                     routines=self.routines,
                     reminders=self.reminders,
