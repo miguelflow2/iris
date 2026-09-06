@@ -68,11 +68,10 @@ class LicenceSync:
                 # En POST, avec le courriel dans le CORPS. En GET il partait dans l'URL, où il
                 # se retrouvait dans les journaux du serveur, ceux de tout intermédiaire, et dans
                 # les en-têtes de provenance. Un courriel est une donnée personnelle : elle n'a
-                # rien à faire dans une adresse. Le GET reste accepté par les serveurs plus
-                # anciens, d'où le repli.
+                # rien à faire dans une adresse. Le serveur sert le POST depuis le 5 septembre ; le
+                # repli GET, qui remettait le courriel dans l'URL, a été retiré le 6 — un repli qui
+                # rouvre le trou qu'on vient de fermer n'est pas un repli, c'est une porte dérobée.
                 resp = client.post(f"{base}/api/licence", json={"email": u.licence_email})
-                if resp.status_code in (404, 405):
-                    resp = client.get(f"{base}/api/licence", params={"email": u.licence_email})
             if resp.status_code == 404:
                 return self._resultat("aucun abonnement", "Aucun abonnement actif pour ce courriel.")
             resp.raise_for_status()

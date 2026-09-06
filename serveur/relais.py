@@ -161,9 +161,9 @@ def _demander_au_serveur_de_licences(courriel: str) -> dict | None:
     try:
         with httpx.Client(timeout=8) as client:
             # En POST : un courriel dans une URL finit dans tous les journaux traversés.
+            # POST seulement : le repli GET remettait le courriel dans l'URL (donc dans les
+            # journaux de tout intermédiaire). Retiré le 6 septembre 2026.
             reponse = client.post(base + "/api/licence", json={"email": courriel})
-            if reponse.status_code in (404, 405):
-                reponse = client.get(base + "/api/licence", params={"email": courriel})
         etat = {"plan": "gratuit", "expires": ""} if reponse.status_code == 404 else {
             "plan": reponse.json().get("plan", "gratuit"),
             "expires": reponse.json().get("expires", ""),
