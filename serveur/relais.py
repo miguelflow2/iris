@@ -51,11 +51,14 @@ DUREE_JETON = 90 * 24 * 3600
 
 # Quels modèles répondent, selon l'abonnement. Repris de backend/iris/plans.py : c'est la même
 # promesse commerciale, et un plan Gratuit ne doit jamais atteindre Claude par accident.
+# Modèles gratuits, dans l'ordre de préférence. Chacun est VÉRIFIÉ présent au catalogue OpenRouter
+# par serveur/verifier_modeles.py — lancé le 6 septembre 2026, il a écarté « z-ai/glm-5.2:free »,
+# qui n'existait pas et aurait échoué en direct sur le forfait gratuit. Relancer ce vérificateur
+# avant chaque déploiement : OpenRouter renomme et retire des modèles sans prévenir.
 GRATUITS = [
     "minimax/minimax-m3:free",
     "google/gemma-4-31b-it:free",
     "nvidia/nemotron-3.5-lightning:free",
-    "z-ai/glm-5.2:free",
 ]
 MODELES_PAR_PLAN: dict[str, list[str]] = {
     "gratuit": GRATUITS,
