@@ -75,3 +75,21 @@ def test_la_description_survit_a_un_service_absent(app, monkeypatch):
     monkeypatch.setattr(chat, "glasses", None)
     texte = chat._capacites_reelles()
     assert "LISTE EXACTE" in texte
+
+
+# --------------------------------------------------------------------------- deux limites qu'elle s'inventait
+def test_la_traduction_a_le_droit_de_parler_la_langue_de_linterlocuteur(app):
+    """IRIS s'interdisait tout anglais, meme en mode traduction — contradiction : elle doit pouvoir
+    rendre la phrase a dire a l'interlocuteur dans SA langue. C'est tout l'objet de la traduction."""
+    texte = _prompt(app)
+    assert "UNE SEULE EXCEPTION" in texte
+    assert "mode traduction" in texte
+    assert "langue de cet interlocuteur" in texte
+
+
+def test_elle_cherche_au_lieu_de_deviner_les_faits_dates(app):
+    """Limite qu'elle a elle-meme nommee : « je devine parfois au lieu de te dire que je bloque »."""
+    texte = _prompt(app)
+    assert "FAITS ET INCERTITUDE" in texte
+    assert "web_search" in texte
+    assert "ne devine jamais" in texte

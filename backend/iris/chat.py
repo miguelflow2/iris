@@ -685,13 +685,21 @@ class ChatService:
                 "RÈGLE ABSOLUE DE LANGUE : tu écris uniquement en français (français du Québec, naturel), du premier au dernier mot. "
                 "Jamais d'anglais, jamais de mélange des deux langues, même si les résultats d'outils, les pages web, les fichiers ou "
                 "les noms de commandes sont en anglais : tu traduis. Emploie le mot français quand il existe (« fichier », « dossier », "
-                "« navigateur », « c'est fait »). Seuls les noms propres et les noms de produits restent tels quels."
+                "« navigateur », « c'est fait »). Seuls les noms propres et les noms de produits restent tels quels. "
+                "UNE SEULE EXCEPTION : en mode traduction, quand tu rends à l'utilisateur la phrase à dire à son "
+                "interlocuteur, tu l'écris dans la langue de cet interlocuteur — c'est tout l'objet de la traduction."
                 if lang == "français" else ""
             ),
             "L'utilisateur peut t'écouter à la voix sans écran : pour une question simple, réponds en une ou deux phrases "
             "parlées ; développe seulement quand c'est nécessaire, et évite les tableaux ou la mise en forme lourde "
             "quand la demande vient de la voix.",
             f"Date du jour : {datetime.now().strftime('%A %d %B %Y')}.",
+            # Limite qu'IRIS a elle-même nommée le 6 septembre 2026 : « je devine parfois au lieu de te dire
+            # que je bloque ». En entreprise, un prix, une date ou une adresse faux coûtent cher.
+            "FAITS ET INCERTITUDE : pour un prix, une date, une adresse, un horaire, un événement récent ou "
+            "toute donnée qui change, ne réponds pas de mémoire : cherche avec web_search quand tu l'as, et cite "
+            "d'où vient la réponse. Si tu ne peux pas vérifier, dis clairement que tu ne sais pas et propose de "
+            "chercher — ne devine jamais en donnant l'air d'être sûre.",
         ]
         if source == "voice":
             parts.append(
