@@ -175,3 +175,51 @@ def test_un_lieu_inconnu_part_au_modele_plutot_que_de_mentir(phrase):
 def test_sans_lieu_cest_bien_lheure_dici(phrase):
     cmd = match(phrase, now=MIDI)
     assert cmd is not None and "12 heures 53" in cmd.reply
+
+
+# --------------------------------------------------------------------------- ouvrir le mode traduction
+# Interrogee par ecrit le 5 septembre 2026, IRIS a repondu « Bien sur ! Dis-moi ce qu'il a dit et je
+# te le traduis » — une reponse polie qui n'ouvre rien. L'outil etait pourtant offert : c'est le
+# modele gratuit qui n'a pas su le choisir. Par la voix, ce chemin est deterministe depuis toujours ;
+# par ecrit, il ne l'etait pas. Quand une intention est aussi nette, on ne la confie pas a un modele
+# qu'on ne maitrise pas.
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "traduis ce qu il dit",
+        "peux-tu traduire ce qu il dit ?",
+        "traduis moi ce qu elle dit",
+        "traduis la conversation",
+        "active la traduction",
+        "traduis en temps reel",
+    ],
+)
+def test_la_demande_de_traduction_ouvre_le_mode(phrase):
+    cmd = match(phrase, app_resolver=resolveur)
+    assert cmd is not None and cmd.tool == "traduire_conversation", phrase
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["arrete la traduction", "arrete de traduire", "coupe la traduction", "desactive la traduction"],
+)
+def test_la_fermeture_est_reconnue_avant_louverture(phrase):
+    """« arrete la traduction » contient « traduis » : dans l'autre ordre, la phrase censee fermer
+    le mode le rouvrirait aussitot."""
+    cmd = match(phrase, app_resolver=resolveur)
+    assert cmd is not None and cmd.tool == "arreter_traduction", phrase
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "traduis ce texte en anglais",
+        "comment on dit bonjour en espagnol",
+        "traduis moi ce document",
+    ],
+)
+def test_une_simple_traduction_reste_au_modele(phrase):
+    """Traduire une phrase n'est pas ouvrir un mode d'ecoute continue. Confondre les deux ferait
+    entrer IRIS en mode traduction pour un mot a chercher dans un dictionnaire."""
+    cmd = match(phrase, app_resolver=resolveur)
+    assert cmd is None or cmd.tool != "traduire_conversation", phrase

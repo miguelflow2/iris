@@ -208,6 +208,26 @@ def _media_query(text: str) -> str | None:
     return query
 
 
+# « Traduis ce qu'il dit » : reconnu ICI, sans passer par le modèle.
+#
+# Par la voix, ce chemin existe déjà et il est déterministe (voice/listener.py). Par écrit, non :
+# interrogée le 5 septembre 2026, IRIS a répondu « Bien sûr ! Dis-moi ce qu'il a dit et je te le
+# traduis » — une réponse polie qui n'ouvre rien. L'outil était pourtant offert : c'est le modèle
+# gratuit qui n'a pas su le choisir. Quand une intention est aussi nette, on ne la confie pas à un
+# modèle qu'on ne maîtrise pas.
+DEMANDE_TRADUCTION = (
+    "traduis ce qu il dit", "traduis ce qu elle dit", "traduis ce qu ils disent",
+    "traduis moi ce qu il dit", "traduis moi ce qu elle dit", "traduis la conversation",
+    "traduis ce qu on me dit", "peux tu traduire ce qu il dit", "peux tu traduire ce qu elle dit",
+    "traduis moi cette personne", "traduis cette personne", "mode traduction",
+    "active la traduction", "commence la traduction", "traduis en direct", "traduis en temps reel",
+)
+FIN_TRADUCTION = (
+    "arrete la traduction", "arrete de traduire", "stop la traduction", "coupe la traduction",
+    "ferme la traduction", "desactive la traduction", "fin de la traduction",
+)
+
+
 def match(text: str, app_resolver=None, now: datetime | None = None) -> QuickCommand | None:
     """Reconnaît une commande simple. `app_resolver(nom)` renvoie un nom d'application sûr, ou None."""
     raw = _squeeze(normalize(text))
@@ -215,6 +235,13 @@ def match(text: str, app_resolver=None, now: datetime | None = None) -> QuickCom
     if not raw or len(raw.split()) > 14:
         return None
     now = now or datetime.now()
+
+    # La fermeture d'abord : « arrête la traduction » contient « traduis », et l'ordre inverse
+    # rouvrirait le mode avec la phrase censée le clore.
+    if any(f in raw for f in FIN_TRADUCTION):
+        return QuickCommand(tool="arreter_traduction", args={}, kind="traduction")
+    if any(d in raw for d in DEMANDE_TRADUCTION):
+        return QuickCommand(tool="traduire_conversation", args={}, kind="traduction")
 
     # ------------------------------------------------------------------ heure et date
     if re.search(r"\b(quelle heure|il est quelle heure|heure est il|heure qu il est)\b", raw):

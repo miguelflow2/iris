@@ -257,6 +257,8 @@ class ChatService:
                 settings=self.settings, consent=self.consent, capture=self.capture, memory=self.memory, agent="local",
                 confirm=lambda title, detail: self._confirm(conv_id, title, detail), create_task=self.create_task_fn,
                 routines=self.routines, reminders=self.reminders, watches=self.watches,
+                glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
+                traduction=self.traduction, voice=self.voice, web=self.web,
             )
             runner = make_tool_runner(ctx)
             try:
@@ -285,6 +287,8 @@ class ChatService:
             settings=self.settings, consent=self.consent, capture=self.capture, memory=self.memory, agent="routine",
             confirm=lambda title, detail: self._confirm(conv_id, title, detail), create_task=self.create_task_fn,
             routines=None, reminders=self.reminders, watches=self.watches,
+            glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
+            traduction=self.traduction, voice=self.voice, web=self.web,
         )
         runner = make_tool_runner(ctx)
         events: list[dict] = []
