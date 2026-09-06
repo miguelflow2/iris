@@ -71,6 +71,9 @@ class WebAgent:
             raise value
         return value
 
+    # `visible` remonte jusqu'aux outils : « montre-moi » ouvre la fenetre. Limite qu'IRIS a
+    # elle-meme nommee le 6 septembre 2026 (« mes recherches ne t'ouvrent pas de fenetre ») —
+    # l'invisible reste le defaut, parce que personne n'a envie de voir IRIS chercher.
     def _browser(self, visible: bool = False):
         """Contexte Chrome persistant : cookies et sessions conservés d'une fois sur l'autre.
 
@@ -117,7 +120,7 @@ class WebAgent:
     def _clean(text: str) -> str:
         return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", text or "")).strip()
 
-    def search(self, query: str, max_chars: int = 4000) -> dict:
+    def search(self, query: str, max_chars: int = 4000, visible: bool = False) -> dict:
         """Cherche sur le web et rend le texte des résultats. Aucune fenêtre ne s'ouvre.
 
         Personne n'a envie de voir défiler les recherches d'IRIS : on veut la réponse. Le
@@ -125,20 +128,20 @@ class WebAgent:
         from urllib.parse import quote_plus
 
         def job():
-            page = self._browser()
+            page = self._browser(visible)
             page.goto("https://duckduckgo.com/html/?q=" + quote_plus(query), wait_until="domcontentloaded")
             page.wait_for_timeout(600)
             return {"query": query, "url": page.url, "text": self._clean(page.inner_text("body"))[:max_chars]}
 
         return self._run(job)
 
-    def open(self, url: str) -> dict:
+    def open(self, url: str, visible: bool = False) -> dict:
         url = (url or "").strip()
         if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url
 
         def job():
-            page = self._browser()
+            page = self._browser(visible)
             page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(800)
             self.last_url = page.url
