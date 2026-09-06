@@ -24,6 +24,7 @@ from .config import AGENT_NAMES, Settings, write_env_value
 from .connectors import ConnectorError, agent_catalog, build_connector
 from .consent import DATA_TYPES, ConsentGate
 from .courriel import Postier
+from .traduction import ServiceTraduction
 from .db import Database
 from .telephonie import Telephoniste
 from .events import EventHub
@@ -92,6 +93,14 @@ class AppContext:
         # Courriel et téléphonie : construits ici, offerts au modèle par tools.py. Ils étaient
         # écrits et testés depuis le 5 septembre, mais rien ne les appelait — IRIS ne pouvait
         # donc ni écrire ni texter, alors que le code était là.
+        # Le mode traduction. Constat du 5 septembre 2026, deux fois dans la même journée : un
+        # module écrit et testé que PERSONNE n'appelle ne sert à rien. On le branche donc ici même,
+        # dans le même geste que sa création — l'écoute, le chat et les outils, les trois.
+        self.traduction = ServiceTraduction(
+            lambda systeme, message: self.chat.demander_court(systeme, message),
+            settings=self.settings, registre=self.consent, hub=self.hub,
+        )
+        self.voice.traduction = self.traduction
         self.courriel = Postier(self.settings, self.secrets)
         self.telephonie = Telephoniste(self.settings, self.secrets, registre=self.consent, hub=self.hub)
         # Le verrou du pilotage vocal a besoin de savoir si les lunettes sont là.
@@ -105,6 +114,8 @@ class AppContext:
         self.chat.glasses = self.glasses
         self.chat.courriel = self.courriel
         self.chat.telephonie = self.telephonie
+        self.chat.traduction = self.traduction
+        self.chat.voice = self.voice
         self.plans = PlanService(self.db, self.settings, self.hub, secrets=self.secrets)
         self.chat.plans = self.plans
         self.tts.plans = self.plans

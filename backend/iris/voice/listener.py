@@ -35,6 +35,38 @@ CLOUD_TIMEOUT = 4.0  # renfort de reconnaissance cloud : au-delà, on garde la t
 # Cinq secondes laissent aussi passer l'établissement du lien mains libres, qui prend jusqu'à 2 s.
 MICRO_MUET = 5.0
 
+# ------------------------------------------------------------------ mode traduction
+# « Iris, traduis ce qu'il dit » : IRIS écoute l'interlocuteur en continu et lit la traduction.
+# Les trois durées ci-dessous découpent SA parole à lui. Elles sont nommées ici, et pas enfouies dans
+# la boucle, parce qu'elles devront être réglées à l'oreille sur les lunettes, en bande étroite,
+# où le son n'a rien à voir avec celui du micro d'un portable.
+#
+# Silence qui ferme une phrase. Plus court que SILENCE_END (0,9 s), et c'est voulu : 0,9 est réglé
+# pour une commande française, où couper trop tôt ampute un ordre. Ici, couper un peu tôt ne coûte
+# qu'un segment de plus — le fil de la conversation recolle les fragments — alors que chaque 0,2 s
+# économisée sort d'un budget de latence qui contient déjà deux allers-retours réseau.
+TRAD_SILENCE_FIN = 0.7
+# Parole minimale pour qu'un segment vaille un aller-retour. En dessous, c'est un « yeah », une toux,
+# un raclement de gorge : le traduire coûterait deux secondes pendant lesquelles IRIS parle
+# par-dessus l'interlocuteur, pour rien.
+TRAD_PAROLE_MIN = 0.8
+# Plafond dur. À ~150 mots/minute, 8 s font une vingtaine de mots, une longue phrase. Au-delà, la
+# traduction arriverait après la réponse ; un long parleur est traduit en morceaux.
+TRAD_SEGMENT_MAX = 8.0
+# Une demande de traduction restée sans suite (ouverte depuis le chat écrit, micro fermé) ne doit pas
+# s'inviter dans une conversation vocale une heure plus tard : passé ce délai, on la referme.
+TRAD_OUVERTURE_PERIMEE = 120.0
+# Ce qui ouvre le mode, testé AVANT tout appel au modèle : zéro réseau, zéro jeton, et ça marche même
+# si le relais est en panne. Sur scène, une fonction qui dépend d'un aller-retour est une fonction
+# qui peut manquer.
+MOTS_TRADUCTION = ["traduis", "traduire", "traduction", "traduit", "translate", "interprete"]
+# « arrête la traduction » contient « traduction » : sans ce garde-fou, la phrase qui ferme le mode
+# le rouvrirait aussitôt.
+MOTS_FIN_TRADUCTION = ["arrete", "stop", "annule", "termine", "fini", "coupe", "plus besoin"]
+# Google veut une locale complète, pas un code de langue court. `stt.google_recognize` la passe telle
+# quelle à `recognize_google` : entendre de l'anglais ne demande donc aucune modification de stt.py.
+LOCALES_ETRANGERES = {"en": "en-US", "fr": "fr-CA", "es": "es-ES", "pt": "pt-BR", "it": "it-IT", "de": "de-DE"}
+
 
 def wake_phrases(wake: str, aliases: list[str] | None = None) -> list[str]:
     """Phrases d'activation normalisées, sans doublon : grammaire Vosk et comparaison exacte."""
@@ -248,6 +280,10 @@ class VoiceListener:
         self.paused_until = 0.0  # pause temporaire (bouton « Arrêter l'écoute ») : l'écoute reprend automatiquement après
         # Renseigné par AppContext : dit si des lunettes VELA sont connectées. Absent = pas de vérification.
         self.glasses_connected: Callable[[], bool] | None = None
+        # Renseigné par AppContext : le ServiceTraduction (iris/traduction.py). Absent = pas de mode
+        # traduction, et le cycle vocal normal se comporte exactement comme avant — c'est la règle
+        # numéro un ici : ce qui vient d'être réparé ne doit pas dépendre de ce qui vient d'être ajouté.
+        self.traduction = None
 
     # ------------------------------------------------------------------ état
     def lunettes_presentes(self) -> bool:
@@ -916,7 +952,13 @@ class VoiceListener:
         text = self._listen_command(primed=primed + b"".join(captured))
         if text.strip():
             self._process(text)
-            self._fenetre_dialogue()
+            # Le mode traduction remplace la fenêtre de dialogue : on ne peut pas guetter en même
+            # temps une commande française et la parole d'un anglophone. Deux appels, parce que la
+            # demande peut arriver dans la commande elle-même OU plus tard dans la fenêtre ; quand
+            # rien n'est demandé, les deux ne coûtent qu'un test de booléen.
+            if not self._traduire_si_demande():
+                self._fenetre_dialogue()
+                self._traduire_si_demande()
         else:
             self.hub.publish("voice.transcript", text="", empty=True)
             self._say(self._no_speech_message())
@@ -1037,6 +1079,13 @@ class VoiceListener:
             self.hub.publish("voice.transcript", text=text)
             self.mute(announce=True)
             return
+        # Ouverture du mode traduction AVANT le modèle. C'est le chemin de scène : il ne dépend ni du
+        # réseau, ni du relais, ni du fait que le modèle choisisse le bon outil. L'outil
+        # `traduire_conversation` (tools.py) reste le second chemin, pour les formulations que ces
+        # quelques mots ne couvrent pas.
+        if self._est_demande_traduction(text):
+            self._demarrer_traduction(text)
+            return
         self._set_state("processing")
         self.hub.publish("voice.transcript", text=text)
         started = time.time()
@@ -1116,6 +1165,11 @@ class VoiceListener:
                     raison = "demandé"
                     return
                 self._process(texte)
+                if self._traduction_en_attente():
+                    # « traduis ce qu'il dit » dit pendant la fenêtre : on la referme proprement (le
+                    # `finally` publie la fermeture) et `_command_cycle` enchaîne sur la traduction.
+                    raison = "traduction"
+                    return
                 limite = time.time() + secondes
         finally:
             self.hub.publish("voice.conversation", open=False, reason=raison)
@@ -1133,6 +1187,416 @@ class VoiceListener:
             self._process(text, depth=depth)
         elif self._one_shot and not self.settings.user.voice_autostart:
             self._stop.set()
+
+    # ------------------------------------------------------------------ mode traduction
+    # Demande de Miguel, 5 septembre 2026 : « la personne me parle en anglais, je dis : Iris,
+    # est-ce que tu peux me traduire ce que cette personne dit ? IRIS écoute en continu ce que la
+    # personne dit et me traduit ce qu'elle a dit. »
+    #
+    # Forme retenue : une boucle SŒUR de `_fenetre_dialogue`. Elle tourne sur le fil audio, lit la
+    # même file, et rend la main à `_wake_cycle` en sortant. Elle ne touche ni `_wake_cycle`, ni
+    # `_command_cycle` (deux lignes de branchement mises à part), ni `_listen_command`, ni `_read`,
+    # ni `_callback` : le mot d'activation est le seul chemin dont dépend tout le reste du produit,
+    # il a été réparé le matin même, et il n'a aucune raison de connaître la traduction.
+    #
+    # Deux choses qu'on ne fait surtout pas, et pourquoi. Pas de second fil qui lit `self._audio` :
+    # deux consommateurs d'une même file se partagent les blocs au hasard, un sur deux chacun, panne
+    # silencieuse et indiagnosticable. Pas de second flux d'entrée : le lien Bluetooth mains libres
+    # ne porte qu'UNE entrée, le second échouerait ou volerait le premier.
+    def _est_demande_traduction(self, texte: str) -> bool:
+        """« Traduis ce qu'il dit » ouvre-t-il le mode ? Testé avant tout appel au modèle."""
+        if not matches_any(texte, MOTS_TRADUCTION):
+            return False
+        # « arrête la traduction », « annule la traduction » : sans ce test, la phrase qui ferme le
+        # mode le rouvrirait aussitôt.
+        return not (self._est_arret(texte) or matches_any(texte, MOTS_FIN_TRADUCTION))
+
+    def _langue_demandee(self, texte: str) -> str:
+        """« traduis-moi l'espagnol » -> « es ». Vide si aucune langue n'est nommée (défaut : anglais).
+
+        Import tardif et gardé : `iris/traduction.py` est écrit en parallèle, et rien de ce qui
+        touche au mot d'activation ne doit pouvoir être cassé par un module en cours d'écriture."""
+        try:
+            from ..traduction import langue_depuis_phrase
+
+            return langue_depuis_phrase(texte)
+        except Exception:
+            return ""
+
+    def _traduction_impossible(self) -> str:
+        """La phrase à dire quand la traduction ne peut pas commencer, sinon « ».
+
+        Deux empêchements, et ils ne se disent pas de la même façon. Le mode local, que le service
+        connaît. Et le consentement « audio brut », que lui seul ignore : sans lui, IRIS n'a aucun
+        moyen d'entendre autre chose que du français, puisque le modèle hors ligne installé ici ne
+        connaît que cette langue."""
+        service = self.traduction
+        if service is None:
+            return "Je ne peux pas traduire : le service de traduction n'est pas disponible ici."
+        try:
+            empechement = service.pourquoi_impossible()
+        except Exception:
+            empechement = ""
+        if empechement:
+            return empechement
+        if not self.consent.is_granted("audio_raw"):
+            return (
+                "Pour traduire, il faut que j'envoie la voix de ton interlocuteur à un service de "
+                "reconnaissance en ligne : ma reconnaissance hors ligne ne connaît que le français. "
+                "Autorise « Audio brut du micro » dans Confidentialité, et je le ferai."
+            )
+        return ""
+
+    def _demarrer_traduction(self, texte: str = "") -> bool:
+        """Ouvre le mode depuis une phrase dite, et l'annonce. Rend True si le mode s'ouvre.
+
+        La phrase dite est toujours vraie : elle annonce la traduction, ou elle explique pourquoi il
+        n'y en aura pas. Sans écran et sans lunettes qui affichent, c'est la seule chose qui
+        distingue « IRIS traduit » de « IRIS attend son nom »."""
+        self.hub.publish("voice.transcript", text=texte)
+        empeche = self._traduction_impossible()
+        if empeche:
+            self._say(empeche)
+            return False
+        try:
+            phrase = self.traduction.demarrer(self._langue_demandee(texte))
+        except Exception as exc:
+            log.warning("ouverture du mode traduction impossible : %s", exc)
+            self._say("Je n'arrive pas à ouvrir la traduction.")
+            return False
+        self._say(phrase)
+        return bool(getattr(self.traduction, "actif", False))
+
+    def demander_traduction(self, langue: str = "") -> dict:
+        """Ouvre le mode depuis l'extérieur : l'outil du modèle, un bouton, l'API.
+
+        Ne parle pas et n'ouvre aucun micro : elle arme le service, et c'est le fil audio qui entre
+        dans la boucle dès que la commande en cours est finie. Rend toujours de quoi répondre
+        honnêtement, y compris quand rien n'écoute."""
+        service = self.traduction
+        if service is None:
+            return {"ouvert": False, "ecoute": self.running,
+                    "phrase": "Le mode traduction n'est pas disponible sur cet appareil."}
+        empeche = self._traduction_impossible()
+        if empeche:
+            return {"ouvert": False, "ecoute": self.running, "phrase": empeche}
+        phrase = service.demarrer(langue or "")
+        ouvert = bool(getattr(service, "actif", False))
+        if ouvert and not self.running:
+            # Armé mais sourd : le dire, plutôt que de laisser croire qu'IRIS écoute l'interlocuteur.
+            phrase += " Mais l'écoute vocale est arrêtée : démarre-la pour que j'entende ton interlocuteur."
+        return {"ouvert": ouvert, "ecoute": self.running, "phrase": phrase,
+                "langue": getattr(service, "langue_entendue", "")}
+
+    def arreter_traduction(self, raison: str = "demande") -> dict:
+        """Ferme le mode depuis l'extérieur. La boucle le voit au bloc suivant, soit 0,25 s plus tard."""
+        service = self.traduction
+        if service is None:
+            return {"ferme": True, "phrase": ""}
+        return {"ferme": True, "phrase": service.arreter(raison)}
+
+    def _traduction_en_attente(self) -> bool:
+        """Le mode a-t-il été demandé et attend-il que le fil audio y entre ?"""
+        service = self.traduction
+        if service is None or not getattr(service, "actif", False):
+            return False
+        try:
+            depuis = float(service.silence_depuis() or 0.0)
+        except Exception:
+            depuis = 0.0
+        if depuis > TRAD_OUVERTURE_PERIMEE:
+            # Demandé depuis le chat écrit alors que le micro était fermé : le mode ne doit pas
+            # s'inviter dans la conversation suivante, une heure plus tard.
+            log.info("demande de traduction périmée (%.0f s) : abandonnée", depuis)
+            service.arreter("silence")
+            return False
+        return True
+
+    def _traduire_si_demande(self) -> bool:
+        """Entre dans le mode traduction s'il a été demandé. Rend True si la boucle a tourné.
+
+        Quand rien n'est demandé — et c'est le cas de tout le reste du produit — cette fonction ne
+        coûte qu'un test de booléen, et le cycle vocal se comporte exactement comme avant."""
+        if not self._traduction_en_attente():
+            return False
+        self._boucle_traduction()
+        return True
+
+    @staticmethod
+    def _doit_fermer(service) -> str:
+        """Le service demande-t-il la fermeture (silence prolongé, échecs en série) ? Sa raison, ou « »."""
+        verifier = getattr(service, "doit_fermer", None)
+        if verifier is None:
+            return ""
+        try:
+            return verifier() or ""
+        except Exception:
+            return ""
+
+    def _guetteur_de_sortie(self, mots: list[str]):
+        """Le reconnaisseur à grammaire restreinte qui écoute la sortie, sur chaque bloc.
+
+        Mesuré sur cette machine : la grammaire coûte 0,07 fois le temps réel, le plein vocabulaire
+        1,13 fois. Un guetteur à grammaire tourne donc en permanence pour rien ; un décodage complet
+        en continu ne rattraperait jamais son retard, ferait déborder la file, et `_callback` jetterait
+        le début des phrases sans qu'aucune erreur ne soit levée.
+
+        Le modèle est chargé ici s'il ne l'était pas — c'est le cas quand `stt_engine` vaut
+        « google », qui est le réglage réel de cette machine. Sans lui, « Iris, arrête » ne serait
+        entendu par personne. Le chargement coûte environ deux secondes, une seule fois, juste après
+        la phrase de confirmation qu'IRIS vient de dire : le seul moment du mode où deux secondes ne
+        se voient pas. `self.engine` n'est PAS touché ; le cycle normal choisit son moteur comme avant."""
+        moteur = self._vosk
+        if moteur is None:
+            chemin = stt.model_dir(self.settings.models_dir, self.settings.user.language)
+            if chemin is None:
+                log.warning("traduction sans guetteur de sortie : aucun modèle hors ligne installé")
+                return None
+            try:
+                moteur = stt.VoskEngine(chemin)
+            except Exception as exc:
+                log.warning("traduction sans guetteur de sortie (%s)", exc)
+                return None
+            self._vosk, self._vosk_path = moteur, chemin
+        vocabulaire = [m for m in dict.fromkeys(mots) if m]
+        try:
+            return moteur.recognizer(vocabulaire) if vocabulaire else None
+        except Exception as exc:
+            log.warning("guetteur de sortie indisponible (%s)", exc)
+            return None
+
+    def _sortie_traduction(self, texte: str, mute_words: list[str]) -> str:
+        """« Iris, arrête » -> la raison de sortie ; « » si ce n'est pas un ordre.
+
+        Le mot d'activation est EXIGÉ ici, contrairement à `_fenetre_dialogue`. Raison : dans ce
+        mode, l'audio dominant est étranger, et une grammaire de six mots français mappe volontiers
+        un son anglais sur son voisin le plus proche. Exiger « Iris » supprime toute cette classe de
+        faux positifs — et c'est mot pour mot ce qui a été demandé.
+
+        L'ordre du dépouillage n'est pas négociable : `contains_wake` d'abord, `_est_arret` ensuite.
+        `_est_arret("iris arrête")` est FAUX — il compare l'énoncé entier à un mot d'arrêt — et sans
+        retirer le nom d'abord, « Iris, arrête » n'obéirait pas."""
+        mots = [m for m in (texte or "").split() if m != "[unk]"]
+        if not mots or len(mots) > 4:
+            return ""
+        phrase = " ".join(mots)
+        if phrase in mute_words:
+            return "muet"
+        trouve, reste = contains_wake(phrase, self.settings.user.wake_word,
+                                      aliases=list(self.settings.user.wake_aliases or []))
+        if trouve and self._est_arret(reste):
+            log.info("mode traduction : sortie demandée (%r)", phrase)
+            return "demande"
+        return ""
+
+    def _boucle_traduction(self) -> None:
+        """Écoute l'interlocuteur en continu, lit sa traduction, et sort dès qu'on le demande.
+
+        Sur le fil audio, par bloc de 0,25 s, on ne fait que trois choses, toutes mesurées comme
+        quasi gratuites : un pic (`np.abs().max()`), le guetteur à grammaire restreinte, et
+        l'accumulation du PCM. La reconnaissance de l'étranger, le modèle et la parole partent dans
+        un fil de travail unique, et le fil audio n'attend JAMAIS son résultat : un appel réseau
+        depuis ce fil est littéralement ce qui a mis l'écoute par terre le matin du 5 septembre 2026
+        (83 secondes de retard, 3414 blocs perdus, pas un mot d'activation entendu de la matinée).
+
+        La sortie doit être infaillible, et il y en a donc cinq : « Iris, arrête » (guetteur), le
+        bouton « Parler maintenant », l'arrêt de l'écoute, la disparition des lunettes, et
+        l'expiration (silence prolongé ou échecs en série, décidés par le service). Toutes disent une
+        phrase qui finit par les mêmes mots : croire qu'IRIS traduit encore alors qu'elle est revenue
+        à l'écoute normale, c'est parler dans le vide devant quelqu'un."""
+        service = self.traduction
+        if service is None or not getattr(service, "actif", False):
+            return
+        empeche = self._traduction_impossible()
+        if empeche:  # le consentement a pu être retiré entre la demande et l'entrée
+            service.arreter("erreur")
+            self._say(empeche)
+            return
+
+        import concurrent.futures
+
+        langue = getattr(service, "langue_entendue", "en") or "en"
+        phrases = wake_phrases(self.settings.user.wake_word, list(self.settings.user.wake_aliases or []))
+        stop_words = [normalize(w) for w in (self.settings.user.stop_words or []) if normalize(w)]
+        mute_words = [normalize(w) for w in (self.settings.user.mute_words or []) if normalize(w)]
+        guetteur = self._guetteur_de_sortie(phrases + stop_words + mute_words)
+        self._set_state("traduction", langue=langue)
+        self.hub.publish("voice.traduction", etat="ecoute", langue=langue, guetteur=guetteur is not None)
+        self._drain()
+
+        segment: list[bytes] = []
+        parole = silence = 0.0
+        bruit: list[int] = []
+        seuil = SPEECH_PEAK
+        raison = "demande"
+        couper_micro = False
+        dernier_verrou = 0.0  # dernière vérification du verrou des lunettes (voir la boucle)
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="iris-traduction")
+        en_vol = None
+        en_attente = b""
+        try:
+            while not self._stop.is_set():
+                if not getattr(service, "actif", False):
+                    break  # fermé de l'extérieur : bouton, outil du modèle, API
+                if self._ptt.is_set():
+                    self._ptt.clear()
+                    break  # « Parler maintenant » : la sortie qui ne dépend d'aucun décodage
+                maintenant = time.time()
+                if maintenant - dernier_verrou > 2.0:
+                    # Toutes les deux secondes, pas à chaque bloc : `lunettes_requises` finit par
+                    # énumérer les périphériques audio, et le faire quatre fois par seconde sur le
+                    # fil audio, c'est exactement le genre de travail qui fait déborder la file.
+                    dernier_verrou = maintenant
+                    if self.lunettes_requises():
+                        raison = "lunettes"
+                        break
+                expire = self._doit_fermer(service)
+                if expire:
+                    raison = expire
+                    break
+                if en_vol is not None and en_vol.done():
+                    en_vol = None
+                if en_vol is None and en_attente:
+                    en_vol, en_attente = pool.submit(self._traduire_segment, en_attente), b""
+                data = self._read()
+                if data is None:
+                    continue
+                if guetteur is not None and guetteur.AcceptWaveform(data):
+                    sortie = self._sortie_traduction(stt.VoskEngine.text_of(guetteur.Result()), mute_words)
+                    if sortie == "muet":
+                        raison, couper_micro = "arret", True
+                        break
+                    if sortie:
+                        raison = sortie
+                        break
+                if self.tts.is_speaking:
+                    # Alternat, assumé et écrit dans le code : pendant qu'IRIS lit une traduction, ce
+                    # qui entre dans le micro est SA voix, et l'accumuler la ferait se traduire
+                    # elle-même. Le guetteur, lui, continue de tourner — sa grammaire ne peut rendre
+                    # qu'un mot d'arrêt isolé, ce dont `_wait_speech` vit depuis des mois.
+                    segment, parole, silence = [], 0.0, 0.0
+                    continue
+                secondes = len(data) / 2 / stt.SAMPLE_RATE
+                pic = self._peak_of(data)
+                if len(bruit) < 4:
+                    bruit.append(pic)  # bruit ambiant mesuré sur la première seconde, comme `_listen_command`
+                    seuil = max(SPEECH_PEAK, int(2.5 * (sum(bruit) / len(bruit))))
+                if pic >= seuil:
+                    segment.append(data)
+                    parole += secondes
+                    silence = 0.0
+                elif segment:
+                    segment.append(data)
+                    silence += secondes
+                if not segment:
+                    continue
+                if silence >= TRAD_SILENCE_FIN and parole < TRAD_PAROLE_MIN:
+                    segment, parole, silence = [], 0.0, 0.0  # une toux, un « yeah » : rien à traduire
+                    continue
+                if (silence >= TRAD_SILENCE_FIN and parole >= TRAD_PAROLE_MIN) or parole >= TRAD_SEGMENT_MAX:
+                    pcm = b"".join(segment)
+                    segment, parole, silence = [], 0.0, 0.0
+                    if en_vol is None or en_vol.done():
+                        en_vol, en_attente = pool.submit(self._traduire_segment, pcm), b""
+                    else:
+                        # Au plus un segment en vol et un en attente ; le troisième remplace celui qui
+                        # attend. Dans une conversation vivante, la phrase la plus fraîche vaut plus
+                        # que la périmée — même esprit que `_callback`, qui jette le plus vieux bloc.
+                        en_attente = pcm
+        finally:
+            if self._stop.is_set() and raison == "demande":
+                # L'écoute s'est arrêtée sous nos pieds (bouton, muet, chien de garde, micro
+                # disparu) : ce n'est pas la même chose qu'une sortie demandée, et ça ne se dit pas
+                # de la même façon.
+                raison = "arret"
+            phrase = ""
+            try:
+                # Fermer le service AVANT d'arrêter le fil de travail : `arreter()` pose `actif` à
+                # faux, et `_traduire_segment` s'y réfère juste avant de parler. Sans cet ordre, une
+                # traduction encore en vol serait lue APRÈS « Je ne traduis plus » — IRIS parlerait
+                # dans le dos de son propriétaire, qui la croit revenue à l'écoute normale.
+                phrase = service.arreter(raison)
+            except Exception as exc:
+                log.warning("fermeture du mode traduction : %s", exc)
+            pool.shutdown(wait=False, cancel_futures=True)
+            self.hub.publish("voice.traduction", etat="ferme", raison=raison)
+            log.info("mode traduction fermé (%s)", raison)
+            if phrase:
+                self._say(phrase)
+            if couper_micro:
+                self.mute(announce=True)
+            elif not self._stop.is_set():
+                self._set_state("wake")
+
+    def _traduire_segment(self, pcm: bytes) -> None:
+        """Reconnaît la phrase de l'interlocuteur, la fait traduire, la lit. Fil de travail, jamais le fil audio.
+
+        Ne lève jamais : une exception ici serait avalée par l'exécuteur, et IRIS resterait muette
+        devant quelqu'un sans que rien ne l'explique."""
+        service = self.traduction
+        if service is None or not pcm:
+            return
+        try:
+            langue = getattr(service, "langue_entendue", "en") or "en"
+            texte = self._reconnaitre_etranger(pcm, langue)
+            if not texte:
+                return
+            self.hub.publish("voice.traduction", etat="entendu", texte=texte, langue=langue)
+            resultat = self._executer(service.traduire_entendu(texte))
+            if resultat is None:
+                return
+            try:
+                self.hub.publish("voice.traduction", etat="traduit", **resultat.en_dict())
+            except Exception:
+                pass
+            a_dire = (getattr(resultat, "a_dire", "") or "").strip()
+            if not getattr(service, "actif", False):
+                # Le mode s'est refermé pendant l'aller-retour : lire cette traduction maintenant
+                # ferait parler IRIS après avoir annoncé qu'elle ne traduisait plus.
+                log.info("traduction abandonnée : le mode s'est refermé entre-temps")
+                return
+            if a_dire:
+                # `speak` met en file et rend la main : le fil de travail ne bloque pas, et deux
+                # traductions qui se suivent sont lues l'une après l'autre, jamais l'une sur l'autre.
+                self.tts.speak(a_dire, force=True)
+        except Exception as exc:
+            log.warning("segment non traduit (%s)", exc)
+
+    def _executer(self, coro, timeout: float = 20.0):
+        """Exécute une coroutine du service depuis le fil de travail. Rend None sur échec."""
+        try:
+            if self.loop is not None:
+                return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout=timeout)
+            return asyncio.run(coro)  # hors application (tests) : aucune boucle à qui confier le travail
+        except Exception as exc:
+            log.warning("traduction abandonnée (%s)", exc)
+            try:
+                coro.close()
+            except Exception:
+                pass
+            return None
+
+    def _reconnaitre_etranger(self, pcm: bytes, langue: str) -> str:
+        """La parole de l'interlocuteur devient du texte. Aujourd'hui, un seul chemin entend l'anglais.
+
+        Il faut le dire en clair, parce que ce n'est pas un détail technique : LA VOIX DE
+        L'INTERLOCUTEUR PART CHEZ GOOGLE, et cette personne-là n'a rien consenti, ne sait pas
+        qu'IRIS existe et ne peut rien refuser. Le registre chaîné en garde la trace — la durée et la
+        langue, jamais le contenu — parce que c'est le minimum pour un produit vendu sur la
+        confidentialité prouvable. Le modèle hors ligne installé ici ne connaît que le français : sur
+        de l'anglais, il rendrait de vrais mots français qui ne veulent rien dire, et une traduction
+        assurée bâtie sur du charabia fait plus de dégâts qu'un « je n'ai pas compris »."""
+        if self.settings.user.local_only or not self.consent.is_granted("audio_raw"):
+            return ""
+        locale = LOCALES_ETRANGERES.get(normalize(langue)[:2], "en-US")
+        # La trace est écrite AVANT l'appel, pas après, et sans condition de succès. Ce registre
+        # répond à une seule question : « qu'est-ce qui est SORTI de cet ordinateur ? » L'audio part
+        # que la reconnaissance réussisse ou non, et un envoi resté sans réponse est justement celui
+        # qu'on voudrait retrouver. Et ici la voix envoyée n'est même pas celle de Miguel : c'est
+        # celle d'un tiers qui n'a rien signé.
+        self.consent.log("external_send", data_type="audio_raw", agent="google-stt",
+                         detail=f"traduction : {len(pcm) // 32} ms d'audio en {locale}")
+        return (stt.google_recognize(pcm, stt.SAMPLE_RATE, locale) or "").strip()
 
     # ------------------------------------------------------------------ utilitaires
     def _say(self, text: str, capture: list[bytes] | None = None) -> None:

@@ -36,17 +36,27 @@ def payment_link(amount: float) -> str:
 LICENSE_SECRET = b"VELA-IRIS-2026-license-v1"
 
 PLANS: dict[str, dict] = {
+    # La voix ElevenLabs est incluse dans TOUS les forfaits, Gratuit compris (décision de Miguel,
+    # 5 septembre 2026) : ce qui se vend, ce sont les modèles et les quotas, pas le droit d'être
+    # audible. Vendre la voix était de toute façon une promesse creuse chez lui — sa clé personnelle
+    # dans backend/.env court-circuite déjà le palier (voir byok_tts), et IRIS parlait donc en
+    # ElevenLabs en plan Gratuit pendant que l'application affichait le contraire.
+    # Ce qui remplace le verrou, c'est le plafond de caractères ci-dessous : lui est opposable
+    # (voir tts_quota_exceeded) et il repose sur une carte bancaire bien réelle.
     "gratuit": {
         "label": "Gratuit",
         "price": 0.0,
         "quota_requests": 300,
-        "quota_tts_chars": 0,  # voix Windows uniquement
-        "features": {"chat", "pc_control", "routines", "reminders", "register"},
-        "tts": "windows",
+        # 40 000 caractères ≈ 200 répliques de 200 caractères : de quoi parler toute la journée sans
+        # que la facture parte seule. C'est un FILET, pas une prévision.
+        "quota_tts_chars": 40000,
+        "features": {"chat", "pc_control", "routines", "reminders", "register", "elevenlabs"},
+        "tts": "elevenlabs",
         "models": {"fast": "", "reasoning": "", "vision": ""},  # modèles gratuits, fournis par le relais VELA
         "contents": [
             "Interface vocale continue : contrôle du PC, routines, rappels, mémoire",
-            "Modèles gratuits fournis par VELA, voix Windows, reconnaissance hors-ligne",
+            "Voix ElevenLabs incluse (français naturel), 40 000 caractères par mois",
+            "Modèles gratuits fournis par VELA, reconnaissance vocale hors-ligne",
             "Gouvernance et confidentialité complètes (consentements, registre, mode confidentiel)",
         ],
         "api_cost": 0.0,
@@ -61,7 +71,8 @@ PLANS: dict[str, dict] = {
         "models": {"fast": "google/gemini-2.5-flash", "reasoning": "openai/gpt-5-mini", "vision": "google/gemini-2.5-flash"},
         "contents": [
             "Tout Gratuit",
-            "Voix ElevenLabs (français naturel)",
+            # La voix n'est plus un avantage payant : ce qui change ici, c'est la quantité, pas le droit.
+            "Voix ElevenLabs élargie : 60 000 caractères par mois au lieu de 40 000",
             "Gemini 2.5 Flash + GPT-5 mini",
             "Navigation web et comptes enregistrés (Omnivox, portails, outils métier)",
         ],
@@ -156,6 +167,7 @@ class PlanService:
         self.settings = settings
         self.hub = hub
         self.secrets = secrets  # SecretStore (clés personnelles de l'utilisateur)
+        self._tts_alerte = ""  # mois déjà signalé comme « plafond de voix atteint » (voir tts_quota_exceeded)
 
     # ------------------------------------------------------------------ clés personnelles (BYOK)
     # Les plans vendent des ressources fournies par VELA (modèles, voix, quotas). Quand l'utilisateur apporte sa propre
@@ -218,6 +230,17 @@ class PlanService:
     BYOK_MODEL_FEATURES = {"web", "screen", "memory", "tasks", "dev"}
 
     def feature_allowed(self, feature: str) -> bool:
+        # Le plafond de caractères passe AVANT tout le reste, et c'est tout l'objet du correctif du
+        # 5 septembre 2026. Il était placé après le raccourci « clé personnelle » juste en dessous —
+        # or ce raccourci répond oui dès qu'une clé ElevenLabs existe, ce qui est toujours le cas
+        # chez Miguel. Le plafond n'était donc pas contournable par ruse : il était inatteignable
+        # par construction, et le seul frein posé sur sa carte ne pouvait rien couper.
+        #
+        # C'est ici, et nulle part ailleurs, qu'il est opposable : voice/tts.py n'interroge que ce
+        # point avant de choisir ElevenLabs (_use_elevenlabs). Répondre faux fait repartir la phrase
+        # par le repli qui existe déjà et qui est éprouvé — la voix de Windows. IRIS ne se tait pas.
+        if feature == "elevenlabs" and self.tts_quota_exceeded():
+            return False
         if feature == "elevenlabs" and self.byok_tts():
             return True
         if feature in self.BYOK_MODEL_FEATURES and self.byok_models():
@@ -241,6 +264,7 @@ class PlanService:
             "requests_ratio": round(used / p["quota_requests"], 3) if p["quota_requests"] else 0,
             "tts_chars": chars,
             "tts_chars_limit": p["quota_tts_chars"],
+            "tts_chars_left": max(0, p["quota_tts_chars"] - chars) if p["quota_tts_chars"] else -1,  # -1 = aucun plafond
         }
 
     def _bump(self, requests: int = 0, tts_chars: int = 0) -> None:
@@ -268,6 +292,38 @@ class PlanService:
     def count_tts(self, chars: int) -> None:
         if chars > 0:
             self._bump(tts_chars=chars)
+
+    def tts_quota_exceeded(self) -> bool:
+        """Le plafond mensuel de caractères ElevenLabs est-il franchi ?
+
+        Il était compté depuis le début (count_tts) et opposé à rien : les « 60 000 caractères »
+        affichés sur le site étaient décoratifs. Comme la voix est maintenant incluse au forfait
+        Gratuit et que c'est la carte de VELA qui paie chaque caractère, un compteur qu'on ne peut
+        pas opposer n'est plus une imprécision, c'est un robinet ouvert.
+
+        Une clé personnelle (byok_tts) n'arrive jamais jusqu'ici : ce qu'elle paie ne regarde pas le
+        forfait, et le jour de la présentation il vaut mieux qu'aucun compteur ne puisse faire taire
+        la voix au milieu d'une phrase. 0 signifie « aucun plafond » ; tous les forfaits en ont un.
+        """
+        limit = int(PLANS[self.plan]["quota_tts_chars"] or 0)
+        if not limit:
+            return False
+        used = self.usage()["tts_chars"]
+        if used < limit:
+            return False
+        # Prévenir une seule fois par mois : sinon l'avertissement partirait à chaque phrase, et
+        # ce test est interrogé avant CHAQUE phrase.
+        marque = f"{month_key()}:{self.plan}"
+        if getattr(self, "_tts_alerte", "") != marque:
+            self._tts_alerte = marque
+            try:
+                self.hub.publish(
+                    "plan.tts_quota", used=used, limit=limit, plan=self.plan, level="warn",
+                    message=f"Voix ElevenLabs : {limit} caractères utilisés ce mois-ci (plan {PLANS[self.plan]['label']}). IRIS continue avec la voix de Windows jusqu'au mois prochain.",
+                )
+            except Exception:
+                pass
+        return True
 
     # ------------------------------------------------------------------ activation
     def activate(self, key: str) -> dict:

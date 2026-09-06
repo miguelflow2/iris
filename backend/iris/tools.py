@@ -34,6 +34,11 @@ class ToolContext:
     glasses: Any = None  # GlassesService : les lunettes VELA
     courriel: Any = None  # Postier : envoi de courriels, jamais sans accord
     telephonie: Any = None  # Telephoniste : SMS et appels, jamais sans accord
+    traduction: Any = None  # ServiceTraduction : traduire une conversation, tour par tour
+    # VoiceListener : c'est LUI qui sait si un micro écoute vraiment. Sans lui, l'outil de traduction
+    # marche encore (il arme le service), mais il ne peut plus dire « l'écoute est arrêtée » — et
+    # promettre une traduction à quelqu'un dont le micro est fermé est le pire des ratés.
+    voice: Any = None
 
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:
@@ -252,6 +257,31 @@ TOOL_SPECS: list[ToolSpec] = [
         }, ["commande"]),
     ),
     ToolSpec(
+        "traduire_conversation",
+        "Ouvre le MODE TRADUCTION : IRIS écoute en continu la personne en face, traduit ce qu'elle "
+        "dit à voix haute, et propose quoi répondre. À utiliser dès qu'on te demande de traduire ce "
+        "que quelqu'un dit, de suivre une conversation dans une autre langue, ou de servir "
+        "d'interprète (« traduis ce qu'il dit », « je parle avec un anglophone »). Précise la langue "
+        "de l'interlocuteur si elle est nommée ; sans précision, c'est l'anglais. La traduction est "
+        "CONSÉCUTIVE : elle arrive après chaque phrase, pas pendant. Réponds ensuite exactement par "
+        "la phrase que l'outil te renvoie, sans rien y ajouter : elle dit aussi comment sortir.",
+        _obj({"langue": {"type": "string", "description": "Langue de l'interlocuteur : « anglais », « espagnol », « en », « es »…"}}),
+    ),
+    ToolSpec(
+        "arreter_traduction",
+        "Ferme le mode traduction. À utiliser quand on demande d'arrêter de traduire. "
+        "(À la voix, « Iris, arrête » referme le mode sans passer par toi.)",
+        _obj({}),
+    ),
+    ToolSpec(
+        "traduire_ma_reponse",
+        "Traduit CE QUE L'UTILISATEUR veut dire, vers la langue de son interlocuteur — l'autre sens "
+        "que traduire_conversation. À utiliser pour « comment je lui dis que… », « traduis-lui que… ». "
+        "La phrase traduite s'AFFICHE et n'est pas lue à voix haute : la synthèse d'IRIS n'a pas de "
+        "paramètre de langue et déformerait une phrase étrangère. Donne-la telle quelle dans ta réponse.",
+        _obj({"texte": {"type": "string", "description": "Ce que l'utilisateur veut dire, dans sa langue"}}, ["texte"]),
+    ),
+    ToolSpec(
         "web_search",
         "Cherche sur le web et renvoie le texte des résultats. Aucune fenêtre ne s'ouvre : l'utilisateur ne voit que ta réponse. "
         "Utilise-le dès que la réponse dépend d'une information que tu n'as pas de façon certaine : actualité, prix, horaires, "
@@ -414,6 +444,33 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
             except Exception as exc:
                 return _err(str(exc))
             return json.dumps(resultat, ensure_ascii=False)
+
+        # Traduire une conversation. Deux objets peuvent la porter, et l'ordre compte : l'écoute
+        # (`ctx.voice`) sait si un micro tourne vraiment, le service tout seul l'ignore — et
+        # promettre une traduction à quelqu'un dont le micro est fermé est le pire des ratés.
+        if name in ("traduire_conversation", "arreter_traduction", "traduire_ma_reponse"):
+            service = ctx.traduction if ctx.traduction is not None else getattr(ctx.voice, "traduction", None)
+            if service is None:
+                return _err("La traduction n'est pas disponible : le service n'est pas branché sur cet appareil.")
+            try:
+                if name == "traduire_conversation":
+                    langue = (args.get("langue") or "").strip()
+                    if ctx.voice is not None:
+                        return ctx.voice.demander_traduction(langue).get("phrase") or "Mode traduction ouvert."
+                    return service.demarrer(langue)
+                if name == "arreter_traduction":
+                    if ctx.voice is not None:
+                        return ctx.voice.arreter_traduction("demande").get("phrase") or "C'est fini."
+                    return service.arreter("demande")
+                texte = (args.get("texte") or "").strip()
+                if not texte:
+                    return _err("Il manque la phrase à traduire.")
+                resultat = await service.traduire_ma_reponse(texte)
+            except Exception as exc:
+                return _err(f"Traduction impossible : {exc}")
+            if not getattr(resultat, "ok", False):
+                return _err(getattr(resultat, "raison", "") or "Je n'ai pas réussi à traduire.")
+            return f"À lui dire : {resultat.traduction}"
 
         if name.startswith("lunettes_"):
             if ctx.glasses is None:

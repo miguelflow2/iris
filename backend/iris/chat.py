@@ -227,6 +227,8 @@ class ChatService:
         self.glasses = None  # GlassesService (injecté)
         self.courriel = None  # Postier (injecté)
         self.telephonie = None  # Telephoniste (injecté)
+        self.traduction = None  # ServiceTraduction (injecté)
+        self.voice = None  # VoiceListener (injecté) : lui seul sait si un micro écoute vraiment
         self.plans = None  # PlanService (injecté)
 
     # ------------------------------------------------------------------ niveaux de modèles
@@ -518,6 +520,28 @@ class ChatService:
         return history
 
     # ------------------------------------------------------------------ prompt système
+    async def demander_court(self, systeme: str, message: str) -> str:
+        """Une question au modèle, sans outils ni historique. C'est le pont du mode traduction.
+
+        Traduire est une tâche courte et sans mémoire : lui donner des outils lui ferait perdre du
+        temps à chercher s'il doit en appeler un, et une traduction qui arrive après la réponse de
+        l'interlocuteur ne sert à rien."""
+        available = self.router.available(self.secrets)
+        agent_name, _raison = self.router.select(message, False, available, "auto")
+        connector = build_connector(agent_name, self.settings, self.secrets)
+        options = ChatOptions(
+            effort=self.settings.user.voice_effort,
+            model_override=self._pick_model(self.settings.user, is_voice=True, is_build=False, is_screen=False,
+                                            plan_models=self.plans.models() if (self.plans is not None and agent_name == "openrouter") else None),
+            force_tools=False,
+            max_rounds=1,
+        )
+        morceaux: list[str] = []
+        async for chunk in connector.stream([{"role": "user", "content": message}], systeme, None, None, options):
+            if chunk.kind == "text":
+                morceaux.append(chunk.text)
+        return "".join(morceaux).strip()
+
     async def analyse_veille(self, nom: str, criteres: str, nouveautes: str) -> dict:
         """Fait analyser les nouveautés d'une veille par un agent, et renvoie un verdict structuré.
 
@@ -856,6 +880,8 @@ class ChatService:
                     glasses=self.glasses,
                     courriel=self.courriel,
                     telephonie=self.telephonie,
+                    traduction=self.traduction,
+                    voice=self.voice,
                 )
                 # On n'expose que les outils utiles à CETTE demande : le clavier et la souris ne servent qu'au
                 # contrôle d'écran, les outils web qu'à la navigation. Un modèle gratuit noyé sous 37 outils s'égare.

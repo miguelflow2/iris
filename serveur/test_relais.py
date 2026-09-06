@@ -142,19 +142,54 @@ def test_le_relais_ne_divulgue_jamais_sa_cle(client, relais):
 
 
 # --------------------------------------------------------------------------- la voix incluse
-# Les forfaits payants promettent une voix ElevenLabs. Sans ce relais, l'abonné devrait fournir sa
-# propre clé : il paierait une voix qu'il n'entendrait jamais.
+# Tous les forfaits promettent une voix ElevenLabs, Gratuit compris. Sans ce relais, l'abonné
+# devrait fournir sa propre clé : il paierait une voix qu'il n'entendrait jamais.
 @pytest.fixture()
 def avec_voix(relais, monkeypatch):
     monkeypatch.setattr(relais, "CLE_VOIX", "cle-voix-factice")
     return relais
 
 
-def test_le_plan_gratuit_garde_la_voix_de_windows(client, avec_voix):
+class _FluxAmont:
+    """api.elevenlabs.io, en faux. Aucun test ne doit sortir sur le réseau ni dépenser un caractère."""
+
+    status_code = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def aiter_bytes(self):
+        yield b"\x00\x01\x02\x03"
+
+
+class _ClientAmont:
+    def __init__(self, **_):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    def stream(self, *_a, **_k):
+        return _FluxAmont()
+
+
+def test_la_voix_est_incluse_dans_tous_les_forfaits(client, avec_voix, monkeypatch):
+    """Décision de Miguel, 5 septembre 2026 : la voix n'est plus un argument de vente entre paliers.
+
+    Si ce test tombe, un utilisateur du plan Gratuit se voit refuser la voix qu'on lui promet à
+    l'écran — et il n'a aucun moyen de savoir pourquoi."""
+    monkeypatch.setattr(avec_voix.httpx, "AsyncClient", _ClientAmont)
     jeton = client.post("/api/appareil", json={"machine": "m", "email": ""}).json()["jeton"]
     r = client.post("/v1/voix/abcdef", json={"text": "bonjour"}, headers={"Authorization": "Bearer " + jeton})
-    assert r.status_code == 403
-    assert "Windows" in r.json()["detail"], "le refus doit dire ce dont on dispose, pas seulement ce qu'on refuse"
+    assert r.status_code == 200, "le plan Gratuit doit obtenir la voix comme les autres"
+    compteurs = avec_voix._lire("quotas.json")
+    assert compteurs["anonyme:m|caracteres"] == len("bonjour"), "les caractères servis doivent être comptés"
 
 
 def test_la_voix_est_fermee_sans_jeton(client, avec_voix):
@@ -296,3 +331,88 @@ def test_letat_de_sante_dit_ce_qui_protege(client, relais):
     corps = client.get("/sante").json()
     assert corps["plafond_global"] == relais.PLAFOND_GLOBAL
     assert "consomme" in corps
+    # La voix a sa propre monnaie : ElevenLabs facture au caractère, pas au jeton.
+    assert corps["plafond_caracteres"] == relais.PLAFOND_CARACTERES_GLOBAL
+    assert "caracteres" in corps
+
+
+# --------------------------------------------------------------------------- l'argent de la voix
+# Depuis que la voix est incluse dans tous les forfaits, plus rien ne borne la dépense côté
+# abonnement. ElevenLabs facture au CARACTÈRE : un quota en nombre d'appels ne protège rien, « oui »
+# et une tirade de mille caractères comptent chacune pour un.
+def test_le_plafond_de_caracteres_arrete_un_abonne(relais):
+    from fastapi import HTTPException
+
+    relais.PLAFONDS_CARACTERES["gratuit"] = 100
+    relais.consommer_voix("bavard@exemple.com", "gratuit", 120)
+    with pytest.raises(HTTPException) as leve:
+        relais.consommer_voix("bavard@exemple.com", "gratuit", 10)
+    assert leve.value.status_code == 429
+    assert "aractères" in leve.value.detail, "le refus doit nommer la vraie unité facturée"
+    assert "Windows" in leve.value.detail, "un refus qui ne dit pas ce qui reste ressemble à une panne"
+
+
+def test_le_plafond_global_de_voix_coupe_tout_le_monde(relais):
+    """Le dernier rempart : celui qui empêche la facture ElevenLabs de monter pendant une nuit."""
+    from fastapi import HTTPException
+
+    relais.PLAFOND_CARACTERES_GLOBAL = 500
+    relais.consommer_voix("quelquun@exemple.com", "entreprise", 600)
+    with pytest.raises(HTTPException) as leve:
+        relais.consommer_voix("quelquun.dautre@exemple.com", "entreprise", 10)
+    assert leve.value.status_code == 503
+    assert "Windows" in leve.value.detail
+
+
+def test_les_deux_refus_de_voix_ne_disent_pas_la_meme_chose(relais):
+    """« Vous avez beaucoup parlé ce mois-ci » et « le service entier est à sec » ne se corrigent
+    pas de la même façon : le premier attend le mois prochain, le second attend Miguel."""
+    from fastapi import HTTPException
+
+    relais.PLAFONDS_CARACTERES["gratuit"] = 10
+    relais.PLAFOND_CARACTERES_GLOBAL = 10 ** 9
+    relais.consommer_voix("un@exemple.com", "gratuit", 50)
+    with pytest.raises(HTTPException) as abonne_bloque:
+        relais.consommer_voix("un@exemple.com", "gratuit", 5)
+
+    relais.PLAFONDS_CARACTERES["gratuit"] = 10 ** 9
+    relais.PLAFOND_CARACTERES_GLOBAL = 10
+    with pytest.raises(HTTPException) as service_a_sec:
+        relais.consommer_voix("deux@exemple.com", "gratuit", 5)
+
+    assert abonne_bloque.value.status_code != service_a_sec.value.status_code
+    assert abonne_bloque.value.detail != service_a_sec.value.detail
+
+
+def test_une_replique_interminable_est_refusee(client, avec_voix):
+    """IRIS tronque déjà ses phrases à 1 500 caractères. Un texte de dix mille n'est plus une
+    assistante qui parle, c'est quelqu'un qui se sert du relais comme d'un service de synthèse."""
+    abonne(avec_voix, "pro@exemple.com", "pro")
+    jeton = client.post("/api/appareil", json={"machine": "m", "email": "pro@exemple.com"}).json()["jeton"]
+    r = client.post("/v1/voix/abcdef", json={"text": "a" * 10_000}, headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 413
+    assert avec_voix._lire("quotas.json").get("pro@exemple.com|caracteres") is None, "un texte refusé ne se compte pas"
+
+
+def test_le_compteur_de_caracteres_repart_au_mois_suivant(relais, monkeypatch):
+    relais.consommer_voix("mensuel@exemple.com", "gratuit", 900)
+    monkeypatch.setattr(relais, "_mois", lambda: "2099-12")
+    relais.consommer_voix("mensuel@exemple.com", "gratuit", 5)
+    compteurs = relais._lire("quotas.json")
+    assert compteurs["mensuel@exemple.com|caracteres"] == 5, "un nouveau mois efface l'ancien compte"
+
+
+def test_les_plafonds_de_voix_se_reglent_sans_toucher_au_code(monkeypatch, tmp_path):
+    """Personne ne peut deviner la consommation avant d'avoir des clients : Miguel doit pouvoir
+    resserrer ou desserrer le filet depuis son fichier .env, sans redéployer un fichier Python."""
+    monkeypatch.setenv("VELA_DONNEES", str(tmp_path))
+    monkeypatch.setenv("VELA_CARACTERES_GRATUIT", "1234")
+    monkeypatch.setenv("VELA_CARACTERES_TOTAL", "99999")
+    monkeypatch.setenv("VELA_CARACTERES_PAR_REQUETE", "77")
+    for module in [m for m in list(sys.modules) if m == "relais"]:
+        del sys.modules[module]
+    import relais as recharge
+
+    assert recharge.PLAFONDS_CARACTERES["gratuit"] == 1234
+    assert recharge.PLAFOND_CARACTERES_GLOBAL == 99999
+    assert recharge.CARACTERES_MAX_PAR_REQUETE == 77

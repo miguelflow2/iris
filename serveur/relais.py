@@ -14,6 +14,8 @@ Les messages passent, seuls les compteurs restent. C'est la seule promesse qu'un
 tenir, et il vaut mieux l'écrire que la sous-entendre.
 
 Déploiement : voir README.md. Une seule variable est indispensable, VELA_OPENROUTER_KEY.
+VELA_ELEVENLABS_KEY s'ajoute pour la voix, incluse dans tous les forfaits depuis le 5 septembre
+2026 : sans elle le relais transmet la parole à personne et /v1/voix répond 503.
 """
 from __future__ import annotations
 
@@ -87,6 +89,27 @@ PLAFONDS_JETONS = {
 # Le dernier rempart : tous abonnés confondus. C'est celui qui empêche un compte OpenRouter d'être
 # vidé pendant une nuit. 0 le désactive, et le service le signale au démarrage.
 PLAFOND_GLOBAL = _plafond("VELA_JETONS_TOTAL", 30_000_000)
+
+# Le même raisonnement, pour la VOIX. Depuis le 5 septembre 2026 la voix ElevenLabs est incluse dans
+# tous les forfaits, Gratuit compris : plus rien ne borne la dépense côté abonnement, et ElevenLabs
+# facture au caractère. Compter les APPELS n'y suffirait pas — « oui » et une tirade de mille
+# caractères comptent chacune pour un appel, alors que la seconde coûte cent fois la première.
+#
+# Ces plafonds sont des FILETS, pas des prévisions : personne ne peut deviner la consommation réelle
+# avant d'avoir des clients. Miguel doit les ajuster sur sa vraie facture ElevenLabs. Ordre de
+# grandeur relevé le 5 septembre 2026 : environ 0,05 US$ par millier de caractères en Turbo v2.5,
+# donc le plafond global ci-dessous vaut à peu près cent dollars par mois dans le pire cas.
+PLAFONDS_CARACTERES = {
+    "gratuit": _plafond("VELA_CARACTERES_GRATUIT", 60_000),
+    "pro": _plafond("VELA_CARACTERES_PRO", 150_000),
+    "premium": _plafond("VELA_CARACTERES_PREMIUM", 300_000),
+    "entreprise": _plafond("VELA_CARACTERES_ENTREPRISE", 600_000),
+}
+PLAFOND_CARACTERES_GLOBAL = _plafond("VELA_CARACTERES_TOTAL", 2_000_000)
+# Aucune réplique d'assistante ne fait cette longueur : IRIS tronque déjà ses phrases à 1 500
+# caractères (speakable(), backend/iris/voice/tts.py). Au-delà, ce n'est plus IRIS qui parle, c'est
+# quelqu'un qui se sert du relais comme d'un service de synthèse gratuit. Refusé avant tout compteur.
+CARACTERES_MAX_PAR_REQUETE = _plafond("VELA_CARACTERES_PAR_REQUETE", 2_000)
 
 _verrou = Lock()
 
@@ -271,6 +294,36 @@ def enregistrer_jetons(identite: str, jetons: int) -> None:
         _ecrire("quotas.json", compteurs)
 
 
+def consommer_voix(identite: str, plan: str, caracteres: int) -> None:
+    """Vérifie les deux plafonds de caractères du mois, puis compte le texte à prononcer.
+
+    Différence avec les jetons : ici, le coût est connu AVANT d'appeler ElevenLabs — c'est la
+    longueur du texte. On compte donc d'avance plutôt qu'après coup, et le dépassement ne peut
+    jamais excéder CARACTERES_MAX_PAR_REQUETE.
+
+    Deux refus, et ils ne doivent pas dire la même chose : « vous avez beaucoup parlé ce mois-ci »
+    n'a rien à voir avec « le service entier est à sec ». Les deux disent aussi ce qui reste — la
+    voix de Windows — parce qu'une assistante qui se tait a l'air cassée, alors qu'une assistante
+    qui change de voix a seulement l'air moins jolie."""
+    plafond = PLAFONDS_CARACTERES.get(plan, PLAFONDS_CARACTERES["gratuit"])
+    with _verrou:
+        compteurs = _lire("quotas.json")
+        if compteurs.get("mois") != _mois():
+            compteurs = {"mois": _mois()}
+
+        utilise = int(compteurs.get(identite + "|caracteres", 0))
+        if plafond and utilise >= plafond:
+            raise HTTPException(429, "Voix : consommation mensuelle atteinte pour le plan {} ({} caractères). IRIS continue avec la voix de Windows jusqu'au début du mois prochain.".format(plan, plafond))
+        total = int(compteurs.get("tous|caracteres", 0))
+        if PLAFOND_CARACTERES_GLOBAL and total >= PLAFOND_CARACTERES_GLOBAL:
+            log.error("PLAFOND GLOBAL DE VOIX ATTEINT (%s caracteres) : plus personne n'obtient ElevenLabs.", total)
+            raise HTTPException(503, "La voix naturelle est momentanément indisponible pour tout le monde. IRIS continue avec la voix de Windows.")
+
+        compteurs[identite + "|caracteres"] = utilise + caracteres
+        compteurs["tous|caracteres"] = total + caracteres
+        _ecrire("quotas.json", compteurs)
+
+
 def jetons_de(charge: dict | None) -> int:
     """Le nombre de jetons annoncé par le service en amont, ou 0 s'il n'en dit rien."""
     try:
@@ -316,6 +369,14 @@ async def au_demarrage(_app: FastAPI):
         log.info("plafond global : %s jetons par mois, tous abonnes confondus", PLAFOND_GLOBAL)
     log.info("plafonds par abonne : %s", PLAFONDS_JETONS)
     log.info("ces valeurs sont des filets, a ajuster sur la vraie facture OpenRouter")
+    log.info("voix ElevenLabs : incluse dans TOUS les forfaits, gratuit compris")
+    if not PLAFOND_CARACTERES_GLOBAL:
+        log.warning("AUCUN plafond global de voix (VELA_CARACTERES_TOTAL=0) : rien n'arretera la facture ElevenLabs.")
+    else:
+        log.info("plafond global de voix : %s caracteres par mois, tous abonnes confondus", PLAFOND_CARACTERES_GLOBAL)
+    log.info("plafonds de voix par abonne : %s (maximum %s caracteres par requete)",
+             PLAFONDS_CARACTERES, CARACTERES_MAX_PAR_REQUETE)
+    log.info("ces valeurs sont des filets, a ajuster sur la vraie facture ElevenLabs")
     yield
 
 
@@ -336,6 +397,9 @@ def sante():
         "voix": bool(CLE_VOIX),
         "plafond_global": PLAFOND_GLOBAL,
         "consomme": int(compteurs.get("tous|jetons", 0)) if compteurs.get("mois") == _mois() else 0,
+        # La voix a sa propre monnaie : ElevenLabs facture au caractère, pas au jeton.
+        "plafond_caracteres": PLAFOND_CARACTERES_GLOBAL,
+        "caracteres": int(compteurs.get("tous|caracteres", 0)) if compteurs.get("mois") == _mois() else 0,
     }
 
 
@@ -386,25 +450,26 @@ def _identifier(autorisation: str | None) -> tuple[str, str]:
     return (info["courriel"] or "anonyme:" + info["machine"]), etat["plan"]
 
 
-# Les forfaits payants promettent une voix ElevenLabs. Sans ce relais, chaque abonné devrait
-# fournir sa propre clé ElevenLabs : il paierait donc une voix qu'il n'entendrait jamais. La
-# voix fait partie de ce qu'on vend, au même titre que le modèle.
+# Tous les forfaits ont droit à la voix ElevenLabs, Gratuit compris. Sans ce relais, chaque abonné
+# devrait fournir sa propre clé ElevenLabs : il paierait donc une voix qu'il n'entendrait jamais.
+# La voix fait partie de ce qu'on offre, au même titre que le modèle — mais contrairement au
+# modèle, elle n'est plus ce qui distingue un palier d'un autre. Ce qui la borne désormais, ce
+# n'est pas le nom du forfait, c'est PLAFONDS_CARACTERES.
 AMONT_VOIX = "https://api.elevenlabs.io/v1"
 CLE_VOIX = os.environ.get("VELA_ELEVENLABS_KEY", "").strip()
-VOIX_INCLUSE = {"pro", "premium", "entreprise"}  # le plan Gratuit garde la voix de Windows
 
 
 @app.post("/v1/voix/{voice_id}")
 async def voix(voice_id: str, request: Request, authorization: str | None = Header(default=None)):
     """Fabrique la voix d'IRIS pour un abonné, avec la clé de VELA.
 
-    Le texte transite, il n'est pas conservé. Un plan Gratuit est refusé ici : sa voix est celle
-    de Windows, et le dire franchement vaut mieux que de laisser une requête échouer sans raison."""
+    Le texte transite, il n'est pas conservé. Aucun forfait n'est refusé à l'entrée : ce qui décide,
+    c'est le nombre de caractères déjà prononcés ce mois-ci. Et un refus ici n'est jamais un
+    silence — IRIS repasse à la voix de Windows (voir _handle_failure dans
+    backend/iris/voice/elevenlabs.py), c'est pour cela que les messages le disent."""
     if not CLE_VOIX:
         raise HTTPException(503, "Le relais n'a pas de clé de synthèse vocale configurée.")
     identite, plan = _identifier(authorization)
-    if plan not in VOIX_INCLUSE:
-        raise HTTPException(403, "La voix naturelle fait partie des forfaits payants. Le plan Gratuit utilise la voix de Windows.")
     if not re.fullmatch(r"[A-Za-z0-9]{1,40}", voice_id):
         raise HTTPException(400, "Identifiant de voix invalide.")
     try:
@@ -414,7 +479,10 @@ async def voix(voice_id: str, request: Request, authorization: str | None = Head
     texte = (charge or {}).get("text") or ""
     if not texte.strip():
         raise HTTPException(400, "Rien à prononcer.")
+    if len(texte) > CARACTERES_MAX_PAR_REQUETE:
+        raise HTTPException(413, "Texte trop long à prononcer d'un seul coup ({} caractères, maximum {}).".format(len(texte), CARACTERES_MAX_PAR_REQUETE))
     consommer(identite + "|voix", plan)
+    consommer_voix(identite, plan, len(texte))
 
     parametres = str(request.url.query or "output_format=pcm_16000&optimize_streaming_latency=3")
     entetes = {"xi-api-key": CLE_VOIX, "Content-Type": "application/json"}

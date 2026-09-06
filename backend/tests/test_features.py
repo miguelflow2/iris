@@ -148,7 +148,11 @@ def test_plans_quota_and_keys(monkeypatch, data_dir: Path):
     events = []
     hub.publish = lambda type_, **data: events.append((type_, data))  # type: ignore[method-assign]
     svc = PlanService(db, s, hub)
-    assert svc.plan == "gratuit" and not svc.feature_allowed("elevenlabs") and svc.models()["reasoning"] == ""
+    # Décision de Miguel, le 5 septembre 2026 : « tous les forfaits doivent avoir accès à
+    # ElevenLabs, le forfait gratuit doit avoir accès à ElevenLabs ». La voix cesse d'être un
+    # argument de vente entre forfaits — ce test disait l'inverse et il avait raison jusqu'à hier.
+    # Ce qui distingue encore les forfaits, ce sont les modèles de raisonnement.
+    assert svc.plan == "gratuit" and svc.feature_allowed("elevenlabs") and svc.models()["reasoning"] == ""
     # quota gratuit
     for _ in range(PLANS["gratuit"]["quota_requests"]):
         svc.check_request()
