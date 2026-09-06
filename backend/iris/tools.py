@@ -39,6 +39,17 @@ class ToolContext:
     # marche encore (il arme le service), mais il ne peut plus dire « l'écoute est arrêtée » — et
     # promettre une traduction à quelqu'un dont le micro est fermé est le pire des ratés.
     voice: Any = None
+    # ServiceOpenCode : déléguer le TRAVAIL DE PROGRAMMATION à OpenCode, l'agent de code de la
+    # machine. Ce n'est pas un moteur de plus à côté d'OpenRouter — OpenCode consomme des
+    # fournisseurs, il n'en est pas un. Tant qu'il n'est pas installé, ce champ reste None et
+    # l'outil n'est même pas offert au modèle : IRIS se comporte exactement comme avant.
+    opencode: Any = None
+    # D'où vient la demande : « text », « voice », « task »… ChatService le connaît déjà et le
+    # passait sans l'utiliser ici. Il sert à une seule chose, mais elle est décisive : AUCUNE
+    # demande de confirmation n'est visible depuis la voix (rien dans voice/ n'écoute
+    # « chat.confirm », telephonie.py:53 documente déjà le même trou pour le SMS). Ouvrir un modal
+    # qu'on ne verra pas, c'est attendre 180 secondes puis refuser en silence.
+    source: str = "text"
 
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:
@@ -294,6 +305,22 @@ TOOL_SPECS: list[ToolSpec] = [
         _obj({"url": {"type": "string"}}, ["url"]),
     ),
     ToolSpec(
+        "retrouver_site",
+        "Cherche dans l'historique de navigation à quel site correspond une demande vague "
+        "(« connecte-moi à mon cégep », « ouvre mon compte de paiement »). Rends les domaines "
+        "trouvés pour choisir. À utiliser AVANT web_login quand on ne sait pas encore l'adresse exacte.",
+        _obj({"terme": {"type": "string", "description": "Ce que l'utilisateur a dit du site"}}, ["terme"]),
+    ),
+    ToolSpec(
+        "importer_identifiants",
+        "Récupère depuis le navigateur de l'utilisateur les identifiants d'un site et les dépose "
+        "dans le coffre, pour pouvoir s'y connecter ensuite avec web_login. À utiliser quand "
+        "web_login dit qu'un site n'est pas enregistré, mais que l'utilisateur s'y connecte "
+        "habituellement dans son navigateur. Tu ne vois jamais le mot de passe, et l'utilisateur "
+        "doit confirmer l'import.",
+        _obj({"terme": {"type": "string", "description": "Nom ou domaine du site (ex. netlify, omnivox)"}}, ["terme"]),
+    ),
+    ToolSpec(
         "web_login",
         "Se connecte à un site enregistré par l'utilisateur (ex. 'omnivox') avec ses identifiants stockés dans le coffre : IRIS remplit le formulaire elle-même, tu ne vois jamais le mot de passe. Si un contrôle de sécurité (captcha) apparaît, l'utilisateur le résout dans la fenêtre. Utilise-le d'abord quand la demande concerne un site enregistré.",
         _obj({"site": {"type": "string", "description": "Nom du site enregistré (ex. omnivox)"}}, ["site"]),
@@ -348,6 +375,22 @@ TOOL_SPECS: list[ToolSpec] = [
             ["title", "instructions"],
         ),
     ),
+    ToolSpec(
+        "deleguer_programmation",
+        "Confie un travail de PROGRAMMATION à OpenCode, l'agent de code installé sur cet ordinateur : "
+        "corriger un bogue, ajouter une fonctionnalité, remanier du code dans un projet qui existe déjà "
+        "(« corrige le bogue dans mon site », « ajoute une page à flowcare »). Préfère-le à write_file et "
+        "run_command dès qu'il s'agit de modifier un projet existant : OpenCode lit le code avant d'écrire. "
+        "Tu DOIS donner le dossier du projet — c'est le dossier que l'utilisateur approuve, pas ta phrase. "
+        "Si tu ne sais pas duquel il s'agit, demande-le-lui AVANT d'appeler l'outil : ne devine pas un chemin.",
+        _obj(
+            {
+                "dossier": {"type": "string", "description": "Chemin du projet, ex. ~/Documents/IRIS/site-flowcare"},
+                "consigne": {"type": "string", "description": "Ce qu'OpenCode doit faire, complet et autonome"},
+            },
+            ["dossier", "consigne"],
+        ),
+    ),
 ]
 
 
@@ -361,10 +404,108 @@ WEB_TOOLS = {"web_search", "web_open", "web_login", "web_read", "web_click", "we
              "web_screenshot", "web_back", "web_press"}
 
 
+# --------------------------------------------------------------------- délégation à OpenCode
+# Le service vit dans `iris/opencode.py`. Ces quelques fonctions sont le SEUL point de contact
+# entre lui et le reste d'IRIS, et elles acceptent plusieurs noms de méthodes à dessein : le
+# service a été écrit en parallèle de ce câblage, et une faute de nom ici rejouerait exactement
+# l'incident du 5 septembre 2026 — deux modules entiers, écrits et testés, restés inutilisables
+# toute une journée parce que personne ne les avait branchés. Le jour où les noms sont figés, on
+# peut réduire ces listes à un seul nom ; il ne faut pas supprimer l'indirection sans le vérifier.
+NOMS_UTILISABLE = ("utilisable", "disponible", "est_disponible", "pret", "configure")
+NOMS_RAISON = ("pourquoi_pas_pret", "pourquoi_indisponible", "raison_indisponible", "pourquoi")
+NOMS_DELEGATION = ("deleguer_apres_accord", "executer_apres_accord", "confier_apres_accord", "deleguer")
+
+# Ce que dit IRIS quand le service est là mais qu'il ne sait pas expliquer son propre silence.
+# Constat du 5 septembre 2026 : aucun binaire `opencode` sur cette machine, ni dans le PATH ni
+# ailleurs. Seuls le kit de greffons et le SDK 1.18.23 sont posés, plus l'application de bureau,
+# qui n'embarque aucun exécutable en ligne de commande.
+OPENCODE_ABSENT = (
+    "OpenCode n'est pas installé sur cet ordinateur : je ne peux pas déléguer la programmation "
+    "pour l'instant. Je peux encore écrire les fichiers moi-même si tu veux."
+)
+
+# La conséquence, assumée, du trou de confirmation vocale : rien dans voice/ n'écoute
+# « chat.confirm ». Un accord demandé pendant que Miguel parle ne s'affiche que dans la fenêtre
+# d'IRIS. Plutôt que d'ouvrir un modal que personne ne regarde — 180 secondes d'attente puis un
+# refus silencieux —, on le dit tout de suite, à voix haute, ce qui est la seule chose utile.
+PAS_A_LA_VOIX = (
+    "Je peux confier ça à OpenCode, mais pas depuis la voix : tu dois approuver le dossier à "
+    "l'écran. Ouvre la fenêtre d'IRIS et redemande-le-moi là, je m'en occupe tout de suite."
+)
+
+
+def _premier_membre(objet: Any, noms: tuple[str, ...]) -> Any:
+    """Le premier attribut existant parmi `noms`. Renvoie la VALEUR, pas le nom : un booléen
+    faux (`utilisable = False`) doit être rendu tel quel, pas confondu avec « absent »."""
+    for nom in noms:
+        if hasattr(objet, nom):
+            return getattr(objet, nom)
+    return None
+
+
+def _valeur_ou_appel(membre: Any) -> Any:
+    """Accepte indifféremment une méthode `utilisable()` ou une propriété `utilisable`."""
+    return membre() if callable(membre) else membre
+
+
+def opencode_utilisable(service: Any) -> bool:
+    """OpenCode peut-il vraiment travailler maintenant ? Au moindre doute : non.
+
+    C'est cette fonction qui garde la fonctionnalité INACTIVE par construction, et pas un drapeau
+    de configuration qu'on peut oublier de poser."""
+    if service is None:
+        return False
+    membre = _premier_membre(service, NOMS_UTILISABLE)
+    if membre is None:
+        return False
+    try:
+        return bool(_valeur_ou_appel(membre))
+    except Exception:
+        return False
+
+
+def opencode_raison(service: Any) -> str:
+    """La phrase que le service donne pour expliquer qu'il ne peut pas travailler, en français."""
+    membre = _premier_membre(service, NOMS_RAISON)
+    try:
+        raison = _valeur_ou_appel(membre) if membre is not None else ""
+    except Exception:
+        raison = ""
+    return str(raison or "").strip() or OPENCODE_ABSENT
+
+
+async def _appeler_delegation(deleguer: Any, dossier: str, consigne: str, confirmer: ConfirmFn) -> Any:
+    """Appelle la méthode de délégation du service, par mot-clé si elle les nomme, sinon dans
+    l'ordre (dossier, consigne, confirmer) — l'ordre de `envoyer_sms_apres_accord`."""
+    import inspect
+
+    try:
+        parametres = inspect.signature(deleguer).parameters
+    except (TypeError, ValueError):  # objet non introspectable : on tente le positionnel
+        parametres = {}
+    if {"dossier", "consigne"} <= set(parametres):
+        nom_confirme = next((n for n in ("confirmer", "confirm", "confirmation") if n in parametres), None)
+        arguments = {"dossier": dossier, "consigne": consigne}
+        if nom_confirme:
+            arguments[nom_confirme] = confirmer
+        retour = deleguer(**arguments)
+    else:
+        retour = deleguer(dossier, consigne, confirmer)
+    if inspect.isawaitable(retour):
+        retour = await retour
+    return retour
+
+
 def tool_specs(ctx: ToolContext, *, screen: bool = True, keyboard: bool = True, web: bool = True) -> list[ToolSpec]:
     specs = list(TOOL_SPECS)
     if ctx.create_task is None:
         specs = [s for s in specs if s.name != "create_task"]
+    # OpenCode absent = outil absent de la liste, donc IRIS strictement identique à ce qu'elle est
+    # aujourd'hui. On ne montre pas au modèle une porte qui ne s'ouvre pas : il l'essaierait au lieu
+    # d'écrire les fichiers lui-même, et une démonstration se jouerait sur un message d'erreur.
+    # `getattr` et non `ctx.opencode` : plusieurs tests construisent un contexte minimal.
+    if not opencode_utilisable(getattr(ctx, "opencode", None)):
+        specs = [s for s in specs if s.name != "deleguer_programmation"]
     exclus: set[str] = set()
     if not screen:
         exclus |= SCREEN_TOOLS
@@ -432,6 +573,61 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                 ctx.consent.log("courriel_envoye", agent=ctx.agent, detail=", ".join(resultat.get("destinataires", [])))
             return json.dumps(resultat, ensure_ascii=False)
 
+        # Déléguer la programmation à OpenCode. Même serrure que le courriel et le SMS : le service
+        # n'accepte pas une intention, il n'accepte qu'un accord — et l'accord porte sur le DOSSIER
+        # RÉSOLU, pas sur la phrase dite. Un oui donné pour « Documents/IRIS/site-flowcare » ne doit
+        # jamais rester valable si la cible devient le dépôt d'IRIS lui-même : le journal d'OpenCode
+        # montre qu'il a déjà travaillé sur ce backend (appels à 127.0.0.1:8765), et un agent envoyé
+        # « corriger mon site » qui lit un .env lit aussi les clés ElevenLabs et de licence.
+        if name == "deleguer_programmation":
+            service = getattr(ctx, "opencode", None)
+            if service is None:
+                return _err("La délégation à OpenCode n'est pas branchée sur cet appareil.")
+            if not opencode_utilisable(service):
+                return _err(opencode_raison(service))
+            dossier = (args.get("dossier") or "").strip()
+            consigne = (args.get("consigne") or "").strip()
+            if not dossier:
+                return _err(
+                    "Il manque le dossier du projet. Demande-le à l'utilisateur avant de rappeler "
+                    "l'outil : c'est le dossier qu'il approuve, et le deviner serait envoyer un "
+                    "agent modifier des fichiers au hasard."
+                )
+            if not consigne:
+                return _err("Il manque la consigne : dis à OpenCode ce qu'il doit faire, complètement.")
+            # Pas d'erreur ici : c'est une phrase à relayer telle quelle, pas un échec à réessayer.
+            if getattr(ctx, "source", "text") == "voice":
+                return PAS_A_LA_VOIX
+            deleguer = _premier_membre(service, NOMS_DELEGATION)
+            if deleguer is None or not callable(deleguer):
+                return _err(
+                    "Le service OpenCode est là mais ne sait pas déléguer : aucune méthode "
+                    f"parmi {', '.join(NOMS_DELEGATION)}. C'est un défaut de câblage, pas un refus."
+                )
+            try:
+                resultat = await _appeler_delegation(deleguer, dossier, consigne, ctx.confirm)
+            except Exception as exc:
+                return _err(f"Délégation impossible : {exc}")
+            if isinstance(resultat, dict):
+                # Le dossier que le service a RÉSOLU fait foi ; la chaîne dite par le modèle ne
+                # désigne pas forcément le même endroit (mesuré : un chemin « \\?\… » se normalise
+                # en tout autre chose). C'est lui qui part au registre.
+                cible = str(resultat.get("dossier") or dossier)
+                accorde = bool(resultat.get("ok")) and resultat.get("accorde") is not False
+                # Le registre chaîné répond déjà à « qu'a fait IRIS » pour le courriel et les
+                # commandes ; même canal, donc rien à construire côté audit. On n'y met JAMAIS le
+                # contenu des fichiers : le détail est tronqué à 500 caractères et n'est pas
+                # chiffré comme le sont les messages.
+                ctx.consent.log(
+                    "opencode_termine" if accorde else "opencode_refuse",
+                    agent=ctx.agent, detail=f"{cible} — {consigne[:200]}",
+                )
+                phrase = resultat.get("phrase") or resultat.get("message")
+                if phrase:
+                    return str(phrase) if accorde else _err(str(phrase))
+                return json.dumps(resultat, ensure_ascii=False)
+            return str(resultat)
+
         if name in ("envoyer_sms", "passer_un_appel"):
             if ctx.telephonie is None:
                 return _err("Le service de téléphonie n'est pas disponible.")
@@ -496,6 +692,36 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                 except Exception as exc:
                     return _err("Envoi impossible : {}".format(exc))
                 return json.dumps(resultat, ensure_ascii=False)
+        if name == "retrouver_site":
+            from . import historique_web
+
+            if not historique_web.disponible():
+                return historique_web.pourquoi_indisponible()
+            sites = historique_web.chercher(args.get("terme", ""))
+            if not sites:
+                return f"Je n'ai rien trouvé dans l'historique pour « {args.get('terme','')} ». Dis-moi l'adresse et j'y vais."
+            return json.dumps([s.en_dict() for s in sites], ensure_ascii=False)
+
+        if name == "importer_identifiants":
+            from . import identifiants_navigateur as _idn
+
+            if not _idn.disponible():
+                return _err("Aucun navigateur avec des identifiants enregistrés n'a été trouvé sur cet ordinateur.")
+            terme = (args.get("terme") or "").strip()
+            # On dit à l'utilisateur ce qu'on va faire AVANT de toucher à quoi que ce soit, et on
+            # nomme les sites concernés — jamais un mot de passe. Refus = rien n'est importé.
+            apercu = _idn.sites_pour(terme)
+            if not apercu:
+                return f"Je n'ai trouvé aucun identifiant enregistré pour « {terme} » dans ton navigateur."
+            noms = ", ".join(sorted({s["domaine"] for s in apercu}))
+            approuve = await ctx.confirm("Récupérer des identifiants du navigateur", f"{noms} — vers le coffre d'IRIS")
+            if not approuve:
+                return "Je n'ai rien importé : tu n'as pas confirmé."
+            resultat = await asyncio.to_thread(_idn.importer_dans_le_coffre, terme, ctx.secrets)
+            if resultat["importes"]:
+                ctx.consent.log("identifiants_importes", agent=ctx.agent, detail=", ".join(resultat["sites"]))
+            return resultat["message"]
+
         if name.startswith("web_"):
             if ctx.web is None:
                 return _err("Navigateur piloté indisponible.")

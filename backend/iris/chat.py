@@ -21,7 +21,7 @@ from .quick_commands import match as match_quick_command
 from .router import AgentRouter, NoAgentAvailable, _has
 from .security.crypto import Crypto
 from .security.secrets import SecretStore
-from .tools import ToolContext, make_tool_runner, tool_specs
+from .tools import ToolContext, make_tool_runner, opencode_utilisable, tool_specs
 
 log = logging.getLogger("iris.chat")
 
@@ -230,6 +230,9 @@ class ChatService:
         self.traduction = None  # ServiceTraduction (injecté)
         self.voice = None  # VoiceListener (injecté) : lui seul sait si un micro écoute vraiment
         self.plans = None  # PlanService (injecté)
+        # ServiceOpenCode (injecté) : déléguer la programmation. Reste None tant qu'OpenCode n'est
+        # pas installé, et l'outil n'est alors même pas offert au modèle — IRIS ne change pas.
+        self.opencode = None
 
     # ------------------------------------------------------------------ niveaux de modèles
     @staticmethod
@@ -259,6 +262,7 @@ class ChatService:
                 routines=self.routines, reminders=self.reminders, watches=self.watches,
                 glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
                 traduction=self.traduction, voice=self.voice, web=self.web,
+                opencode=self.opencode, source=source,
             )
             runner = make_tool_runner(ctx)
             try:
@@ -296,6 +300,7 @@ class ChatService:
             routines=None, reminders=self.reminders, watches=self.watches,
             glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
             traduction=self.traduction, voice=self.voice, web=self.web,
+            opencode=self.opencode, source=source,
         )
         runner = make_tool_runner(ctx)
         events: list[dict] = []
@@ -872,6 +877,15 @@ class ChatService:
                     "ou lance-le avec run_command ; 4) confirme en une phrase où se trouve le projet. "
                     "N'écris jamais le code dans ta réponse : mets-le dans les fichiers."
                 )
+            # Une seule phrase de plus, et seulement quand OpenCode est réellement utilisable.
+            # Aujourd'hui il ne l'est sur aucune machine, donc la consigne envoyée au modèle est
+            # rigoureusement celle d'avant : ce câblage n'entre pas dans le chemin de la démonstration.
+            if is_build and opencode_utilisable(self.opencode):
+                system += (
+                    "\n\nPROJET QUI EXISTE DÉJÀ : s'il s'agit de corriger ou de modifier un projet "
+                    "existant plutôt que d'en créer un, appelle deleguer_programmation avec son dossier "
+                    "au lieu de réécrire les fichiers toi-même."
+                )
 
             tools = None
             run_tool = None
@@ -893,6 +907,10 @@ class ChatService:
                     telephonie=self.telephonie,
                     traduction=self.traduction,
                     voice=self.voice,
+                    opencode=self.opencode,
+                    # La voix ne voit aucune demande de confirmation : l'outil de délégation en
+                    # tient compte lui-même plutôt que d'ouvrir un modal invisible.
+                    source=source,
                 )
                 # On n'expose que les outils utiles à CETTE demande : le clavier et la souris ne servent qu'au
                 # contrôle d'écran, les outils web qu'à la navigation. Un modèle gratuit noyé sous 37 outils s'égare.
