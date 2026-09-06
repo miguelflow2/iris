@@ -610,6 +610,68 @@ class ChatService:
             log.warning("traduction impossible : %s", exc)
             return ""
 
+    def _capacites_reelles(self) -> str:
+        """Ce qu'IRIS sait VRAIMENT faire, généré depuis la liste réelle de ses outils.
+
+        Bogue du 6 septembre 2026, et il était grave. Interrogée sur ses capacités, IRIS a répondu à
+        Miguel qu'elle « dépendait de macOS » (elle tourne sur Windows), qu'elle « ne pouvait pas
+        cliquer sur une coordonnée » (mouse_click existe), « ni faire défiler » (scroll existe), « ni
+        connaître la batterie des lunettes » (lunettes_etat la lit). Rien dans son code ne lui disait
+        ce qu'elle savait faire : elle INVENTAIT ses limites à partir de ses réflexes de modèle. Un
+        client, ou un juge, aurait entendu une assistante se décrire faux.
+
+        D'où cette liste, construite depuis TOOL_SPECS et l'état réel des services : elle ne peut
+        plus dériver, parce qu'elle n'est pas écrite à la main."""
+        import platform
+
+        try:
+            from .tools import TOOL_SPECS
+        except Exception:  # pragma: no cover
+            return ""
+
+        lignes = []
+        for spec in TOOL_SPECS:
+            description = (spec.description or "").split(". ")[0].strip().rstrip(".")
+            lignes.append(f"- {spec.name} : {description}")
+
+        systeme = platform.system() or "Windows"
+        etat = []
+
+        def _prop(obj, *noms):
+            for nom in noms:
+                if obj is not None and hasattr(obj, nom):
+                    valeur = getattr(obj, nom)
+                    try:
+                        return bool(valeur() if callable(valeur) else valeur)
+                    except Exception:
+                        return False
+            return None
+
+        courriel = _prop(self.courriel, "configure")
+        telephonie = _prop(self.telephonie, "configure")
+        lunettes = _prop(self.glasses, "connected")
+        if courriel is not None:
+            etat.append("courriel " + ("configuré : tu peux envoyer" if courriel else "NON configuré : dis-le et explique comment l'activer dans les réglages"))
+        if telephonie is not None:
+            etat.append("téléphonie " + ("configurée" if telephonie else "NON configurée : les SMS et appels passent par le téléphone de l'utilisateur, jamais tout seuls"))
+        if lunettes is not None:
+            etat.append("lunettes VELA " + ("connectées : lunettes_etat te donne leur charge" if lunettes else "non connectées en ce moment"))
+
+        return (
+            f"CE QUE TU SAIS FAIRE — LISTE EXACTE ET COMPLÈTE. Tu tournes sur {systeme}, jamais sur macOS. "
+            "Voici tes outils réels ; il n'en existe aucun autre, et aucun de ceux-ci n'est fictif :\n"
+            + "\n".join(lignes)
+            + "\nÉtat en ce moment : " + ("; ".join(etat) if etat else "services en cours de chargement") + ". "
+            "RÈGLE : quand on te demande ce que tu sais faire ou tes limites, réponds UNIQUEMENT à partir de cette "
+            "liste. N'invente jamais une capacité que tu n'as pas, et n'invente jamais une limite qui n'y figure pas — "
+            "tu PEUX cliquer à une coordonnée (mouse_click), faire défiler (scroll), taper, lire l'écran, lire la batterie "
+            "des lunettes, traduire une conversation, retrouver un site dans l'historique et t'y connecter. "
+            "Tes vraies règles, qui ne sont pas des faiblesses mais ta conception : tu n'envoies aucun courriel, SMS ou "
+            "appel sans que l'utilisateur voie le contenu et l'approuve ; tu ne fais rien de destructeur sans son accord "
+            "explicite ; les mots de passe vivent dans le coffre, jamais dans ta mémoire ; tu ne t'inventes pas de "
+            "souvenirs."
+        )
+
     def _system_prompt(self, agent: str, has_tools: bool, memory_ctx: str, source: str) -> str:
         u = self.settings.user
         name = u.assistant_name or "IRIS"
@@ -639,11 +701,7 @@ class ChatService:
             )
         if has_tools:
             parts.append(
-                "Tu contrôles l'ordinateur de l'utilisateur, mais uniquement quand il te le demande. Tu disposes d'outils : "
-                "ouvrir des applications, ouvrir une adresse web, chercher et lancer une musique ou une vidéo YouTube, "
-                "ouvrir/chercher/lister/lire/écrire des fichiers, exécuter des commandes, taper au clavier et envoyer des "
-                "raccourcis dans la fenêtre active, prendre une capture d'écran pour vérifier le résultat, lire l'état du "
-                "système, verrouiller la session ; et côté IRIS : mémoriser, chercher dans la mémoire, lancer une tâche longue. "
+                "Tu contrôles l'ordinateur de l'utilisateur, mais uniquement quand il te le demande. "
                 "Quand l'utilisateur demande une action, enchaîne les outils nécessaires sans expliquer comment faire, puis "
                 "confirme brièvement le résultat. RÈGLE ABSOLUE : tu ne dis jamais « c'est fait » ou « j'ouvre » sans "
                 "avoir réellement appelé l'outil et reçu son résultat ; sans appel d'outil, rien ne se passe sur "
@@ -654,6 +712,7 @@ class ChatService:
                 "formatage, arrêt) sans demande explicite. Si un outil renvoie une erreur de consentement, explique à "
                 "l'utilisateur quoi activer dans Confidentialité."
             )
+            parts.append(self._capacites_reelles())
         parts.append(
             "Confidentialité : IRIS traite localement par défaut ; l'utilisateur a explicitement consenti à t'envoyer "
             "cette demande. Ne demande jamais de données sensibles inutiles."
