@@ -273,6 +273,13 @@ class ChatService:
             self.hub.publish("chat.tool", conversation_id=conv_id, message_id=assistant_id, tool=ev)
             if not ok:
                 text = f"Je n'ai pas réussi : {str(content)[:200]}"
+            elif not text and isinstance(content, str) and content.strip():
+                # Certains outils rendent une phrase déjà écrite pour l'utilisateur — c'est le cas
+                # du mode traduction, qui doit annoncer qu'il s'ouvre. Sans ceci, IRIS exécutait
+                # l'outil et ne disait RIEN : le 5 septembre 2026, elle a ouvert le mode traduction
+                # en silence, et personne n'aurait pu deviner qu'il était actif. Entrer dans un
+                # mode sans le dire est le pire des ratés — on ne sait pas non plus quand en sortir.
+                text = content.strip()[:400]
         self.hub.publish("chat.delta", conversation_id=conv_id, message_id=assistant_id, text=text)
         msg = self._add_message(conv_id, "assistant", text, agent="local", model="",
                                 meta={"agent": "local", "tools": events, "source": source, "quick": quick.kind},

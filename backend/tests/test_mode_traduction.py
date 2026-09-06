@@ -542,3 +542,41 @@ def test_sans_service_branche_loutil_le_dit_au_lieu_de_faire_semblant(app):
 
     reponse = asyncio.run(make_tool_runner(_contexte(app))("traduire_conversation", {}))
     assert isinstance(reponse, dict) and reponse.get("is_error")
+
+
+# --------------------------------------------------------------------------- ne pas ouvrir en silence
+def test_une_commande_locale_dit_ce_que_loutil_repond(app):
+    """Le 5 septembre 2026, IRIS a ouvert le mode traduction EN SILENCE. La commande etait bien
+    reconnue localement, l'outil bien execute — et le message rendu etait vide. Entrer dans un mode
+    sans le dire est le pire des rates : on ignore qu'il est actif, et donc quand en sortir."""
+    import asyncio
+    from types import SimpleNamespace
+
+    chat = app.state.ctx.chat
+    quick = SimpleNamespace(tool="traduire_conversation", args={}, reply="", kind="traduction")
+    conv = chat.create_conversation()
+    cid = conv["id"] if isinstance(conv, dict) else conv
+
+    rendu = asyncio.run(chat._run_quick(cid, quick, "test"))
+    texte = (rendu["message"].get("text") or "").strip()
+    assert texte, "IRIS doit dire quelque chose : ouvrir un mode en silence est le defaut corrige ici"
+    # Deux issues legitimes selon l'etat de la machine, et les deux sont des phrases francaises :
+    # le mode s'ouvre, ou IRIS explique ce qui l'en empeche. Ce qui n'est pas acceptable, c'est le
+    # silence — ou un morceau de JSON lu a voix haute.
+    assert len(texte.split()) >= 3, texte
+    assert not texte.startswith("{") and not texte.startswith("["), "jamais de JSON dit a voix haute"
+
+
+def test_une_commande_locale_sans_phrase_reste_muette_si_loutil_nen_rend_pas(app):
+    """L'inverse doit rester vrai : un outil qui ne rend pas de phrase ne doit pas faire dire a
+    IRIS un morceau de JSON ou un identifiant technique."""
+    import asyncio
+    from types import SimpleNamespace
+
+    chat = app.state.ctx.chat
+    conv = chat.create_conversation()
+    cid = conv["id"] if isinstance(conv, dict) else conv
+    quick = SimpleNamespace(tool="", args={}, reply="Il est midi.", kind="heure")
+
+    rendu = asyncio.run(chat._run_quick(cid, quick, "test"))
+    assert (rendu["message"].get("text") or "").strip() == "Il est midi."
