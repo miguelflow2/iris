@@ -36,6 +36,22 @@ CLOUD_TIMEOUT = 4.0  # renfort de reconnaissance cloud : au-delà, on garde la t
 # ralentissement : le périphérique a disparu (lunettes éteintes, hors de portée, Bluetooth coupé).
 # Cinq secondes laissent aussi passer l'établissement du lien mains libres, qui prend jusqu'à 2 s.
 MICRO_MUET = 5.0
+# Un micro muet n'arrête plus l'écoute : on le ROUVRE. Deux tentatives — la première sur le même
+# périphérique (le lien mains libres se rétablit souvent seul), la seconde sur le micro par défaut
+# — et seulement ensuite l'arrêt, que le chien de garde rattrape. « micro muet depuis 5 s, l'écoute
+# s'arrête » a tué la boucle en production le 5 septembre 2026, et elle n'est repartie que sur le
+# micro du portable.
+MICRO_REOUVERTURES = 2
+# Quand l'écoute tourne sur un micro de repli (lunettes éteintes au démarrage), on regarde toutes
+# les 30 s si le micro voulu est revenu, pour repasser dessus sans que personne n'ait à relancer.
+MICRO_RETOUR = 30.0
+# Deux ré-énumérations des périphériques ne se suivent jamais à moins de 10 s : PortAudio doit
+# être fermé puis rouvert pour cela, et ça coûte quelques dixièmes de seconde sur Windows.
+RAFRAICHISSEMENT_MIN = 10.0
+# Windows tronque les noms de périphériques MME à 31 caractères : « Casque (M01 Pro_F444 Hands-Free »
+# est tout ce qui reste de « Casque (M01 Pro_F444 Hands-Free AG Audio) ». C'est cette forme tronquée
+# que l'interface enregistre quand on choisit le micro dans la liste.
+MME_NOM_MAX = 31
 
 # ------------------------------------------------------------------ mode traduction
 # « Iris, traduis ce qu'il dit » : IRIS écoute l'interlocuteur en continu et lit la traduction.
@@ -177,8 +193,30 @@ def score_hote(nom_hote: str) -> int:
     return 0
 
 
+def _compact(nom: object) -> str:
+    """Forme comparable d'un nom de périphérique : minuscules, espaces réduits, sans bords."""
+    return " ".join(str(nom or "").split()).lower()
+
+
+def nom_correspond(nom: str, cherche: str) -> bool:
+    """Le périphérique `nom` est-il celui qu'on cherche ? Insensible à la casse et à la troncature.
+
+    Deux sens de troncature, parce que les deux arrivent. Le réglage porte le nom MME tronqué et
+    le périphérique annonce le nom complet (WASAPI) : ce qu'on cherche est CONTENU dans le nom.
+    Ou l'inverse — le réglage a été pris dans une liste WASAPI, complète, et c'est MME qui n'en
+    montre que 31 caractères : le nom est alors un PRÉFIXE de ce qu'on cherche. On n'accepte ce
+    second cas qu'à partir de 31 caractères, sinon « Casque ( » suffirait à passer pour n'importe
+    quel casque."""
+    nom, cherche = _compact(nom), _compact(cherche)
+    if not nom or not cherche:
+        return False
+    if cherche in nom:
+        return True
+    return len(nom) >= MME_NOM_MAX and cherche.startswith(nom)
+
+
 def choisir_peripherique(devices, hostapis, cherche: str, entree: bool = True) -> int | None:
-    """Index du périphérique dont le nom contient `cherche`, ou None si aucun ne convient.
+    """Index du périphérique dont le nom correspond à `cherche`, ou None si aucun ne convient.
 
     Trois règles, dans cet ordre, et chacune vient de l'énumération relevée sur la machine de
     Miguel le 2026-09-04, où les lunettes « M01 Pro_F444 » apparaissent six fois :
@@ -186,13 +224,14 @@ def choisir_peripherique(devices, hostapis, cherche: str, entree: bool = True) -
     1. le SENS d'abord : un périphérique sans canal d'entrée n'est jamais un micro, même quand il
        porte exactement le même nom qu'un micro — « Casque (M01 Pro_F444 Hands-Free » existe sous
        MME en entrée (index 2) ET en sortie seule (index 5) ;
-    2. un nom exactement égal l'emporte sur un nom qui ne fait que contenir ce qu'on cherche : MME
-       tronque les noms à 31 caractères, c'est cette forme tronquée que l'interface enregistre, et
-       elle est aussi contenue dans le nom complet qu'annonce WASAPI ;
+    2. un nom exactement égal l'emporte sur un nom qui ne fait que correspondre (`nom_correspond` :
+       casse, troncature MME dans les deux sens) : MME tronque les noms à 31 caractères, c'est cette
+       forme tronquée que l'interface enregistre, et elle est aussi contenue dans le nom complet
+       qu'annonce WASAPI ;
     3. à égalité, l'hôte le plus tolérant gagne (voir `score_hote`), puis le plus petit index.
        L'ancien code retenait le premier index rencontré : selon l'ordre d'énumération, cela pouvait
        tomber sur la broche WDM-KS (index 26) plutôt que sur le micro MME qui marche."""
-    cherche = (cherche or "").strip().lower()
+    cherche = _compact(cherche)
     if not cherche:
         return None
     canal = "max_input_channels" if entree else "max_output_channels"
@@ -203,24 +242,24 @@ def choisir_peripherique(devices, hostapis, cherche: str, entree: bool = True) -
             voies = int(dev.get(canal, 0) or 0)
         except (TypeError, ValueError):
             voies = 0
-        if voies <= 0 or cherche not in nom.lower():
+        if voies <= 0 or not nom_correspond(nom, cherche):
             continue
         try:
             hote = (hostapis or [])[int(dev.get("hostapi", -1))].get("name") or ""
         except Exception:
             hote = ""
-        candidats.append((1 if nom.lower() == cherche else 0, score_hote(hote), -idx, idx))
+        candidats.append((1 if _compact(nom) == cherche else 0, score_hote(hote), -idx, idx))
     return max(candidats)[-1] if candidats else None
 
 
 def frequence_native(devices, cherche: str) -> float:
-    """Plus basse fréquence annoncée pour un micro dont le nom contient `cherche` (0.0 si aucun).
+    """Plus basse fréquence annoncée pour un micro dont le nom correspond à `cherche` (0.0 si aucun).
 
     Les hôtes ne disent pas la même chose du même casque, et le plus bavard est le moins fiable :
     mesuré, MME annonce 44100 Hz pour les lunettes « M01 Pro_F444 » là où WASAPI et WDM-KS déclarent
     16000 Hz — la vraie fréquence du lien mains libres, que le moteur audio de Windows masque en
     rééchantillonnant. La plus basse des valeurs annoncées est donc la seule qui ne mente pas."""
-    cherche = (cherche or "").strip().lower()
+    cherche = _compact(cherche)
     if not cherche:
         return 0.0
     taux = []
@@ -228,7 +267,7 @@ def frequence_native(devices, cherche: str) -> float:
         try:
             if int(dev.get("max_input_channels", 0) or 0) <= 0:
                 continue
-            if cherche not in (dev.get("name") or "").lower():
+            if not nom_correspond(dev.get("name") or "", cherche):
                 continue
             valeur = float(dev.get("default_samplerate") or 0.0)
         except (TypeError, ValueError):
@@ -236,6 +275,42 @@ def frequence_native(devices, cherche: str) -> float:
         if valeur > 0:
             taux.append(valeur)
     return min(taux) if taux else 0.0
+
+
+def rafraichir_peripheriques(sd) -> bool:
+    """Force PortAudio à ré-énumérer les périphériques. Rend True si la liste a été refaite.
+
+    C'est LA cause du « micro Casque … Hands-Free introuvable, micro par défaut utilisé » du
+    journal, alors que le nom enregistré était exactement celui du périphérique MME. PortAudio
+    dresse sa liste une seule fois, à l'initialisation — c'est-à-dire à `import sounddevice`, au
+    lancement d'IRIS avec la session Windows. Des lunettes allumées APRÈS n'y figurent jamais, et
+    `sd.query_devices()` répond avec une liste morte, aussi longtemps que le processus vit. La seule
+    façon d'y voir les lunettes est de fermer PortAudio et de le rouvrir (`_terminate`, puis
+    `_initialize` : ce sont les fonctions que sounddevice utilise lui-même à l'import et à la sortie).
+
+    À N'APPELER QU'AVEC TOUS LES FLUX FERMÉS : `Pa_Terminate` ferme d'autorité ceux qui restent,
+    le nôtre comme celui par lequel ElevenLabs parle. Ce garde-fou vit dans `_rafraichir_si_possible`.
+    Un faux module sans ces fonctions (les tests) est simplement laissé tel quel."""
+    terminer = getattr(sd, "_terminate", None)
+    initialiser = getattr(sd, "_initialize", None)
+    if terminer is None or initialiser is None:
+        return False
+    try:
+        terminer()
+    except Exception as exc:
+        # Pas encore initialisé, ou déjà fermé : `_initialize` ci-dessous remet les choses en ordre.
+        log.warning("PortAudio : fermeture pour ré-énumération refusée (%s)", exc)
+    derniere: Exception | None = None
+    for _ in range(2):
+        try:
+            initialiser()
+            return True
+        except Exception as exc:
+            derniere = exc
+    # Ici PortAudio est peut-être fermé pour de bon : plus aucun micro ne s'ouvrira. Il faut le
+    # dire fort, parce que le symptôme visible sera « Micro indisponible » à chaque relance.
+    log.error("PortAudio n'a pas pu être rouvert après la ré-énumération (%s)", derniere)
+    return False
 
 
 class VoiceListener:
@@ -281,6 +356,20 @@ class VoiceListener:
         self.device_name = ""  # micro réellement ouvert
         self._last_block = 0.0  # heure du dernier bloc reçu du micro : sert à repérer sa disparition
         self._alertes_dites: set[str] = set()  # avertissements micro déjà publiés (voir `_alerter`)
+        # Le flux d'entrée ouvert par `_ouvrir_flux`, gardé ici plutôt que dans une variable locale
+        # de `_run` : c'est ce qui permet de le fermer et d'en rouvrir un autre au milieu de l'écoute
+        # (`_rouvrir_micro`), au lieu d'arrêter la boucle dès que le micro se tait.
+        self._stream = None
+        # Fermer PortAudio pour ré-énumérer (voir `rafraichir_peripheriques`) tue tout flux ouvert.
+        # `mic_devices` peut être appelé depuis un fil de travail de l'API pendant que le fil vocal
+        # est entre la fermeture d'un flux et l'ouverture du suivant : ce verrou fait que la
+        # ré-énumération et l'ouverture ne se chevauchent jamais. Réentrant, parce que l'ouverture
+        # ré-énumère elle-même.
+        self._verrou_audio = threading.RLock()
+        self._micro_de_repli = False  # True : le micro ouvert n'est pas celui qu'on voulait
+        self._reouvertures = 0  # tentatives de réouverture depuis le dernier bloc reçu
+        self._derniere_recherche = 0.0  # dernier coup d'œil au retour du micro voulu (repli)
+        self._dernier_rafraichissement = 0.0  # dernière ré-énumération des périphériques
         self._mono_annonce = False  # le compromis mono des lunettes ne s'explique qu'une fois par session
         self._last_peak = 0  # pic de la dernière commande (pour signaler un micro trop faible)
         self._level_sent = 0.0
@@ -331,12 +420,53 @@ class VoiceListener:
         return stt.model_dir(self.settings.models_dir, self.settings.user.language) is not None
 
     def mic_devices(self) -> list[str]:
+        """Noms des micros, sur une liste RAFRAÎCHIE quand c'est possible.
+
+        Sans cela, la preuve de présence par le micro (`lunettes_presentes`) et la liste de
+        Paramètres › Voix regardaient la liste dressée au lancement d'IRIS : des lunettes allumées
+        ensuite n'y apparaissaient jamais, et le verrou tenait pour toujours."""
         try:
             import sounddevice as sd
 
+            self._rafraichir_si_possible(sd)
             return [d["name"] for d in sd.query_devices() if d.get("max_input_channels", 0) > 0]
         except Exception:
             return []
+
+    def _rafraichir_si_possible(self, sd) -> bool:
+        """Ré-énumère les périphériques si rien ne l'interdit : aucun flux à nous ouvert, IRIS ne
+        parle pas, et pas déjà fait il y a moins de RAFRAICHISSEMENT_MIN secondes."""
+        with self._verrou_audio:
+            if self._stream is not None:
+                return False  # fermer PortAudio tuerait notre propre micro
+            if time.time() - self._dernier_rafraichissement < RAFRAICHISSEMENT_MIN:
+                return False
+            if self.tts.is_speaking:
+                return False  # ... et la voix d'IRIS en train de sortir
+            self._dernier_rafraichissement = time.time()
+            return rafraichir_peripheriques(sd)
+
+    def _rafraichir_peripheriques(self, sd) -> bool:
+        """Ré-énumération avant d'ouvrir un micro, depuis le fil vocal, sans limite de fréquence :
+        l'ouverture qui suit en dépend. L'attente de la fin de la phrase d'IRIS s'est faite avant,
+        hors verrou (`_ouvrir_flux`) ; ici on ne fait que constater."""
+        with self._verrou_audio:
+            if self._stream is not None:
+                return False
+            if self.tts.is_speaking:
+                log.info("ré-énumération des micros reportée : IRIS parle encore")
+                return False
+            self._dernier_rafraichissement = time.time()
+            return rafraichir_peripheriques(sd)
+
+    def _micro_voulu(self) -> str:
+        """Le micro qu'IRIS veut ouvrir : celui des réglages ; sinon celui des lunettes appairées.
+
+        Le second cas n'est pas un confort. Sans micro choisi, on ouvrait « le micro par défaut de
+        Windows » — le micro du portable, à peu près toujours — pendant que Miguel parlait dans ses
+        lunettes. IRIS est ce qu'il y a dans les lunettes : si elles ont un micro, c'est lui."""
+        u = self.settings.user
+        return (u.audio_input_device or "").strip() or (u.glasses.name or "").strip()
 
     def status(self) -> dict:
         return {
@@ -353,6 +483,7 @@ class VoiceListener:
             "muted": self.muted,
             "level": self.level,
             "device": self.device_name,
+            "device_fallback": self._micro_de_repli,  # l'interface peut dire « micro de l'ordinateur en attendant »
             "lag": round(self._audio.qsize() * BLOCK / stt.SAMPLE_RATE, 2),
             "dropped": self.dropped,
             "paused_until": self.paused_until if self.paused_until > time.time() else 0.0,
@@ -377,8 +508,11 @@ class VoiceListener:
         lunettes) déclare 16000 Hz. Écrit tel quel — `sd.query_devices(idx)["default_samplerate"]`
         sur le périphérique choisi — ce second test était donc mort. On interroge maintenant tous
         les hôtes et on retient la plus basse fréquence annoncée (`frequence_native`), ce qui rend
-        au test son utilité : un casque nommé autrement qu'en anglais reste reconnu."""
-        wanted = (self.settings.user.audio_input_device or "").strip().lower()
+        au test son utilité : un casque nommé autrement qu'en anglais reste reconnu.
+
+        Flux ouvert, c'est le micro RÉELLEMENT ouvert qui est jugé, pas celui qu'on voulait : sur un
+        micro de repli (celui du portable), annoncer le compromis mono des lunettes serait faux."""
+        wanted = (self.device_name if self._stream is not None else self._micro_voulu()).strip().lower()
         if not wanted:
             return False
         if "hands-free" in wanted or "mains libres" in wanted or "hfp" in wanted:
@@ -631,32 +765,43 @@ class VoiceListener:
                 log.warning("audio en retard : %d bloc(s) perime(s) jete(s), le decodage ne suit pas", self.dropped)
 
     def _input_device(self, sd) -> int | None:
-        """Index du micro choisi (ex. lunettes appairées en casque Bluetooth), sinon None = défaut système."""
+        """Index du micro voulu (voir `_micro_voulu`), sinon None = micro par défaut du système.
+
+        Le micro CHOISI dans les réglages qui manque est signalé à l'utilisateur ; le micro des
+        lunettes pris faute de choix, lui, manque en silence : personne ne l'a demandé."""
         demande = (self.settings.user.audio_input_device or "").strip()
-        if not demande:
+        lunettes = (self.settings.user.glasses.name or "").strip()
+        voulu = demande or lunettes
+        if not voulu:
             return None
         idx = None
         try:
-            idx = choisir_peripherique(sd.query_devices(), sd.query_hostapis(), demande, entree=True)
+            idx = choisir_peripherique(sd.query_devices(), sd.query_hostapis(), voulu, entree=True)
         except Exception as exc:
             log.warning("énumération des micros impossible (%s)", exc)
-        if idx is None:
+        if idx is None and demande:
             self._signaler_micro_absent(demande)
+        elif idx is None:
+            log.info("micro des lunettes « %s » absent de la liste : micro par défaut utilisé", lunettes)
+        elif not demande:
+            log.info("aucun micro choisi : celui des lunettes « %s » est préféré au micro par défaut", lunettes)
         return idx
 
-    def _alerter(self, texte: str) -> None:
+    def _alerter(self, texte: str) -> bool:
         """Publie un avertissement micro dans l'interface, sans jamais répéter le même.
 
         Le chien de garde (`main.py`, `_voice_watchdog`) relance l'écoute toutes les 20 s tant
-        qu'elle ne tourne pas : sans ce filtre, un micro absent ferait surgir les mêmes fenêtres
+        qu'elle ne tourne pas, et la recherche du micro voulu (`_reprendre_micro_voulu`) repasse
+        toutes les 30 s : sans ce filtre, un micro absent ferait surgir les mêmes fenêtres
         trois fois par minute jusqu'à ce que Miguel abandonne — et un avertissement qu'on apprend à
         ignorer ne vaut pas mieux que le silence qu'on corrige ici. La mémoire est effacée dès que
-        le micro remarche (`_run`, après `stream.start()`), pour qu'une panne qui revient plus tard
-        soit bien redite."""
+        le micro voulu s'ouvre pour de bon (`_ouvrir_flux`), pour qu'une panne qui revient plus
+        tard soit bien redite. Rend True si l'avertissement vient d'être publié."""
         if texte in self._alertes_dites:
-            return
+            return False
         self._alertes_dites.add(texte)
         self.hub.publish("voice.warning", text=texte)
+        return True
 
     def _signaler_micro_absent(self, demande: str) -> None:
         """Dit dans l'interface que le micro demandé a disparu.
@@ -664,29 +809,57 @@ class VoiceListener:
         Se rabattre en silence sur le micro par défaut était le pire des comportements : IRIS
         continuait d'écouter, mais l'ORDINATEUR, pendant que Miguel parlait dans ses lunettes.
         Aucune erreur nulle part, et l'impression que le mot d'activation ne marche plus."""
-        log.warning("micro « %s » introuvable, micro par défaut utilisé", demande)
-        self._alerter(
+        dit = self._alerter(
             f"Le micro « {demande} » n'apparaît plus dans la liste des périphériques : vos lunettes "
             "sont peut-être éteintes, hors de portée ou déconnectées. IRIS écoute avec le micro de "
-            "l'ordinateur en attendant ; rallumez les lunettes, puis relancez l'écoute pour repasser dessus."
+            "l'ordinateur en attendant, et repassera sur les lunettes toute seule dès qu'elles reviendront."
         )
+        # Redit toutes les 30 s par la recherche du micro voulu : en avertissement la première
+        # fois, en simple trace ensuite, sinon le journal ne raconterait plus que ça.
+        (log.warning if dit else log.debug)("micro « %s » introuvable, micro par défaut utilisé", demande)
 
     def _micro_perdu(self) -> bool:
-        """Le micro s'est-il tu pour de bon ? Si oui, on le dit et on arrête l'écoute proprement.
+        """Le micro s'est-il tu ? Si oui, on le ROUVRE ; on n'arrête l'écoute qu'après échec répété.
 
         Des lunettes qui s'éteignent ne lèvent AUCUNE exception : PortAudio garde le flux « actif »
         et cesse simplement d'appeler `_callback`. Sans ce garde-fou, IRIS restait en écoute pour
         toujours devant un micro mort, sans un mot — le plus mauvais des cas, puisque tout paraît
-        normal jusqu'au moment où Miguel dit « Dis-moi Iris » et où rien n'arrive."""
+        normal jusqu'au moment où Miguel dit « Dis-moi Iris » et où rien n'arrive.
+
+        Mais arrêter l'écoute était l'autre mauvais cas, et il est arrivé le 5 septembre 2026 :
+        « micro muet depuis 5 s, l'écoute s'arrête », puis le chien de garde a relancé — sur le
+        micro du portable, parce que la liste des périphériques n'avait pas bougé, et l'écoute y
+        est restée. Maintenant : première tentative sur le même micro (le lien mains libres se
+        rétablit souvent seul), deuxième sur le micro par défaut, et l'arrêt seulement après ça.
+        Rend True quand l'écoute s'arrête."""
         if self._stop.is_set() or self._last_block <= 0:
             return False
         depuis = time.time() - self._last_block
         if depuis < MICRO_MUET:
             return False
         nom = self.device_name or "micro par défaut"
+        # Rien à rouvrir quand aucun flux n'a jamais été ouvert ici (`_run` n'a pas démarré) : on
+        # s'arrête tout de suite, et le chien de garde fera le prochain essai depuis le début.
+        peut_rouvrir = self._stream is not None
+        while peut_rouvrir and self._reouvertures < MICRO_REOUVERTURES:
+            self._reouvertures += 1
+            repli = self._reouvertures >= MICRO_REOUVERTURES
+            log.warning("micro muet depuis %.1f s (%s) : réouverture %d/%d%s", depuis, nom,
+                        self._reouvertures, MICRO_REOUVERTURES, " sur le micro par défaut" if repli else "")
+            if self._rouvrir_micro(forcer_defaut=repli):
+                if self._micro_de_repli:
+                    self._alerter(
+                        f"Le micro « {nom} » s'est tu : IRIS écoute avec le micro de l'ordinateur en "
+                        "attendant, et repassera sur les lunettes toute seule dès qu'elles reviendront. "
+                        "Si ce sont vos lunettes, rallumez-les ou vérifiez la connexion Bluetooth."
+                    )
+                return False
+            # L'ouverture a échoué : on enchaîne sur l'essai suivant sans attendre cinq secondes
+            # de plus devant une file vide.
         self.error = (
-            f"Le micro « {nom} » ne renvoie plus rien depuis {int(depuis)} secondes. Si ce sont vos "
-            "lunettes : rallumez-les, vérifiez la connexion Bluetooth, puis relancez l'écoute."
+            f"Le micro « {nom} » ne renvoie plus rien depuis {int(depuis)} secondes et aucun autre micro "
+            "n'a pu prendre le relais. Si ce sont vos lunettes : rallumez-les, vérifiez la connexion "
+            "Bluetooth ; IRIS réessaiera toute seule."
         )
         log.warning("micro muet depuis %.1f s (%s) : l'écoute s'arrête", depuis, nom)
         self._alerter(self.error)
@@ -697,6 +870,125 @@ class VoiceListener:
         # l'écoute, et `_alerter` sait déjà ne rien redire deux fois.
         self._stop.set()
         return True
+
+    def _ouvrir_flux(self, sd, forcer_defaut: bool = False) -> None:
+        """Ré-énumère, choisit le micro, ouvre le flux et le démarre. Lève si le micro ne s'ouvre pas.
+
+        `forcer_defaut` ignore le micro voulu et ouvre celui du système : c'est le second essai de
+        `_micro_perdu`, quand le micro voulu est bien dans la liste mais ne dit plus rien."""
+        if self.tts.is_speaking:
+            # Attendue AVANT de prendre le verrou : pendant ces secondes, l'API doit pouvoir
+            # continuer à lister les micros et à donner l'état sans se bloquer derrière nous.
+            self.tts.wait_idle(timeout=3.0)
+        with self._verrou_audio:
+            self._ouvrir_flux_verrouille(sd, forcer_defaut)
+
+    def _ouvrir_flux_verrouille(self, sd, forcer_defaut: bool) -> None:
+        self._rafraichir_peripheriques(sd)
+        device = None if forcer_defaut else self._input_device(sd)
+        voulu = self._micro_voulu()
+        # Fréquence d'ouverture du flux. Quand un micro est choisi, on prend celle qu'il ANNONCE,
+        # même si elle ment : MME annonce 44100 Hz pour les lunettes, dont le lien mains libres
+        # est réellement à 16000 Hz. Ce qui compte est d'ouvrir au taux que l'hôte attend,
+        # `_resample` ramenant ensuite tout à 16000 Hz pour Vosk — et à 44100 le compte tombe
+        # juste : un bloc de 11025 échantillons redescend à exactement 4000, rapport entier,
+        # aucun résidu qui s'accumulerait de bloc en bloc.
+        # Sans micro choisi on garde 16000 Hz sans rien demander, et c'est VOLONTAIRE : le micro
+        # de l'ordinateur est un vrai micro large bande ; laisser Windows convertir 44100 → 16000
+        # avec son filtre vaut mieux que notre décimation sans filtre, qui replierait les
+        # fricatives au-dessus de 8 kHz dans la bande utile.
+        self._native_rate = int(sd.query_devices(device, "input")["default_samplerate"]) if device is not None else stt.SAMPLE_RATE
+        if self._native_rate <= 0:
+            self._native_rate = stt.SAMPLE_RATE
+        block = max(400, int(BLOCK * self._native_rate / stt.SAMPLE_RATE))
+        stream = sd.RawInputStream(
+            samplerate=self._native_rate, blocksize=block, dtype="int16", channels=1, callback=self._callback, device=device
+        )
+        try:
+            self.device_name = sd.query_devices(device if device is not None else sd.default.device[0], "input")["name"]
+        except Exception:
+            self.device_name = "micro par défaut"
+        self.dropped = 0
+        log.info("micro %s (%s) à %d Hz (rééchantillonné vers %d Hz)", device if device is not None else "par défaut",
+                 self.device_name, self._native_rate, stt.SAMPLE_RATE)
+        # La surveillance du micro part d'ici : le premier bloc doit arriver dans les 0,25 s, et
+        # l'établissement du lien mains libres prend jusqu'à 2 s — MICRO_MUET laisse la marge.
+        self._last_block = time.time()
+        try:
+            stream.start()
+        except Exception:
+            # Un flux ouvert mais jamais démarré resterait accroché à PortAudio jusqu'à la
+            # prochaine ré-énumération, et avec lui, parfois, le lien mains libres des lunettes.
+            try:
+                stream.close()
+            except Exception:
+                pass
+            raise
+        self._stream = stream
+        self._micro_de_repli = bool(voulu) and device is None
+        self._derniere_recherche = time.time()
+        # Le micro voulu marche : on oublie les avertissements déjà dits, pour qu'une panne qui
+        # reviendrait plus tard soit bien redite. Mais SEULEMENT si c'est bien lui qui s'est
+        # ouvert : quand on a dû se rabattre sur un autre, l'avertissement reste vrai, et
+        # l'effacer le ferait répéter à chaque tour du chien de garde.
+        if not self._micro_de_repli:
+            self._alertes_dites.clear()
+
+    def _fermer_flux(self) -> None:
+        """Arrête et ferme le flux d'entrée, sans jamais lever : on ferme ce qui est peut-être déjà mort."""
+        stream, self._stream = self._stream, None
+        if stream is None:
+            return
+        for action in (stream.stop, stream.close):
+            try:
+                action()
+            except Exception:
+                pass
+
+    def _rouvrir_micro(self, forcer_defaut: bool = False) -> bool:
+        """Ferme le flux courant et en ouvre un autre. Rend True si un micro est de nouveau ouvert.
+
+        Le flux est fermé AVANT la ré-énumération de `_ouvrir_flux`, et ce n'est pas un détail :
+        `Pa_Terminate` fermerait de toute façon d'autorité tout flux resté ouvert."""
+        with self._verrou_audio:
+            self._fermer_flux()
+            try:
+                import sounddevice as sd
+
+                self._ouvrir_flux(sd, forcer_defaut=forcer_defaut)
+                return True
+            except Exception as exc:
+                log.warning("réouverture du micro impossible (%s)", exc)
+                return False
+
+    def _reprendre_micro_voulu(self) -> None:
+        """Sur un micro de repli, regarde toutes les MICRO_RETOUR secondes si le micro voulu est
+        revenu, et repasse dessus. C'est ce qui manquait le 5 septembre 2026 : relancée sur le micro
+        du portable pendant que les lunettes reprenaient leur souffle, l'écoute y est restée.
+
+        Il faut fermer notre flux pour ré-énumérer (voir `rafraichir_peripheriques`), donc on ne
+        le fait qu'entre deux mots d'activation — jamais pendant une commande, une réponse ou une
+        traduction — et jamais pendant qu'IRIS parle. Sur le micro du portable, fermer et rouvrir
+        coûte un dixième de seconde d'écoute toutes les trente secondes."""
+        if not self._micro_de_repli or self._stream is None or self.state != "wake":
+            return
+        now = time.time()
+        if now - self._derniere_recherche < MICRO_RETOUR:
+            return
+        self._derniere_recherche = now
+        if self.tts.is_speaking:
+            return
+        voulu = self._micro_voulu()
+        if not voulu:
+            self._micro_de_repli = False  # plus rien à attendre : le réglage a été vidé entre-temps
+            return
+        avant = self.device_name
+        if self._rouvrir_micro() and not self._micro_de_repli:
+            log.info("micro voulu « %s » de retour : l'écoute repasse dessus (elle était sur « %s »)", voulu, avant)
+            self.hub.publish("voice.info", text=f"Le micro « {self.device_name} » est de retour : IRIS écoute de nouveau dans vos lunettes.")
+            self.hub.publish("voice.state", **self.status())
+            if self._narrowband_input():
+                self._prevenir_mono()  # le compromis mono vaut pour ce micro-là, pas pour celui du portable
 
     def _prevenir_mono(self) -> None:
         """Explique une fois le compromis imposé par la radio Bluetooth, au lieu de le faire subir.
@@ -736,6 +1028,9 @@ class VoiceListener:
         except queue.Empty:
             self._micro_perdu()  # rien dans la file : le micro est-il seulement encore là ?
             return None
+        if self._reouvertures:
+            self._reouvertures = 0  # le micro répond : les tentatives passées ne comptent plus
+        self._reprendre_micro_voulu()  # deux comparaisons, sauf toutes les 30 s sur un micro de repli
         self.level = max(int(self.level * 0.7), self._peak_of(data))
         now = time.time()
         # niveau publié seulement pendant qu'on attend une commande (indicateur de Paramètres › Voix)
@@ -746,50 +1041,18 @@ class VoiceListener:
         return data
 
     def _run(self) -> None:
+        self._reouvertures = 0
         try:
             import sounddevice as sd
 
-            device = self._input_device(sd)
-            # Fréquence d'ouverture du flux. Quand un micro est choisi, on prend celle qu'il ANNONCE,
-            # même si elle ment : MME annonce 44100 Hz pour les lunettes, dont le lien mains libres
-            # est réellement à 16000 Hz. Ce qui compte est d'ouvrir au taux que l'hôte attend,
-            # `_resample` ramenant ensuite tout à 16000 Hz pour Vosk — et à 44100 le compte tombe
-            # juste : un bloc de 11025 échantillons redescend à exactement 4000, rapport entier,
-            # aucun résidu qui s'accumulerait de bloc en bloc.
-            # Sans micro choisi on garde 16000 Hz sans rien demander, et c'est VOLONTAIRE : le micro
-            # de l'ordinateur est un vrai micro large bande ; laisser Windows convertir 44100 → 16000
-            # avec son filtre vaut mieux que notre décimation sans filtre, qui replierait les
-            # fricatives au-dessus de 8 kHz dans la bande utile.
-            self._native_rate = int(sd.query_devices(device, "input")["default_samplerate"]) if device is not None else stt.SAMPLE_RATE
-            if self._native_rate <= 0:
-                self._native_rate = stt.SAMPLE_RATE
-            block = max(400, int(BLOCK * self._native_rate / stt.SAMPLE_RATE))
-            stream = sd.RawInputStream(
-                samplerate=self._native_rate, blocksize=block, dtype="int16", channels=1, callback=self._callback, device=device
-            )
-            try:
-                self.device_name = sd.query_devices(device if device is not None else sd.default.device[0], "input")["name"]
-            except Exception:
-                self.device_name = "micro par défaut"
-            self.dropped = 0
-            log.info("micro %s (%s) à %d Hz (rééchantillonné vers %d Hz)", device if device is not None else "par défaut",
-                     self.device_name, self._native_rate, stt.SAMPLE_RATE)
-            # La surveillance du micro part d'ici : le premier bloc doit arriver dans les 0,25 s, et
-            # l'établissement du lien mains libres prend jusqu'à 2 s — MICRO_MUET laisse la marge.
-            self._last_block = time.time()
-            stream.start()
-            # Le micro marche : on oublie les avertissements déjà dits, pour qu'une panne qui
-            # reviendrait plus tard soit bien redite. Mais SEULEMENT si c'est bien le micro
-            # demandé qui s'est ouvert : quand on a dû se rabattre sur un autre, l'avertissement
-            # reste vrai, et l'effacer le ferait répéter à chaque tour du chien de garde.
-            demande = (self.settings.user.audio_input_device or "").strip().lower()
-            if not demande or demande in (self.device_name or "").lower():
-                self._alertes_dites.clear()
+            # Ouverture, et avant elle la ré-énumération des périphériques : c'est là que le chien
+            # de garde re-préfère le micro des lunettes quand elles sont revenues (`_ouvrir_flux`).
+            self._ouvrir_flux(sd)
         except Exception as exc:
             demande = (self.settings.user.audio_input_device or "").strip()
             if demande:
                 self.error = (f"Le micro « {demande} » n'a pas pu être ouvert ({exc}). Si ce sont vos "
-                              "lunettes : rallumez-les, vérifiez la connexion Bluetooth, puis relancez l'écoute.")
+                              "lunettes : rallumez-les, vérifiez la connexion Bluetooth ; IRIS réessaiera toute seule.")
             else:
                 self.error = f"Micro indisponible : {exc}"
             # Un « state: off » dans le statut ne se remarque pas ; l'écoute qui ne démarre pas, si.
@@ -816,11 +1079,7 @@ class VoiceListener:
             self.error = f"Erreur audio : {exc}"
         finally:
             log.info("fin de la boucle vocale (stop=%s one_shot=%s erreur=%s)", self._stop.is_set(), self._one_shot, self.error)
-            try:
-                stream.stop()
-                stream.close()
-            except Exception:
-                pass
+            self._fermer_flux()
             self.capture.set(mic=False, listening=False)
             self._thread = None
             self._set_state("off")

@@ -2,15 +2,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
 import sys
 import threading
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
+log = logging.getLogger("iris.config")
 
 APP_NAME = "IRIS"
+
+# Le nom vendu. C'est ce qu'on dit aux lunettes, et c'est ce que le site promet.
+MOT_ACTIVATION = "Dis-moi Iris"
 
 ENV_KEYS = ("ELEVENLABS_API_KEY",)
 
@@ -65,20 +72,37 @@ def write_env_value(data_dir: Path, key: str, value: str) -> Path:
 
 AGENT_NAMES = ("vela", "openrouter", "claude", "gpt", "gemini", "custom")
 
-VERSION_REGLAGES = 2
+VERSION_REGLAGES = 3
 # Les paliers s'appelaient Gratuit / Essentiel / Pro / Ultra ; ils s'appellent maintenant
 # Gratuit / Pro / Premium / Entreprise. Le renommage n'est pas anodin : « pro » existe des deux
 # côtés et ne désigne pas la même chose. D'où le numéro de version — sans lui, chaque relecture
 # des réglages rétrograderait un abonné Pro d'un cran.
 _RENOMMAGE_PLANS_V2 = {"essentiel": "pro", "pro": "premium", "ultra": "entreprise"}
+# Version 3 : deux alias du mot d'activation étaient morts depuis toujours. « irisse » et « hiris »
+# n'existent pas dans le vocabulaire du modèle Vosk français ; à chaque ouverture du micro il
+# écrivait « Ignoring word missing in vocabulary » et les retirait de la grammaire. Ils ne
+# pouvaient donc jamais réveiller IRIS, et les garder dans les réglages faisait croire à une
+# tolérance qui n'existait pas. Comparés sous leur forme réduite (minuscules, espaces simples).
+_ALIAS_MORTS_V3 = ("dis moi irisse", "dis moi hiris", "irisse", "hiris")
+
+
+def _compacter(texte: object) -> str:
+    """Minuscules, sans espace en tête ni en fin, espaces internes réduits à un seul."""
+    return " ".join(str(texte or "").split()).lower()
 
 
 def migrer(raw: dict) -> dict:
     """Fait suivre des réglages déjà écrits quand le vocabulaire change. Appliqué une seule fois."""
-    if int(raw.get("settings_version") or 1) < 2:
+    try:
+        version = int(raw.get("settings_version") or 1)
+    except (TypeError, ValueError):
+        version = 1  # un numéro illisible ne doit pas empêcher de lire tout le reste
+    if version < 2:
         ancien = raw.get("plan")
         if ancien in _RENOMMAGE_PLANS_V2:
             raw["plan"] = _RENOMMAGE_PLANS_V2[ancien]
+    if version < 3 and isinstance(raw.get("wake_aliases"), list):
+        raw["wake_aliases"] = [a for a in raw["wake_aliases"] if _compacter(a) not in _ALIAS_MORTS_V3]
     raw["settings_version"] = VERSION_REGLAGES
     return raw
 
@@ -140,9 +164,12 @@ class UserSettings(BaseModel):
     audio_input_device: str = ""  # "" = micro par défaut ; sinon (partie du) nom du périphérique, ex. lunettes appairées
     audio_output_device: str = ""  # "" = sortie par défaut ; sinon (partie du) nom, ex. sortie Hands-Free des lunettes
     user_name: str = ""
-    wake_word: str = "Dis-moi Iris"
-    # variantes acceptées (ce que la reconnaissance vocale entend parfois à la place du mot d'activation)
-    wake_aliases: list[str] = Field(default_factory=lambda: ["dis moi iris", "dis iris", "iris", "dis moi irisse", "dis moi hiris", "dit moi iris"])
+    wake_word: str = MOT_ACTIVATION
+    # Variantes acceptées : ce que la reconnaissance entend parfois à la place du mot d'activation,
+    # et « Iris » tout court, pour qui trouve le nom complet trop long. Tous ces mots existent dans
+    # le vocabulaire du modèle Vosk français — c'est la seule condition pour figurer ici (voir
+    # `_ALIAS_MORTS_V3`).
+    wake_aliases: list[str] = Field(default_factory=lambda: ["dis moi iris", "dis iris", "iris", "dit moi iris"])
     stop_words: list[str] = Field(default_factory=lambda: ["stop", "stoppe", "arrête", "arrete", "tais-toi", "tais toi", "silence", "chut", "ça suffit", "ca suffit"])
     mute_words: list[str] = Field(default_factory=lambda: ["muet", "mode muet", "coupe le micro", "coupe ton micro", "arrête d'écouter", "arrete d'ecouter", "ne m'écoute plus", "ne m'ecoute plus"])
     language: str = "fr-CA"
@@ -216,14 +243,108 @@ class UserSettings(BaseModel):
     licence_auto: bool = True
     agents: dict[str, AgentConfig] = Field(default_factory=_default_agents)
 
+    @field_validator("wake_word", mode="before")
+    @classmethod
+    def _nettoyer_mot_activation(cls, valeur: object) -> str:
+        """Le mot d'activation réel de la machine de Miguel était «  Iris » — avec une espace en
+        tête, entrée dans le champ des réglages sans que personne ne la voie. `normalize` l'aurait
+        absorbée côté reconnaissance, mais le nom s'affichait ainsi dans l'interface et dans la
+        phrase de présentation de la voix (« Dites  Iris pour me parler »). On nettoie à la
+        lecture ; vide, on revient au nom vendu plutôt qu'à une IRIS qu'aucun mot ne réveille."""
+        propre = " ".join(str(valeur or "").split())
+        return propre or MOT_ACTIVATION
+
+    @field_validator("wake_aliases", mode="before")
+    @classmethod
+    def _nettoyer_alias(cls, valeur: object) -> list[str]:
+        """Espaces parasites retirés, vides écartés, doublons fondus (le premier gagne)."""
+        if not isinstance(valeur, (list, tuple)):
+            return []
+        propres: list[str] = []
+        for alias in valeur:
+            texte = " ".join(str(alias or "").split())
+            if texte and _compacter(texte) not in {_compacter(p) for p in propres}:
+                propres.append(texte)
+        return propres
+
     def agent(self, name: str) -> AgentConfig:
         if name not in self.agents:
             self.agents[name] = _default_agents().get(name, AgentConfig(label=name))
         return self.agents[name]
 
 
+def lire_reglages_bruts(path: Path) -> dict:
+    """Lit un settings.json tel quel, sans validation. Lève si le fichier n'est pas un objet JSON.
+
+    Encodage « utf-8-sig », et ce n'est pas une coquetterie : le settings.corrupt.json retrouvé
+    sur la machine de Miguel (4 septembre 2026, 14 h 57) n'était PAS corrompu. C'était un JSON
+    parfaitement valide, réécrit par PowerShell 5.1 (indentation à quatre espaces, deux espaces
+    après chaque deux-points : la signature de `ConvertTo-Json | Out-File`), qui commence par une
+    marque d'ordre d'octets. `json.loads` la refuse (« Unexpected UTF-8 BOM ») ; IRIS a pris ce
+    refus pour une corruption, a mis le fichier de côté et est repartie de zéro : lunettes, clés,
+    mot d'activation, tout était perdu au démarrage suivant."""
+    texte = path.read_text(encoding="utf-8-sig")
+    if not texte.strip():
+        raise ValueError("fichier vide")
+    raw = json.loads(texte)
+    if not isinstance(raw, dict):
+        raise ValueError(f"objet JSON attendu, {type(raw).__name__} trouvé")
+    return raw
+
+
+def construire_reglages(raw: dict) -> tuple[UserSettings | None, list[str]]:
+    """Valide des réglages bruts. Rend (réglages, champs remis au défaut).
+
+    Un fichier lisible dont UN champ est refusé (une valeur d'un ancien vocabulaire, une faute de
+    frappe faite à la main, un réglage écrit par une version plus récente) ne justifie pas de jeter
+    les cent autres. On retire les champs refusés, un tour à la fois, et on garde le reste. Rend
+    (None, champs) seulement quand rien n'est récupérable."""
+    donnees = dict(raw)
+    rejetes: list[str] = []
+    for _ in range(12):
+        try:
+            merged = UserSettings(**migrer(dict(donnees)))
+        except ValidationError as exc:
+            fautifs = []
+            for erreur in exc.errors():
+                loc = erreur.get("loc") or ()
+                if loc and str(loc[0]) in donnees and str(loc[0]) not in fautifs:
+                    fautifs.append(str(loc[0]))
+            if not fautifs:
+                return None, rejetes
+            for champ in fautifs:
+                donnees.pop(champ, None)
+                rejetes.append(champ)
+            continue
+        except Exception:
+            return None, rejetes
+        for name, cfg in _default_agents().items():
+            merged.agents.setdefault(name, cfg)
+        return merged, rejetes
+    return None, rejetes
+
+
+def ecrire_atomique(path: Path, contenu: str) -> None:
+    """Écrit d'abord un fichier voisin, le pousse sur le disque, puis le met à la place de l'ancien.
+
+    À aucun instant `path` n'est à moitié écrit : soit l'ancien contenu est entier, soit le nouveau
+    l'est. Le `fsync` compte autant que le remplacement — sans lui, une coupure de courant peut
+    laisser le nom en place et zéro octet derrière."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(contenu)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 class Settings:
-    """Réglages persistants + chemins. Thread-safe pour les écritures."""
+    """Réglages persistants + chemins. Thread-safe pour les écritures.
+
+    Une config perdue au démarrage, c'est les lunettes, les clés et le mot d'activation partis.
+    Trois garde-fous, donc : l'écriture est atomique (`ecrire_atomique`), chaque écriture réussie
+    laisse une copie dans settings.json.bak, et un fichier illisible est restauré depuis cette
+    copie au lieu de repartir de zéro. Quand ça arrive, le journal le dit en toutes lettres."""
 
     def __init__(self, data_dir: Path | None = None):
         self.data_dir = Path(data_dir or default_data_dir())
@@ -231,30 +352,86 @@ class Settings:
         self.models_dir = self.data_dir / "models"
         self.models_dir.mkdir(exist_ok=True)
         self.settings_path = self.data_dir / "settings.json"
+        self.backup_path = self.data_dir / "settings.json.bak"
+        self.corrupt_path = self.data_dir / "settings.corrupt.json"
         self.db_path = self.data_dir / "iris.db"
         self.env_loaded = load_env_files(self.data_dir)
         self._lock = threading.Lock()
+        # Ce qui s'est passé au chargement, pour que l'interface puisse le dire à l'utilisateur.
+        self.restaure_depuis_sauvegarde = False
+        self.champs_remis_au_defaut: list[str] = []
         self.user: UserSettings = self._load()
 
     def _load(self) -> UserSettings:
-        if self.settings_path.exists():
+        if not self.settings_path.exists():
+            user = UserSettings()
+            self._write(user)
+            return user
+        try:
+            raw = lire_reglages_bruts(self.settings_path)
+        except Exception as exc:
+            log.error("settings.json illisible (%s) : mis de côté dans %s, restauration depuis la sauvegarde",
+                      exc, self.corrupt_path.name)
+            self._mettre_de_cote(deplacer=True)
+            return self._restaurer_ou_repartir()
+        user, rejetes = construire_reglages(raw)
+        if user is not None:
+            if rejetes:
+                # Le fichier est gardé tel quel à côté : ce qu'on a retiré doit rester consultable.
+                self.champs_remis_au_defaut = rejetes
+                log.warning("settings.json : champ(s) refusé(s) et remis au défaut : %s (copie dans %s)",
+                            ", ".join(rejetes), self.corrupt_path.name)
+                self._mettre_de_cote(deplacer=False)
+                self._write(user)
+            return user
+        log.error("settings.json lisible mais irrécupérable : mis de côté dans %s, restauration depuis la sauvegarde",
+                  self.corrupt_path.name)
+        self._mettre_de_cote(deplacer=True)
+        return self._restaurer_ou_repartir()
+
+    def _restaurer_ou_repartir(self) -> UserSettings:
+        """Remet en place settings.json.bak si elle est saine ; sinon, et seulement alors, repart de zéro."""
+        if self.backup_path.exists():
             try:
-                raw = migrer(json.loads(self.settings_path.read_text(encoding="utf-8")))
-                merged = UserSettings(**raw)
-                for name, cfg in _default_agents().items():
-                    merged.agents.setdefault(name, cfg)
-                return merged
-            except Exception:
-                backup = self.settings_path.with_suffix(".corrupt.json")
-                self.settings_path.replace(backup)
+                user, rejetes = construire_reglages(lire_reglages_bruts(self.backup_path))
+            except Exception as exc:
+                user, rejetes = None, []
+                log.error("la sauvegarde %s est elle-même illisible (%s)", self.backup_path.name, exc)
+            if user is not None:
+                self.restaure_depuis_sauvegarde = True
+                self.champs_remis_au_defaut = rejetes
+                log.warning("réglages RESTAURÉS depuis %s : lunettes, clés et mot d'activation conservés%s",
+                            self.backup_path.name,
+                            f" (champs remis au défaut : {', '.join(rejetes)})" if rejetes else "")
+                self._write(user)
+                return user
+        else:
+            log.error("aucune sauvegarde %s : rien à restaurer", self.backup_path.name)
+        log.error("réglages repartis de zéro : lunettes, clés et mot d'activation sont à refaire")
         user = UserSettings()
         self._write(user)
         return user
 
+    def _mettre_de_cote(self, deplacer: bool) -> None:
+        """Garde le fichier fautif sous settings.corrupt.json, pour qu'on puisse comprendre après coup."""
+        try:
+            if deplacer:
+                os.replace(self.settings_path, self.corrupt_path)
+            else:
+                shutil.copyfile(self.settings_path, self.corrupt_path)
+        except OSError as exc:
+            log.warning("impossible de mettre settings.json de côté (%s)", exc)
+
     def _write(self, user: UserSettings) -> None:
-        tmp = self.settings_path.with_suffix(".tmp")
-        tmp.write_text(user.model_dump_json(indent=2), encoding="utf-8")
-        tmp.replace(self.settings_path)
+        contenu = user.model_dump_json(indent=2)
+        ecrire_atomique(self.settings_path, contenu)
+        # La sauvegarde n'est écrite qu'APRÈS que le fichier principal est en place : elle ne
+        # contient jamais autre chose qu'un état qui a réellement été enregistré. Si elle échoue,
+        # les réglages sont quand même sauvés — on le note, on ne casse rien.
+        try:
+            ecrire_atomique(self.backup_path, contenu)
+        except OSError as exc:
+            log.warning("sauvegarde %s impossible (%s)", self.backup_path.name, exc)
 
     def save(self) -> None:
         with self._lock:

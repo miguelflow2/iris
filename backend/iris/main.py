@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
+from starlette.requests import HTTPConnection
 
 from . import __version__
 from .capture import CaptureIndicator
@@ -604,18 +605,21 @@ def create_app(
     app.state.ctx = ctx
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-    def _vient_de_cet_ordinateur(request: Request) -> bool:
+    def _vient_de_cet_ordinateur(connexion: HTTPConnection) -> bool:
         """La requête part-elle bien de cette machine, sans intermédiaire ?
 
         Un mandataire ou un tunnel se signale par l'un de ces en-têtes. On les traite comme
         « pas local » même quand la connexion arrive par la boucle locale : derrière un tunnel,
-        TOUT semble venir de 127.0.0.1, et s'y fier reviendrait à ne rien vérifier."""
+        TOUT semble venir de 127.0.0.1, et s'y fier reviendrait à ne rien vérifier.
+
+        `HTTPConnection` est l'ancêtre commun de `Request` et de `WebSocket` : la même question se
+        pose aux deux, et elle doit recevoir la même réponse."""
         import ipaddress
 
         for entete in ("x-forwarded-for", "x-real-ip", "cf-connecting-ip", "forwarded", "x-forwarded-host"):
-            if request.headers.get(entete):
+            if connexion.headers.get(entete):
                 return False
-        hote = (request.client.host if request.client else "") or ""
+        hote = (connexion.client.host if connexion.client else "") or ""
         try:
             return ipaddress.ip_address(hote).is_loopback
         except ValueError:
@@ -623,28 +627,44 @@ def create_app(
             # client interne, en mémoire. Une vraie connexion distante porte toujours une adresse.
             return True
 
-    def require_token(request: Request) -> None:
+    def _jeton_presente(connexion: HTTPConnection) -> str:
+        """Le jeton que porte la connexion : l'en-tête Authorization d'abord, sinon « ?token= »."""
+        header = connexion.headers.get("authorization", "")
+        return header[7:] if header.lower().startswith("bearer ") else connexion.query_params.get("token", "")
+
+    def raison_de_refus(connexion: HTTPConnection) -> str | None:
+        """LA règle d'accès, la même pour le HTTP et pour le WebSocket. Rend la phrase de refus,
+        ou None si la connexion est admise.
+
+        Une seule fonction, pas deux : jusqu'au 6 septembre 2026, /ws avait sa propre règle,
+        réduite au jeton maître. Elle ignorait les deux garde-fous posés ici sur le HTTP — la
+        session par mot de passe et l'origine locale — alors que /ws porte « chat.send », qui
+        pilote l'ordinateur. Quiconque avait vu l'adresse « /m?token=… » pouvait donc, à travers un
+        tunnel, ouvrir le WebSocket et commander le PC sans mot de passe, pendant que le HTTP le
+        refusait. Deux règles pour la même porte, c'est une règle de trop."""
         if token is None:
-            return
-        header = request.headers.get("authorization", "")
-        supplied = header[7:] if header.lower().startswith("bearer ") else request.query_params.get("token", "")
+            return None
+        supplied = _jeton_presente(connexion)
         # Une session ouverte avec le mot de passe donne les mêmes droits : c'est par là que passe
         # le téléphone.
         if supplied and supplied != token and ctx.comptes.session_valide(supplied):
-            return
+            return None
         if supplied != token:
-            raise HTTPException(status_code=401, detail="jeton de session invalide")
+            return "jeton de session invalide"
         # Jeton maître accepté — mais IRIS écrit elle-même ce jeton dans l'adresse qu'elle donne au
         # téléphone (« /m?token=… »). Une adresse finit dans un historique, une capture d'écran, un
         # message qu'on s'envoie à soi-même. Tant qu'aucun mot de passe n'existe, c'est le seul
         # secret dont on dispose et il faut bien s'en contenter. Dès qu'il en existe un, ce jeton
         # cesse de valoir depuis l'extérieur : sinon le mot de passe ne protégerait rien du tout,
         # et la promesse écrite dans docs/ACCES-DISTANT.md serait fausse.
-        if ctx.comptes.configure and not _vient_de_cet_ordinateur(request):
-            raise HTTPException(
-                status_code=401,
-                detail="Depuis un autre appareil, connectez-vous avec votre mot de passe.",
-            )
+        if ctx.comptes.configure and not _vient_de_cet_ordinateur(connexion):
+            return "Depuis un autre appareil, connectez-vous avec votre mot de passe."
+        return None
+
+    def require_token(request: Request) -> None:
+        raison = raison_de_refus(request)
+        if raison is not None:
+            raise HTTPException(status_code=401, detail=raison)
 
     auth = [Depends(require_token)]
 
@@ -1399,9 +1419,12 @@ def create_app(
     # ------------------------------------------------------------------ WebSocket
     @app.websocket("/ws")
     async def websocket(ws: WebSocket):
-        supplied = ws.query_params.get("token", "")
-        if token is not None and supplied != token:
-            await ws.close(code=4401)
+        # Même règle que le HTTP, par la même fonction (voir raison_de_refus). On ferme AVANT
+        # d'accepter : la poignée de main n'aboutit pas, le serveur répond 403, et le code 4401
+        # avec sa phrase restent lisibles par le client qui sait les lire.
+        raison = raison_de_refus(ws)
+        if raison is not None:
+            await ws.close(code=4401, reason=raison)
             return
         await ws.accept()
         q = ctx.hub.subscribe()
@@ -1468,5 +1491,22 @@ def create_app(
         finally:
             reader_task.cancel()
             ctx.hub.unsubscribe(q)
+
+    # ------------------------------------------------------------------ courriel et téléphonie
+    # Le routeur du chantier D (routes_communications.py) : c'est lui qui donne enfin au téléphone
+    # le moyen de LIRE le brouillon de SMS que telephonie.py déposait — jusqu'ici, IRIS annonçait
+    # « c'est prêt sur ton téléphone » et rien n'y apparaissait. Import protégé, comme
+    # construire_opencode : le module a été écrit en parallèle de ce câblage, et une IRIS qui
+    # refuse de démarrer parce qu'un module manque est pire que l'absence de ses routes. Il
+    # s'inclut avec `auth`, la même garde que /api/status : session ou jeton maître local.
+    try:
+        from .routes_communications import creer_routeur
+    except Exception as exc:
+        log.info("routes de communication indisponibles (module absent) : %s", exc)
+    else:
+        try:
+            app.include_router(creer_routeur(ctx), dependencies=auth)
+        except Exception as exc:
+            log.warning("routeur de communication non branché : %s", exc)
 
     return app

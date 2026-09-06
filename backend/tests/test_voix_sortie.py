@@ -64,9 +64,10 @@ class FauxHub:
         return data
 
 
-def _voix(data_dir, sortie: str = "", sorties_presentes: list[str] | None = None):
+def _voix(data_dir, sortie: str = "", sorties_presentes: list[str] | None = None, micro: str = ""):
     settings = Settings(data_dir)
     settings.user.audio_output_device = sortie
+    settings.user.audio_input_device = micro
     hub = FauxHub()
     # enabled=False : aucun thread, aucun moteur réel, aucun COM initialisé
     tts = TextToSpeech(settings, hub, enabled=False)
@@ -92,6 +93,35 @@ def test_entre_les_deux_sorties_des_lunettes_c_est_hands_free_qui_gagne(data_dir
     tts, sapi, _hub = _voix(data_dir, sortie="M01 Pro_F444")
     tts._apply_settings()
     assert sapi.AudioOutput.description == MAINS_LIBRES
+
+
+def test_avec_le_micro_mains_libres_la_sortie_stereo_demandee_est_redirigee_vers_le_mains_libres(data_dir):
+    """Si l'assertion tombe, la configuration RÉELLE de Miguel parle dans le vide.
+
+    Relevé dans %APPDATA%/IRIS le 6 septembre 2026 : micro « Casque (M01 Pro_F444 Hands-Free »,
+    sortie « Casque (M01 Pro_F444 Stereo) » — nommée en toutes lettres, donc « M01 Pro_F444 » seul
+    ne suffisait plus à retrouver le canal mains libres. Or dès que le micro mains libres écoute,
+    Windows suspend la stéréo : la sortie demandée existe, mais rien n'en sort.
+    """
+    tts, sapi, _hub = _voix(data_dir, sortie=STEREO, micro="Casque (M01 Pro_F444 Hands-Free")
+    tts._apply_settings()
+    assert sapi.AudioOutput.description == MAINS_LIBRES
+
+
+def test_sans_micro_mains_libres_la_sortie_stereo_demandee_est_respectee(data_dir):
+    """Si l'assertion tombe, IRIS impose le 8 kHz mono du profil téléphone à quelqu'un qui n'écoute
+    pas par les lunettes : la stéréo est alors bien vivante, et c'est elle qu'on a demandée."""
+    tts, sapi, _hub = _voix(data_dir, sortie=STEREO, micro="")
+    tts._apply_settings()
+    assert sapi.AudioOutput.description == STEREO
+
+
+def test_le_micro_mains_libres_ne_detourne_pas_une_sortie_dun_autre_appareil(data_dir):
+    """Si l'assertion tombe, choisir les haut-parleurs du PC comme sortie (pour une démo dans une
+    salle, micro dans les lunettes) envoie quand même la voix dans les lunettes."""
+    tts, sapi, _hub = _voix(data_dir, sortie=HAUT_PARLEURS, micro="Casque (M01 Pro_F444 Hands-Free")
+    tts._apply_settings()
+    assert sapi.AudioOutput.description == HAUT_PARLEURS
 
 
 def test_des_lunettes_absentes_laissent_parler_la_sortie_par_defaut(data_dir):
@@ -211,11 +241,37 @@ def test_le_prechauffage_ne_fait_aucun_bruit(app, monkeypatch):
     assert len(dits) == 1 and len(dits[0]) <= 2, "une syllabe suffit a ouvrir le peripherique"
 
 
-def test_le_prechauffage_ne_touche_a_rien_quand_elevenlabs_repond(app, monkeypatch):
-    """ElevenLabs a deja sa propre pre-connexion : ce chemin-la ne le concerne pas."""
+def test_quand_elevenlabs_repond_cest_sa_sortie_qui_est_prechauffee(app, monkeypatch):
+    """Si l'assertion tombe, la configuration réelle (ElevenLabs actif) n'est jamais préchauffée.
+
+    L'ancienne règle sortait tôt dès qu'ElevenLabs répondait, au motif qu'il avait « sa propre
+    pré-connexion » — une poignée de main HTTPS, qui n'ouvre aucun périphérique. Le basculement du
+    casque (8,3 s mesurées) tombait donc sur le tout premier « Dis-moi Iris ». C'est le chemin qui
+    va parler qu'on préchauffe : ElevenLabs ouvre sa sortie, la file SAPI n'est pas touchée.
+    """
     tts = app.state.ctx.tts
     monkeypatch.setattr(tts, "_use_elevenlabs", lambda: True)
+    prechauffes = []
+    monkeypatch.setattr(tts.eleven, "prechauffer", lambda: prechauffes.append("elevenlabs"))
     mis = []
     monkeypatch.setattr(tts._queue, "put", lambda x: mis.append(x))
     tts.prechauffer()
+    assert prechauffes == ["elevenlabs"]
     assert mis == []
+
+
+def test_quand_windows_parle_cest_la_file_sapi_qui_est_prechauffee(app, monkeypatch):
+    """Le chemin Windows garde son préchauffage : la sentinelle part dans la file SAPI, pas ailleurs."""
+    from iris.voice.tts import PRECHAUFFAGE
+
+    tts = app.state.ctx.tts
+    monkeypatch.setattr(tts, "_use_elevenlabs", lambda: False)
+    monkeypatch.setattr(tts, "available", True)
+    monkeypatch.setattr(tts, "_ensure_started", lambda: None)  # aucun thread, aucun moteur réel
+    prechauffes = []
+    monkeypatch.setattr(tts.eleven, "prechauffer", lambda: prechauffes.append("elevenlabs"))
+    mis = []
+    monkeypatch.setattr(tts._queue, "put", lambda x: mis.append(x))
+    tts.prechauffer()
+    assert mis == [PRECHAUFFAGE]
+    assert prechauffes == []

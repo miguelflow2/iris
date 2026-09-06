@@ -5,12 +5,20 @@ from __future__ import annotations
 import base64
 import ctypes
 import io
+import logging
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PureWindowsPath
+from typing import Iterable
+
+# Ce module appelait déjà `log.warning` (panne d'OCR) sans jamais avoir défini de logger : la
+# première panne d'OCR aurait levé un NameError à l'intérieur du gestionnaire d'exception.
+log = logging.getLogger("iris.pc.actions")
 
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
@@ -161,8 +169,277 @@ def _expand(path: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(path.strip().strip('"'))))
 
 
+# ---------------------------------------------------------------------------
+# Le périmètre des fichiers
+# ---------------------------------------------------------------------------
+# Jusqu'au 6 septembre 2026, write_file, read_file, open_path et run_command prenaient n'importe
+# quel chemin tel quel. Le modèle actif est un modèle gratuit et throttlé ; à qui l'on dit
+# « corrige mon site », rien n'interdisait de lire `.env` dans le dépôt d'IRIS (clés ElevenLabs
+# et de licence), d'écrire dans C:\Windows, ou de lancer PowerShell sans dossier de travail —
+# c'est-à-dire DANS le dépôt d'IRIS, puisque c'est de là que tourne le backend. La seule
+# protection était la bonne volonté du modèle. Ce bloc est ce qui la remplace.
+#
+# Il reprend, trait pour trait, les pièges mesurés pour la délégation à OpenCode (opencode.py) :
+# ce sont les mêmes chemins, les mêmes jonctions et la même machine.
+
+
+class HorsPerimetre(PermissionError):
+    """Le chemin sort des dossiers où IRIS a le droit d'agir. Le message est la phrase à dire."""
+
+
+@dataclass(frozen=True)
+class Perimetre:
+    """Où IRIS a le droit de lire, d'écrire, d'ouvrir et de lancer des commandes.
+
+    `interdites` prime sur `autorisees` : autoriser ~/Downloads ne doit jamais ouvrir le dépôt
+    d'IRIS, qui est dedans sur cette machine (Downloads/startup/iris)."""
+
+    autorisees: tuple[Path, ...]
+    interdites: tuple[Path, ...]
+    projets: Path  # le dossier où IRIS crée ses projets ; le seul où l'on écrit sans confirmation
+
+
+_VARIABLE_NON_RESOLUE = re.compile(r"%[^%\\/]+%")
+_CARACTERE_DE_CONTROLE = re.compile(r"[\x00-\x1f]")
+_LECTEUR_RELATIF = re.compile(r"^[A-Za-z]:(?![\\/])")  # « C:foo », et « C: » tout seul
+
+# Les vrais dossiers de l'utilisateur, tels que Windows les range. Sur cette machine, le registre
+# dit que Documents est C:\Users\migue\OneDrive\Documents — pas C:\Users\migue\Documents, qui
+# existe pourtant aussi. Le nom physique ne change jamais de langue : « Téléchargements » est un
+# habillage de l'Explorateur, le dossier s'appelle Downloads.
+_DOSSIERS_CONNUS_WINDOWS = {
+    "Desktop": "Desktop",
+    "Documents": "Personal",
+    "Downloads": "{374DE290-123F-4565-9164-39C4925E467B}",
+}
+
+
+def _dossier_connu_windows(cle: str) -> Path | None:
+    """Où Windows range vraiment ce dossier (OneDrive, disque secondaire…), ou None."""
+    if not IS_WIN:
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        ) as registre:
+            valeur, _ = winreg.QueryValueEx(registre, cle)
+    except OSError:
+        return None
+    chemin = os.path.expandvars(str(valeur or ""))
+    if not chemin or _VARIABLE_NON_RESOLUE.search(chemin):
+        return None
+    return Path(chemin)
+
+
+def dossier_projets() -> Path:
+    """~/Documents/IRIS : là où IRIS crée les sites et les applications qu'on lui demande."""
+    return Path.home() / "Documents" / "IRIS"
+
+
+def _resoudre_racines(bruts: Iterable[Path]) -> tuple[Path, ...]:
+    resolus: list[Path] = []
+    for chemin in bruts:
+        try:
+            resolus.append(chemin.expanduser().resolve())
+        except OSError:
+            continue
+    return tuple(dict.fromkeys(resolus))
+
+
+def racines_autorisees_par_defaut() -> tuple[Path, ...]:
+    """Le dossier de projets, le Bureau, Documents et Téléchargements — les deux emplacements
+    possibles de chacun (celui du registre et celui du profil), parce que Miguel a des fichiers
+    dans les deux."""
+    maison = Path.home()
+    bruts: list[Path] = [dossier_projets()]
+    for nom, cle in _DOSSIERS_CONNUS_WINDOWS.items():
+        bruts.append(maison / nom)
+        connu = _dossier_connu_windows(cle)
+        if connu is not None:
+            bruts.append(connu)
+    return _resoudre_racines(bruts)
+
+
+def racines_interdites_par_defaut() -> tuple[Path, ...]:
+    """Ce qui reste fermé MÊME sous un dossier autorisé : le système, les programmes, AppData (les
+    réglages, les clés et le jeton d'IRIS y vivent), les clés SSH, et le dépôt d'IRIS lui-même."""
+    maison = Path.home()
+    bruts: list[Path] = []
+    for variable in ("SystemRoot", "ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "ProgramData"):
+        valeur = os.environ.get(variable)
+        if valeur:
+            bruts.append(Path(valeur))
+    for relatif in ("AppData", ".ssh", ".aws", ".gnupg"):
+        bruts.append(maison / relatif)
+    try:
+        from ..config import default_data_dir
+
+        bruts.append(default_data_dir())
+    except Exception:  # pragma: no cover - le périmètre ne dépend pas de la configuration
+        pass
+    try:
+        # backend/iris/pc/actions.py -> pc -> iris -> backend -> la racine du dépôt (ou, une fois
+        # installé, le dossier de l'application). On ne retient ce dossier que s'il ne CONTIENT pas
+        # le profil de l'utilisateur : à une profondeur inattendue, ce calcul rendrait C:\Users, et
+        # la liste noire fermerait tout.
+        depot = Path(__file__).resolve().parents[3]
+        if depot.parent != depot and not _sous(maison, depot):
+            bruts.append(depot)
+    except (IndexError, OSError):  # pragma: no cover
+        pass
+    return _resoudre_racines(bruts)
+
+
+def perimetre_par_defaut() -> Perimetre:
+    projets = _resoudre_racines([dossier_projets()])
+    return Perimetre(
+        autorisees=racines_autorisees_par_defaut(),
+        interdites=racines_interdites_par_defaut(),
+        projets=projets[0] if projets else dossier_projets(),
+    )
+
+
+# Surcharge : les tests posent ici un périmètre dans un dossier temporaire (qui est sous AppData,
+# donc interdit par défaut). None = le périmètre réel de la machine, calculé à chaque appel : il
+# suit les variables d'environnement et le registre, et coûte quelques appels au système.
+PERIMETRE: Perimetre | None = None
+
+
+def perimetre_actif() -> Perimetre:
+    return PERIMETRE if PERIMETRE is not None else perimetre_par_defaut()
+
+
+def _sous(cible: Path, racine: Path) -> bool:
+    try:
+        return cible == racine or cible.is_relative_to(racine)
+    except (OSError, ValueError):
+        return False
+
+
+def _normaliser_chemin(brut: str, perimetre: Perimetre) -> Path:
+    """Chaîne -> chemin absolu résolu, ou `HorsPerimetre` avec une phrase française.
+
+    Chaque refus correspond à un piège mesuré sur cette machine (Python 3.13, Windows 10)."""
+    chemin = (brut or "").strip().strip('"')
+    if not chemin:
+        raise HorsPerimetre("Aucun chemin n'a été donné. Je ne devine pas quel fichier tu veux.")
+    if _CARACTERE_DE_CONTROLE.search(chemin):
+        raise HorsPerimetre("Ce chemin contient un caractère de contrôle (retour à la ligne, nul…) : je ne l'accepte pas.")
+    plat = chemin.replace("/", "\\")
+    if plat.startswith("\\\\?\\") or plat.startswith("\\\\.\\"):
+        # Mesuré : Path(r'\\?\C:\...\..\..\Windows').resolve() rend « C:Users\Windows », qui n'est
+        # ni le chemin de départ ni un confinement valable. Ce qui casse la normalisation se refuse.
+        raise HorsPerimetre(
+            "Ce chemin est écrit en notation périphérique (\\\\?\\ ou \\\\.\\). Je ne sais pas le "
+            "vérifier de façon fiable, donc je n'y touche pas. Donne-moi le chemin normal."
+        )
+    if plat.startswith("\\\\"):
+        raise HorsPerimetre(
+            "Ce chemin est sur un partage réseau. Je ne lis et n'écris que sur cet ordinateur : "
+            "ce qui se passe ailleurs ne se surveille pas, et ne se répare pas."
+        )
+    if _LECTEUR_RELATIF.match(chemin):
+        # « C:site » n'est pas C:\site : mesuré, ça se résout contre le dossier courant du backend,
+        # c'est-à-dire dans le dépôt d'IRIS.
+        raise HorsPerimetre(
+            f"« {chemin} » n'est pas un chemin complet : il est relatif au lecteur, pas à sa racine. "
+            "Écris-le en entier, avec la barre après les deux-points."
+        )
+    etendu = os.path.expandvars(os.path.expanduser(chemin))
+    if _VARIABLE_NON_RESOLUE.search(etendu):
+        # « %USERPROFILE%\site » arrive tel quel quand un modèle recopie une variable d'un fichier de
+        # configuration. Non résolue, elle désigne un dossier littéralement nommé « %…% ».
+        raise HorsPerimetre(
+            f"« {chemin} » contient une variable d'environnement que personne ne connaît. "
+            "Donne-moi le chemin complet."
+        )
+    if IS_WIN:
+        pur = PureWindowsPath(etendu)
+        if pur.root and not pur.drive:
+            # « \site » : enraciné sans lecteur. Joint à un dossier, il en garde le lecteur et en
+            # jette le reste (mesuré : Documents/IRIS joint à « \foo » donne C:\foo).
+            raise HorsPerimetre(
+                f"« {chemin} » commence par une barre sans lecteur : il désigne la racine du disque, "
+                "pas un dossier. Écris le chemin complet, ou un chemin relatif à mon dossier de projets."
+            )
+    candidat = Path(etendu)
+    if not candidat.is_absolute():
+        # Un chemin relatif se lit depuis le dossier de projets, jamais depuis le dossier courant
+        # du backend (le dépôt d'IRIS). « site/index.html » veut dire Documents/IRIS/site/index.html.
+        candidat = perimetre.projets / candidat
+    try:
+        # C'est `resolve()` qui fait le vrai travail : il règle les « .. » (même sur des segments qui
+        # n'existent pas encore — mesuré : Documents/IRIS/nouveau/../../../.ssh/x rend
+        # C:\Users\migue\.ssh\x), la casse, les noms courts 8.3 (DOCUME~1 -> Documents), les liens
+        # symboliques ET les jonctions Windows. On ne s'appuie jamais sur `is_symlink()`, qui rend
+        # False sur une jonction — mesuré sur « C:\Users\migue\Application Data », qui pointe vers
+        # AppData\Roaming, et sur une jonction créée pour le test.
+        return candidat.resolve()
+    except OSError as erreur:
+        raise HorsPerimetre(f"Je n'arrive pas à vérifier ce chemin : {erreur}") from None
+
+
+def _verifier_liste_noire(cible: Path, perimetre: Perimetre) -> None:
+    for interdit in perimetre.interdites:
+        if _sous(cible, interdit):
+            raise HorsPerimetre(
+                f"Je ne touche pas à « {cible} » : ce dossier est protégé ({interdit}). Il contient "
+                "le système, l'application, ou mes propres réglages et mes clés."
+            )
+
+
+def resoudre_dans_perimetre(chemin: str, perimetre: Perimetre | None = None) -> Path:
+    """Rend le chemin RÉSOLU si et seulement s'il est dans le périmètre. Sinon lève `HorsPerimetre`.
+
+    Le résultat est le seul chemin utilisé ensuite — jamais la phrase dite par l'utilisateur, jamais
+    celle produite par un modèle : on a mesuré qu'elles peuvent désigner deux endroits différents."""
+    perimetre = perimetre or perimetre_actif()
+    cible = _normaliser_chemin(chemin, perimetre)
+    _verifier_liste_noire(cible, perimetre)  # la liste noire d'abord : elle prime
+    if not any(_sous(cible, racine) for racine in perimetre.autorisees):
+        liste = ", ".join(str(r) for r in perimetre.autorisees[:4]) or "aucun"
+        raise HorsPerimetre(
+            f"« {cible} » est hors des dossiers où j'ai le droit d'agir ({liste}). "
+            "Je n'y lis rien et je n'y écris rien."
+        )
+    return cible
+
+
+def dans_dossier_projets(cible: Path, perimetre: Perimetre | None = None) -> bool:
+    """Le seul endroit où IRIS écrit un fichier NEUF sans demander : son propre dossier de projets."""
+    perimetre = perimetre or perimetre_actif()
+    return _sous(cible, perimetre.projets)
+
+
+def dossier_de_travail(cwd: str | None = None) -> Path:
+    """Le dossier où tourne une commande : celui qu'on donne (dans le périmètre), sinon le dossier
+    de projets. Jamais le dossier courant du backend — mesuré, c'est le dépôt d'IRIS."""
+    perimetre = perimetre_actif()
+    if cwd and cwd.strip():
+        dossier = resoudre_dans_perimetre(cwd, perimetre)
+        if not dossier.is_dir():
+            raise HorsPerimetre(f"« {dossier} » n'est pas un dossier existant : je ne peux pas y lancer de commande.")
+        return dossier
+    try:
+        perimetre.projets.mkdir(parents=True, exist_ok=True)
+    except OSError as erreur:
+        raise HorsPerimetre(f"Je ne peux pas créer mon dossier de projets « {perimetre.projets} » : {erreur}") from None
+    return perimetre.projets
+
+
 def open_path(path: str) -> str:
-    target = _expand(path)
+    perimetre = perimetre_actif()
+    target = _normaliser_chemin(path, perimetre)
+    if target.is_dir():
+        # Ouvrir un DOSSIER, c'est afficher l'Explorateur : rien ne s'exécute. On ne ferme que les
+        # dossiers protégés — « ouvre mon dossier Images » doit marcher, C:\Windows doit rester clos.
+        _verifier_liste_noire(target, perimetre)
+    else:
+        # Ouvrir un FICHIER, c'est lancer l'application associée — et pour un .exe, un .bat, un .lnk
+        # ou un .ps1, c'est l'exécuter. Même périmètre que la lecture et l'écriture.
+        target = resoudre_dans_perimetre(path, perimetre)
     if not target.exists():
         raise FileNotFoundError(f"Chemin introuvable : {target}")
     if IS_WIN:
@@ -227,16 +504,23 @@ def search_files(query: str, folder: str | None = None, max_results: int = 20, m
     return results
 
 
-def run_command(command: str, timeout: int = 60) -> dict:
+def run_command(command: str, timeout: int = 60, cwd: str | None = None) -> dict:
     command = (command or "").strip()
     if not command:
         raise ValueError("commande vide")
+    # Sans `cwd`, PowerShell héritait du dossier courant du backend : le dépôt d'IRIS. Un
+    # « npm install » ou un « git init » demandé pour un site atterrissait là. Le dossier de
+    # travail vient maintenant du périmètre, et une commande dont le dossier est hors périmètre
+    # ne démarre pas.
+    dossier = dossier_de_travail(cwd)
     if IS_WIN:
         args = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
     else:
         args = ["/bin/sh", "-c", command]
     try:
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+        proc = subprocess.run(
+            args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace", cwd=str(dossier)
+        )
     except subprocess.TimeoutExpired:
         return {"code": -1, "output": f"Commande interrompue après {timeout}s."}
     output = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
@@ -383,7 +667,7 @@ MAX_READ = 200_000
 
 
 def read_file(path: str, max_chars: int = MAX_READ) -> str:
-    target = _expand(path)
+    target = resoudre_dans_perimetre(path)
     if not target.is_file():
         raise FileNotFoundError(f"Fichier introuvable : {target}")
     if target.stat().st_size > 5_000_000:
@@ -395,7 +679,9 @@ def read_file(path: str, max_chars: int = MAX_READ) -> str:
 
 
 def write_file(path: str, content: str, append: bool = False) -> str:
-    target = _expand(path)
+    # Le périmètre est vérifié ICI aussi, pas seulement dans tools.py : une routine, une tâche ou
+    # un futur appelant direct ne doit pas pouvoir contourner la règle en sautant l'outil.
+    target = resoudre_dans_perimetre(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     existed = target.exists()
     with open(target, "a" if append else "w", encoding="utf-8", newline="") as fh:

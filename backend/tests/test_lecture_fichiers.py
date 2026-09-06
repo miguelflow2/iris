@@ -15,6 +15,21 @@ import pytest
 from iris import lecture_fichiers as lf
 
 
+@pytest.fixture(autouse=True)
+def _perimetre_tmp(tmp_path, monkeypatch):
+    """Autorise tmp_path pour ces tests : on lit de vrais fichiers écrits par le test, pas ceux de
+    l'utilisateur. Le périmètre de sécurité (chantier du 6 septembre) refuse %TEMP% par défaut, ce
+    qui est le bon comportement en production — mais bloquerait toute lecture de fixture ici."""
+    from iris.pc import actions
+
+    perimetre = actions.Perimetre(
+        autorisees=(tmp_path.resolve(),),
+        interdites=(),
+        projets=tmp_path.resolve(),
+    )
+    monkeypatch.setattr(actions, "PERIMETRE", perimetre)
+
+
 # --------------------------------------------------------------------------- PDF
 def test_un_pdf_sans_texte_est_dit_scanne(tmp_path):
     from pypdf import PdfWriter

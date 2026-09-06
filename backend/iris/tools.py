@@ -106,7 +106,9 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec(
         "write_file",
         "Crée ou remplace un fichier texte (code source, page web, script, document…). Crée les dossiers manquants. "
-        "Pour développer une application ou un site, écris chaque fichier avec cet outil puis lance les commandes nécessaires avec run_command.",
+        "Pour développer une application ou un site, écris chaque fichier avec cet outil puis lance les commandes nécessaires avec run_command. "
+        "Un chemin relatif se lit depuis le dossier de projets (~/Documents/IRIS) ; seuls ce dossier, le Bureau, Documents et "
+        "Téléchargements sont accessibles. Remplacer un fichier existant, ou écrire hors du dossier de projets, demande confirmation.",
         _obj(
             {
                 "path": {"type": "string"},
@@ -119,11 +121,13 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec(
         "run_command",
         "Exécute une commande shell (PowerShell sous Windows) et renvoie sa sortie : installer des dépendances, lancer un build, "
-        "démarrer un serveur, git, etc. Explique en une phrase ce que fait la commande dans 'reason'. Les commandes dangereuses demandent confirmation.",
+        "démarrer un serveur, git, etc. Explique en une phrase ce que fait la commande dans 'reason'. Les commandes dangereuses demandent confirmation. "
+        "La commande tourne dans 'cwd' (défaut : le dossier de projets ~/Documents/IRIS) ; donne le dossier du projet plutôt que de faire cd.",
         _obj(
             {
                 "command": {"type": "string"},
                 "reason": {"type": "string", "description": "Ce que fait la commande, en langage simple"},
+                "cwd": {"type": "string", "description": "Dossier de travail (dans le périmètre : dossier de projets, Bureau, Documents, Téléchargements)"},
                 "timeout": {"type": "integer", "minimum": 5, "maximum": 600, "description": "Délai max en secondes (défaut 60)"},
             },
             ["command", "reason"],
@@ -869,7 +873,10 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
             playing = result["playing"]
             return f"Lecture lancée : « {playing['title']} » ({playing['channel']}) — {playing['url']}"
         if name == "open_path":
-            return await asyncio.to_thread(actions.open_path, args.get("path", ""))
+            try:
+                return await asyncio.to_thread(actions.open_path, args.get("path", ""))
+            except actions.HorsPerimetre as exc:
+                return _err(str(exc))
         if name == "search_files":
             found = await asyncio.to_thread(
                 actions.search_files, args.get("query", ""), args.get("folder"), int(args.get("max_results") or 20)
@@ -879,25 +886,56 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
             items = await asyncio.to_thread(actions.list_directory, args.get("path", "~"))
             return json.dumps(items, ensure_ascii=False)
         if name == "read_file":
-            return await asyncio.to_thread(actions.read_file, args.get("path", ""))
+            try:
+                return await asyncio.to_thread(actions.read_file, args.get("path", ""))
+            except actions.HorsPerimetre as exc:
+                return _err(str(exc))
         if name == "write_file":
-            path = args.get("path", "")
-            if policy == "always":
-                approved = await ctx.confirm("Écrire un fichier", path)
+            # Jusqu'au 6 septembre 2026, on ne demandait l'accord que si confirm_commands valait
+            # « always » — et le réglage par défaut est « dangerous ». Un modèle pouvait donc
+            # remplacer n'importe quel fichier existant, n'importe où, sans qu'on le voie. Deux
+            # cas demandent maintenant TOUJOURS l'accord, quel que soit le réglage : un fichier qui
+            # existe déjà (on l'écrase), et un chemin hors du dossier de projets (ce n'est pas le
+            # territoire d'IRIS). Et l'accord porte sur le chemin RÉSOLU, pas sur la phrase du
+            # modèle : « site/../../Bureau/x » doit s'afficher comme le Bureau, pas comme le site.
+            try:
+                cible = await asyncio.to_thread(actions.resoudre_dans_perimetre, args.get("path", ""))
+            except actions.HorsPerimetre as exc:
+                return _err(str(exc))
+            path = str(cible)
+            ajout = bool(args.get("append"))
+            existe = await asyncio.to_thread(cible.exists)
+            if existe:
+                titre = "Compléter un fichier existant" if ajout else "Remplacer un fichier existant"
+            elif not actions.dans_dossier_projets(cible):
+                titre = "Écrire un fichier hors du dossier de projets"
+            elif policy == "always":
+                titre = "Écrire un fichier"
+            else:
+                titre = None
+            if titre is not None:
+                approved = await ctx.confirm(titre, path)
                 if not approved:
                     return _err("L'utilisateur a refusé l'écriture de ce fichier.")
-            result = await asyncio.to_thread(actions.write_file, path, args.get("content", ""), bool(args.get("append")))
+            try:
+                result = await asyncio.to_thread(actions.write_file, path, args.get("content", ""), ajout)
+            except actions.HorsPerimetre as exc:
+                return _err(str(exc))
             ctx.consent.log("file_written", agent=ctx.agent, detail=path)
             return result
         if name == "run_command":
             command = args.get("command", "")
             reason = args.get("reason", "")
+            cwd = args.get("cwd") or None
             if needs_confirmation(policy, command):
                 approved = await ctx.confirm(f"Exécuter une commande : {reason or 'sans description'}", command)
                 if not approved:
                     return _err("L'utilisateur a refusé l'exécution de cette commande.")
             timeout = int(args.get("timeout") or 60)
-            result = await asyncio.to_thread(actions.run_command, command, timeout)
+            try:
+                result = await asyncio.to_thread(actions.run_command, command, timeout, cwd)
+            except actions.HorsPerimetre as exc:
+                return _err(str(exc))
             ctx.consent.log("command_executed", agent=ctx.agent, detail=command)
             return f"Code de retour : {result['code']}\n{result['output']}"
         if name == "type_text":

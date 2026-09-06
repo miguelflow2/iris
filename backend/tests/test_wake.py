@@ -352,3 +352,39 @@ def test_une_file_pleine_garde_le_son_le_plus_recent(app):
     assert restant[-1] == bytes([9, 0]), "le bloc neuf doit etre entre"
     assert bytes([1, 0]) not in restant, "le plus vieux doit etre sorti"
     assert voice.dropped == 1
+
+
+# --------------------------------------------------------------------------- le mot d'activation vendu
+# Audit du 6 septembre 2026 : le mot d'activation réel de la machine de Miguel était «  Iris » —
+# espace en tête, un seul mot — et deux alias par défaut (« irisse », « hiris ») n'existaient pas
+# dans le vocabulaire du modèle Vosk (« Ignoring word missing in vocabulary ») : ils n'ont jamais
+# réveillé personne. Le défaut est maintenant le nom vendu, nettoyé à la lecture, avec des alias
+# que Vosk connaît tous.
+def test_le_nom_vendu_et_iris_tout_court_reveillent_iris():
+    from iris.config import UserSettings
+
+    u = UserSettings()
+    assert u.wake_word == "Dis-moi Iris"
+    for phrase, reste in (("dis moi iris ouvre youtube", "ouvre youtube"), ("iris quelle heure est il", "quelle heure est il")):
+        trouve, commande = contains_wake(phrase, u.wake_word, aliases=list(u.wake_aliases))
+        assert trouve and commande == reste, phrase
+
+
+def test_les_alias_par_defaut_ne_contiennent_que_des_mots_que_vosk_connait():
+    """Chaque mot de la grammaire doit exister dans le modèle, sinon Vosk le retire en silence."""
+    from iris.config import UserSettings
+
+    u = UserSettings()
+    mots = {m for p in wake_phrases(u.wake_word, list(u.wake_aliases)) for m in p.split()}
+    assert mots <= {"dis", "moi", "iris", "dit"}, mots
+    assert not mots & {"irisse", "hiris"}
+
+
+def test_lespace_en_tete_du_reglage_ne_change_ni_le_mot_ni_ce_que_voit_linterface(app):
+    """«  Iris » tel qu'il était enregistré : reconnu comme « iris », affiché comme « Iris »."""
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({"wake_word": " Iris"})
+    assert voice.status()["wake_word"] == "Iris"
+    assert wake_phrases(app.state.ctx.settings.user.wake_word, ["iris"]) == ["iris"]
+    trouve, reste = contains_wake("iris ouvre google", app.state.ctx.settings.user.wake_word, aliases=[])
+    assert trouve and reste == "ouvre google"

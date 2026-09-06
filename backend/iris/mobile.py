@@ -10,6 +10,11 @@ le seul montage possible : les lunettes n'ont ni WiFi ni carte SIM.
 La reconnaissance vocale est celle du navigateur (gratuite, pas de clé). La réponse est lue par la
 synthèse du téléphone, donc entendue dans les lunettes puisqu'elles en sont la sortie audio.
 
+Elle affiche aussi les textos et appels qu'IRIS a préparés (telephonie.py, voie « iphone ») : un
+lien sms: ou tel: qui ouvre Messages ou le composeur déjà rempli, puis « C'est envoyé » ou
+« Annuler ». Elle les obtient en sondant /api/telephonie/en_attente (routes_communications.py).
+Jusqu'au 6 septembre 2026, IRIS annonçait « touche Envoyer » et rien n'apparaissait ici.
+
 Le téléphone de Miguel est un iPhone. Cette page est donc écrite pour Safari iOS d'abord :
 installation par « Sur l'écran d'accueil », synthèse vocale à amorcer depuis un vrai geste,
 reconnaissance vocale capricieuse dont on ne dépend jamais, zone sûre et clavier respectés.
@@ -91,6 +96,23 @@ PAGE = """<!doctype html>
              color:var(--text); font-size:16px; }
   @media (prefers-reduced-motion: reduce) { *{animation:none!important; transition:none!important} }
 
+  /* Brouillons de SMS et d'appel déposés par IRIS. Avant le 6 septembre 2026, ils n'apparaissaient
+     nulle part : IRIS disait « touche Envoyer » et le téléphone restait vide. Ils vivent au-dessus
+     du fil, jamais dedans : un texto à faire partir ne doit pas défiler hors de vue. */
+  #brouillons { display:flex; flex-direction:column; gap:8px; margin:0 0 8px; max-height:45%; overflow-y:auto; }
+  .brouillon { background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--terracotta);
+               border-radius:12px; padding:11px 12px; display:flex; flex-direction:column; gap:8px; }
+  .brouillon-titre { font-weight:600; font-size:14px; }
+  .brouillon-texte { white-space:pre-wrap; word-wrap:break-word; font-size:15px; }
+  .brouillon-note { font-size:12.5px; color:var(--text-2); }
+  .brouillon-ouvrir { display:flex; align-items:center; justify-content:center; min-height:48px;
+                      border-radius:14px; background:var(--accent); color:var(--encre); font-size:17px;
+                      font-weight:600; text-decoration:none; }
+  .brouillon-ouvrir:active { transform:scale(.98); }
+  .brouillon .ligne button { flex:1; min-height:44px; border:1px solid var(--line); border-radius:12px;
+                             background:transparent; color:var(--text); font-size:15px; }
+  .brouillon .ligne button.fait { color:var(--terracotta-clair); font-weight:600; }
+
   /* Écran de connexion : l'adresse seule ne doit jamais suffire à commander l'ordinateur. */
   #verrou { position:fixed; inset:0; background:var(--bg); z-index:20; display:none;
             flex-direction:column; align-items:center; justify-content:center;
@@ -132,6 +154,9 @@ PAGE = """<!doctype html>
   <p id="banniere-texte"></p>
   <button id="banniere-ok">Compris</button>
 </div>
+
+<!-- Les textos et appels préparés par IRIS, à faire partir d'un geste. Rempli par sonderBrouillons(). -->
+<div id="brouillons" hidden></div>
 
 <div id="fil">
   <div class="info" id="accueil">
@@ -216,7 +241,7 @@ async function connexion() {
     if (!r.ok) { erreur.textContent = r.status === 401 ? 'Mot de passe incorrect.' : 'Erreur ' + r.status; return; }
     const d = await r.json();
     JETON = d.session; retenir('iris_session', d.session);
-    champMdp.value = ''; verrouiller(false); verifier();
+    champMdp.value = ''; verrouiller(false); verifier(); sonderBrouillons(false);
   } catch (e) {
     erreur.textContent = 'Ordinateur injoignable.';
   } finally { b.disabled = false; b.textContent = 'Se connecter'; }
@@ -326,8 +351,101 @@ async function envoyer(texte) {
     marquer(false, 'injoignable');
   } finally {
     occupe = false; bouton.classList.remove('occupe'); bouton.textContent = etiquette();
+    // IRIS vient peut-être de déposer un texto : on l'affiche tout de suite, sans attendre le
+    // sondage. Sans annonce : sa réponse vient d'être lue, elle dit déjà « touche Envoyer ».
+    sonderBrouillons(false);
   }
 }
+
+// ---- les brouillons de SMS et d'appel (telephonie.py, voie « iphone »).
+// IRIS ne peut pas envoyer un texto depuis un programme : Apple ne le permet à personne. Elle le
+// prépare, et c'est ce téléphone qui l'ouvre dans Messages, déjà rempli, pour un geste du pouce.
+// La page SONDE l'ordinateur plutôt que d'écouter ses événements : la session ouverte avec le mot
+// de passe ne donne pas accès au WebSocket, et une page mise en veille par iOS perd de toute
+// façon sa connexion — un sondage, lui, reprend là où il en était.
+const brouillons = document.getElementById('brouillons');
+let brouillonsVus = '';   // identifiants affichés : on ne redessine pas sous le doigt sans raison
+
+function lienSur(b) {
+  // iOS attend « sms:…&body= », Android « sms:…?body= ». Voir Brouillon.lien_ios / lien_android.
+  const lien = IOS ? b.lien_ios : b.lien_android;
+  // Seuls sms: et tel: ont leur place ici ; tout autre schéma n'ouvrirait rien d'utile.
+  return (lien && (lien.indexOf('sms:') === 0 || lien.indexOf('tel:') === 0)) ? lien : '';
+}
+
+function dessinerBrouillons(liste, annoncer) {
+  const cle = liste.map((b) => b.id).join(',');
+  if (cle === brouillonsVus) return;
+  const nouveaux = liste.filter((b) => brouillonsVus.indexOf(b.id) === -1);
+  brouillonsVus = cle;
+  brouillons.textContent = '';
+  brouillons.hidden = liste.length === 0;
+  liste.forEach((b) => {
+    const sms = b.genre === 'sms';
+    const carte = document.createElement('div'); carte.className = 'brouillon';
+    const titre = document.createElement('div'); titre.className = 'brouillon-titre';
+    titre.textContent = (sms ? '💬 Texto pour ' : '📞 Appel vers ') + (b.numero_lisible || b.numero);
+    carte.appendChild(titre);
+    if (sms) {
+      const texte = document.createElement('div'); texte.className = 'brouillon-texte';
+      texte.textContent = b.texte || ''; carte.appendChild(texte);
+    }
+    const note = document.createElement('div'); note.className = 'brouillon-note';
+    note.textContent = sms
+      ? "Messages s'ouvre déjà rempli : c'est vous qui touchez Envoyer. Rien ne part sans ce geste."
+      : "Le composeur s'ouvre avec ce numéro : c'est vous qui lancez l'appel.";
+    carte.appendChild(note);
+    const lien = lienSur(b);
+    if (lien) {
+      const ouvrir = document.createElement('a'); ouvrir.className = 'brouillon-ouvrir';
+      ouvrir.href = lien; ouvrir.textContent = sms ? 'Ouvrir dans Messages' : 'Appeler';
+      carte.appendChild(ouvrir);
+    }
+    const ligne = document.createElement('div'); ligne.className = 'ligne';
+    const fait = document.createElement('button'); fait.className = 'fait';
+    fait.textContent = sms ? "C'est envoyé" : "C'est appelé";
+    fait.addEventListener('click', () => fermerBrouillon(b.id, 'envoye'));
+    const annuler = document.createElement('button'); annuler.textContent = 'Annuler';
+    annuler.addEventListener('click', () => fermerBrouillon(b.id, 'annule'));
+    ligne.appendChild(fait); ligne.appendChild(annuler); carte.appendChild(ligne);
+    brouillons.appendChild(carte);
+  });
+  ajusterHauteur();
+  // Un brouillon dicté à la maison, devant l'ordinateur, arrive ici sans qu'on l'ait demandé
+  // depuis cette page : on le dit, sinon il attendrait en silence ses quinze minutes.
+  if (annoncer && nouveaux.length && !occupe) {
+    const b = nouveaux[nouveaux.length - 1];
+    const phrase = (b.genre === 'sms' ? 'Un texto pour ' : 'Un appel vers ') + (b.numero_lisible || b.numero) + ' est prêt, en haut de l’écran.';
+    bulle('info', phrase); dire(phrase);
+  }
+}
+
+async function sonderBrouillons(annoncer) {
+  if (!JETON || verrou.classList.contains('visible')) return;
+  try {
+    const r = await fetch(BASE + '/api/telephonie/en_attente', { headers: enTetes() });
+    if (!r.ok) return;   // 401 : verifier() s'occupe déjà de la session ; 404 : ordinateur pas à jour
+    const d = await r.json();
+    dessinerBrouillons(d.brouillons || [], annoncer !== false);
+  } catch (e) { /* le prochain sondage réessaiera */ }
+}
+
+async function fermerBrouillon(id, etat) {
+  try {
+    const r = await fetch(BASE + '/api/telephonie/' + encodeURIComponent(id) + '/' + etat, { method: 'POST', headers: enTetes() });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) bulle('info', d.detail || ('Erreur ' + r.status));
+    else if (d.message) bulle('info', d.message);
+  } catch (e) {
+    bulle('info', 'Ordinateur injoignable : ' + e.message);
+  }
+  brouillonsVus = '';       // forcer le redessin : la liste vient de changer côté ordinateur
+  sonderBrouillons(false);
+}
+
+// Au retour de Messages ou de Téléphone, la page se réveille : elle vérifie tout de suite ce qui
+// reste à faire partir plutôt que d'attendre le prochain tour de sondage.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sonderBrouillons(false); });
 
 // ---- reconnaissance vocale du navigateur : gratuite, aucune clé.
 // Sur Safari iOS elle existe depuis iOS 14.5 mais elle est capricieuse : la permission exige un
@@ -448,7 +566,11 @@ document.getElementById('banniere-ok').addEventListener('click', () => {
 });
 proposerInstallation();
 
-demarrer().then(verifier); setInterval(verifier, 20000);
+demarrer().then(() => { verifier(); sonderBrouillons(false); });
+setInterval(verifier, 20000);
+// Cinq secondes : le temps qu'IRIS mette à dire « c'est prêt sur ton téléphone » — plus long, on
+// regarderait un écran vide en l'écoutant ; plus court, ce serait du bruit sur un réseau WiFi.
+setInterval(sonderBrouillons, 5000);
 
 // Agent de service : il permet à Android de proposer « Installer l'application », et sur iOS il
 // sert la coquille hors ligne une fois la page posée sur l'écran d'accueil.

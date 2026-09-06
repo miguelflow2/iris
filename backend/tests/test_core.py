@@ -312,7 +312,11 @@ def test_un_abonne_ne_perd_pas_ce_quil_a_paye(tmp_path):
     (tmp_path / "settings.json").write_text(json.dumps({"plan": "pro", "plan_expires": "2099-01-01"}), encoding="utf-8")
     s = Settings(tmp_path)
     assert s.user.plan == "premium", "l'ancien Pro à 29,99 $ est devenu Premium"
-    assert s.user.settings_version == 2
+    from iris.config import VERSION_REGLAGES
+
+    # La version suit VERSION_REGLAGES : une migration ajoutée ne doit pas casser ce test (v3 a
+    # purgé les alias morts du mot d'activation le 6 septembre 2026).
+    assert s.user.settings_version == VERSION_REGLAGES
 
     # Deuxième lecture : le plan ne doit plus bouger, sinon Premium deviendrait Entreprise.
     assert Settings(tmp_path).user.plan == "premium"

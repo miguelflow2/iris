@@ -1,5 +1,9 @@
 """Synthèse vocale ElevenLabs en streaming : audio PCM joué dès les premiers octets reçus.
-La clé API vient exclusivement de l'environnement / du fichier .env (jamais du code)."""
+La clé API vient exclusivement de l'environnement / du fichier .env (jamais du code).
+
+Ce module porte aussi la règle de routage de la sortie audio (`classer_sorties`) que la voix
+Windows (tts.py) partage : c'est ici que l'on décide par quel périphérique — les lunettes — la voix
+sort, et à quelle fréquence (`Reechantillonneur` quand le périphérique refuse le 24 kHz)."""
 from __future__ import annotations
 
 import logging
@@ -30,9 +34,153 @@ RETRY_AFTER_FAILURE = 120  # s : après une erreur, on repasse sur Windows puis 
 QUOTA_THRESHOLDS = (0.8, 0.95, 1.0)  # alertes proactives sur le quota mensuel
 QUOTA_CHECK_EVERY = 8  # phrases lues entre deux vérifications du quota
 
+# Passe dans la file d'attente comme une phrase, mais n'en est pas une : elle ouvre le périphérique
+# audio sans qu'on entende rien. Un objet, pas une chaîne : une chaîne finirait tôt ou tard
+# prononcée à voix haute par un chemin qu'on aurait oublié. Partagée avec tts.py pour que les deux
+# voix (ElevenLabs et Windows) préchauffent avec la même sentinelle.
+PRECHAUFFAGE = object()
+
+# Ce qui, dans le nom d'un périphérique Windows, signe le profil Bluetooth mains libres (HFP).
+# Même liste que le listener (`_narrowband_input`) : un micro reconnu « mains libres » d'un côté
+# doit l'être de l'autre, sinon les deux bouts de la voix ne parlent pas du même casque.
+MARQUES_MAINS_LIBRES = ("hands-free", "mains libres", "hfp")
+
 
 def api_key() -> str:
     return (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
+
+
+# --------------------------------------------------------------------------- routage de la sortie
+def est_mains_libres(nom: str) -> bool:
+    """Le nom désigne-t-il le canal mains libres d'un casque Bluetooth ?"""
+    bas = (nom or "").lower()
+    return any(marque in bas for marque in MARQUES_MAINS_LIBRES)
+
+
+def micro_mains_libres(settings: Settings) -> bool:
+    """Le micro choisi dans les réglages est-il le canal mains libres des lunettes ?
+
+    Le test est celui du NOM, comme dans le listener : c'est le seul qui ne mente pas (MME annonce
+    44100 Hz pour un lien qui est réellement à 16000 Hz). Tant que ce micro est choisi, il faut
+    supposer que le profil téléphone est actif et que Windows a mis la stéréo en veille."""
+    return est_mains_libres(settings.user.audio_input_device or "")
+
+
+def racine_lunettes(nom: str) -> str:
+    """Ce que partagent les deux sorties d'un même casque, en minuscules.
+
+    « Casque (M01 Pro_F444 Stereo) » et « Casque (M01 Pro_F444 Hands-Free AG Audio) » sont le MÊME
+    casque vu par deux profils Bluetooth ; Windows ne les relie par rien d'autre que ce préfixe.
+    C'est ce préfixe qu'on cherche quand il faut passer de l'un à l'autre."""
+    bas = (nom or "").strip().lower()
+    for suffixe in (" stereo", " hands-free", " mains libres"):
+        coupe = bas.find(suffixe)
+        if coupe > 0:
+            return bas[:coupe]
+    return bas
+
+
+def classer_sorties(noms: list[str], voulu: str, mains_libres: bool, scores: list[int] | None = None) -> list[int]:
+    """Positions, dans `noms`, des sorties qui conviennent — la meilleure d'abord, [] si aucune.
+
+    Une seule règle pour les deux voix (SAPI dans tts.py, ElevenLabs ici), parce qu'elles se
+    contredisaient : SAPI visait le canal mains libres, ElevenLabs visait « Stereo », et sur la
+    configuration réelle de Miguel (micro « Hands-Free », sortie « Stereo ») la voix ElevenLabs
+    partait vers un profil que Windows venait d'endormir — journal du 5 septembre 2026, quinze fois
+    de suite « sortie audio … introuvable ou incompatible 24 kHz, sortie par défaut utilisée ».
+
+    1. Une sortie convient si son nom contient `voulu` (correspondance partielle, comme pour le
+       micro : MME tronque les noms à 31 caractères et c'est cette forme tronquée que l'interface
+       enregistre).
+    2. Quand le micro est en mains libres, le canal mains libres du MÊME casque convient aussi,
+       même si le réglage nomme la sortie stéréo : le Bluetooth classique ne porte qu'un lien audio
+       à la fois, et c'est le profil téléphone qui l'a pris.
+    3. Entre plusieurs sorties qui conviennent, le mains libres l'emporte (il reste audible dans
+       les deux états, au prix du 8 kHz mono — une voix moins belle vaut mieux qu'une voix
+       inaudible), puis l'hôte le plus tolérant (`scores`, voir `_score_hote`), puis le premier vu.
+    """
+    voulu = (voulu or "").strip().lower()
+    if not voulu:
+        return []
+    racine = racine_lunettes(voulu)
+    classement = []
+    for position, nom in enumerate(noms):
+        bas = (nom or "").lower()
+        mains_libres_ici = est_mains_libres(bas)
+        if voulu in bas or (mains_libres and mains_libres_ici and racine in bas):
+            score = scores[position] if scores else 0
+            classement.append((mains_libres_ici, score, -position, position))
+    return [candidat[-1] for candidat in sorted(classement, reverse=True)]
+
+
+def _score_hote(nom_hote: str) -> int:
+    """Confiance accordée à un hôte audio de Windows pour ouvrir une sortie (le plus grand gagne).
+
+    Même ordre que le listener (`score_hote`) — dupliqué ici parce que listener.py importe tts.py
+    qui importe ce module : MME et DirectSound passent par le moteur audio de Windows, qui
+    rééchantillonne tout seul et partage le périphérique ; WASAPI impose la fréquence du pilote ;
+    WDM-KS ouvre la broche du noyau, souvent déjà prise."""
+    api = (nom_hote or "").lower()
+    if "mme" in api:
+        return 3
+    if "directsound" in api:
+        return 2
+    if "wasapi" in api:
+        return 1
+    return 0
+
+
+class SortieAudioIndisponible(RuntimeError):
+    """Aucune sortie audio — ni celle demandée, ni celle par défaut — n'a pu être ouverte."""
+
+
+class Reechantillonneur:
+    """Ramène le PCM 24 kHz d'ElevenLabs au taux qu'accepte la sortie, morceau après morceau.
+
+    Pourquoi : un périphérique Bluetooth ouvert par WASAPI impose la fréquence de son lien (16000 Hz
+    en mains libres, 8000 Hz sur les casques plus anciens), et refuse le flux 24 kHz tel quel.
+    Avant, ce refus faisait abandonner le périphérique demandé — la voix sortait du haut-parleur du
+    PC pendant que Miguel portait ses lunettes. Ici on convertit, et le son sort DU périphérique
+    demandé. numpy suffit, aucune dépendance à ajouter.
+
+    Pourquoi un objet à état et pas `np.interp` sur chaque morceau isolément : les morceaux HTTP
+    n'ont pas une taille garantie (la socket rend ce qu'elle a), et le point de lecture entre deux
+    échantillons source doit se prolonger d'un morceau au suivant — sinon chaque frontière de
+    morceau fait un petit saut, audible comme un crépitement, et le compte dérive."""
+
+    def __init__(self, source: int, cible: int):
+        import numpy as np
+
+        self.source = int(source)
+        self.cible = int(cible)
+        self.pas = self.source / self.cible  # avancée, en échantillons source, par échantillon produit
+        self._reste = np.zeros(0, dtype=np.float32)  # échantillons source pas encore consommés
+        self._position = 0.0  # point de lecture du prochain échantillon produit, dans `_reste` + le morceau à venir
+        self.entres = 0
+        self.sortis = 0
+
+    def convertir(self, data: bytes) -> bytes:
+        """PCM int16 mono au taux source → PCM int16 mono au taux cible (peut rendre b"" si trop court)."""
+        if self.source == self.cible:
+            return data
+        import numpy as np
+
+        pcm = np.frombuffer(data, dtype="<i2").astype(np.float32)
+        self.entres += len(pcm)
+        tampon = np.concatenate((self._reste, pcm))
+        dernier = len(tampon) - 1
+        if dernier < self._position:  # pas encore de quoi interpoler : on garde tout pour la suite
+            self._reste = tampon
+            return b""
+        nombre = int((dernier - self._position) // self.pas) + 1
+        positions = self._position + self.pas * np.arange(nombre)
+        sortie = np.interp(positions, np.arange(len(tampon)), tampon)
+        suivante = self._position + self.pas * nombre
+        consommes = min(int(suivante), len(tampon))
+        self._reste = tampon[consommes:]
+        self._position = suivante - consommes
+        self.sortis += nombre
+        return np.clip(np.rint(sortie), -32768, 32767).astype("<i2").tobytes()
 
 
 class ElevenLabsSpeaker:
@@ -53,6 +201,11 @@ class ElevenLabsSpeaker:
         self._plays_since_check = 0
         self._alerted: set[float] = set()
         self.quota: dict = {}
+        # routage de la sortie : on n'avertit qu'une fois par (nom, raison) et on n'annonce le
+        # périphérique ouvert que quand il change — le journal du 5 septembre 2026 répétait le même
+        # avertissement à chaque phrase, quinze fois, et plus personne ne le lisait
+        self._sortie_avertie = ""
+        self._sortie_annoncee: tuple = ()
 
     # ------------------------------------------------------------------ état
     @property
@@ -216,11 +369,45 @@ class ElevenLabsSpeaker:
     def wait_idle(self, timeout: float = 60.0) -> bool:
         return self._idle.wait(timeout)
 
+    def prechauffer(self) -> None:
+        """Ouvre la sortie (lunettes) une fois, en silence, avant la première phrase.
+
+        Sur la configuration réelle de Miguel c'est ElevenLabs qui parle, et ce chemin-là n'était
+        jamais préchauffé : tts.prechauffer() sortait tôt dès que ElevenLabs répondait. Le
+        basculement du casque en profil téléphone (jusqu'à 8 s, mesuré le 5 septembre 2026) tombait
+        donc sur le tout premier « Dis-moi Iris ». La pré-connexion HTTPS (`prewarm`) ne suffit
+        pas : elle raccourcit le premier octet, pas l'ouverture du périphérique."""
+        if not self.available:
+            return
+        self._ensure_thread()
+        self._queue.put(PRECHAUFFAGE)
+
+    def _prechauffer_maintenant(self) -> None:
+        """Ouvre la sortie choisie et y écrit un dixième de seconde de silence.
+
+        sounddevice n'a pas de volume : le silence, ce sont des zéros. Le périphérique s'ouvre, le
+        casque bascule s'il doit basculer, personne n'entend rien."""
+        try:
+            sd = self._sounddevice()
+            debut = time.time()
+            device, taux = self._output_device(sd)
+            flux, taux = self._ouvrir_sortie(sd, device, taux)
+            with flux as out:
+                out.write(bytes(2 * max(1, taux // 10)))  # int16 mono : 2 octets par échantillon, 100 ms
+            log.info("sortie ElevenLabs préchauffée en %.2f s (%s)", time.time() - debut,
+                     f"sortie {device} à {taux} Hz" if device is not None else "sortie par défaut")
+        except Exception as exc:
+            log.debug("préchauffage de la sortie ElevenLabs impossible : %s", exc)
+
     def _worker(self) -> None:
         while True:
             item = self._queue.get()
             if item is None:
                 break
+            if item is PRECHAUFFAGE:
+                # Ni état « en train de parler », ni événement : rien ne se passe pour l'utilisateur.
+                self._prechauffer_maintenant()
+                continue
             self._stop_flag.clear()
             self.speaking = True
             self.hub.publish("tts.state", speaking=True, text=item[:200], engine="elevenlabs")
@@ -269,42 +456,143 @@ class ElevenLabsSpeaker:
             self.error = f"ElevenLabs : {exc}"
         log.warning(self.error)
         self.hub.publish("tts.fallback", reason=self.error)
-        # on ne perd pas la phrase : repli immédiat sur la voix Windows
-        fallback = getattr(self, "fallback_speak", None)
-        if fallback:
-            try:
-                fallback(text)
-            except Exception:
-                pass
+        self._reprendre_avec_windows(text)
 
-    def _output_device(self, sd):
-        """Index de la sortie audio choisie (ex. lunettes), sinon None = défaut.
-        Préfère MME/DirectSound (rééchantillonnage automatique) à WASAPI (fréquence imposée), et vérifie
-        que le périphérique accepte le flux PCM 24 kHz avant de l'utiliser."""
-        wanted = (self.settings.user.audio_output_device or "").strip().lower()
-        if not wanted:
-            return None
+    def _reprendre_avec_windows(self, text: str) -> None:
+        """On ne perd pas la phrase : repli immédiat sur la voix Windows, et le journal le dit.
+
+        Jamais muette. Avant, l'échec du repli lui-même était avalé (`except Exception: pass`) :
+        IRIS pouvait se taire sans qu'aucune ligne ne l'explique."""
+        fallback = getattr(self, "fallback_speak", None)
+        if not fallback:
+            log.warning("aucune voix de repli branchée : la phrase est perdue")
+            return
         try:
-            apis = sd.query_hostapis()
-            candidates = []
-            for idx, dev in enumerate(sd.query_devices()):
-                if dev.get("max_output_channels", 0) > 0 and wanted in dev["name"].lower():
-                    api = apis[dev["hostapi"]]["name"]
-                    score = 3 if api == "MME" else (2 if "DirectSound" in api else (1 if "WASAPI" in api else 0))
-                    candidates.append((score, idx))
-            for _score, idx in sorted(candidates, reverse=True):
-                try:
-                    sd.check_output_settings(device=idx, samplerate=SAMPLE_RATE, channels=1, dtype="int16")
-                    return idx
-                except Exception:
-                    continue
+            if fallback(text) is False:
+                log.warning("la voix Windows n'a pas pu reprendre la phrase (synthèse Windows indisponible) : phrase perdue")
+            else:
+                log.info("la voix Windows prend le relais pour cette phrase")
+        except Exception as exc:
+            log.warning("la voix Windows n'a pas pu reprendre la phrase : %s", exc)
+
+    @staticmethod
+    def _sounddevice():
+        """Le module sounddevice, importé au dernier moment (les tests le remplacent par un faux)."""
+        import sounddevice as sd
+
+        return sd
+
+    def _signaler_sortie(self, voulu: str, raison: str) -> None:
+        """Dit une fois pourquoi la sortie demandée n'est pas utilisée, dans le journal et à l'écran."""
+        cle = f"{voulu}|{raison}"
+        if self._sortie_avertie == cle:
+            return
+        self._sortie_avertie = cle
+        self._sortie_annoncee = ()
+        msg = f"Sortie audio « {voulu} » {raison} : IRIS parle par la sortie par défaut de Windows."
+        log.warning(msg)
+        try:
+            self.hub.publish("tts.fallback", reason=msg)
         except Exception:
             pass
-        log.warning("sortie audio « %s » introuvable ou incompatible 24 kHz, sortie par défaut utilisée", wanted)
-        return None
+
+    def _annoncer_sortie(self, idx: int, nom: str, taux: int) -> None:
+        """Journalise la sortie retenue, seulement quand elle change."""
+        self._sortie_avertie = ""  # retrouvée : une disparition ultérieure devra être redite
+        if self._sortie_annoncee == (idx, taux):
+            return
+        self._sortie_annoncee = (idx, taux)
+        if taux == SAMPLE_RATE:
+            log.info("voix ElevenLabs dirigée vers la sortie %s (%s) à %d Hz", idx, nom, taux)
+        else:
+            log.info("voix ElevenLabs dirigée vers la sortie %s (%s) à %d Hz (rééchantillonnée depuis %d Hz)", idx, nom, taux, SAMPLE_RATE)
+
+    def _output_device(self, sd) -> tuple[int | None, int]:
+        """(index, fréquence d'ouverture) de la sortie choisie ; (None, 24000) = sortie par défaut.
+
+        Trois choses ont changé par rapport au code qui remplissait le journal du 5 septembre 2026 :
+
+        1. Le choix du périphérique suit `classer_sorties`, la même règle que la voix Windows :
+           quand le micro est en mains libres, c'est le canal mains libres du casque qui est visé,
+           même si le réglage nomme « Stereo ».
+        2. Un périphérique qui refuse 24 kHz n'est plus abandonné : on l'ouvre au taux qu'il
+           annonce (`default_samplerate`) et `Reechantillonneur` convertit le flux. Le son sort DU
+           périphérique demandé.
+        3. Le journal distingue « introuvable » (lunettes éteintes) de « refuse la fréquence », et
+           ne le dit qu'une fois.
+        """
+        voulu = (self.settings.user.audio_output_device or "").strip().lower()
+        if not voulu:
+            return None, SAMPLE_RATE
+        try:
+            apis = sd.query_hostapis()
+            devices = list(sd.query_devices())
+        except Exception as exc:
+            self._signaler_sortie(voulu, f"inaccessible (énumération des sorties impossible : {exc})")
+            return None, SAMPLE_RATE
+        noms: list[str] = []
+        scores: list[int] = []
+        index: list[int] = []
+        for idx, dev in enumerate(devices):
+            try:
+                voies = int(dev.get("max_output_channels", 0) or 0)
+            except (TypeError, ValueError):
+                voies = 0
+            if voies <= 0:
+                continue
+            try:
+                hote = apis[int(dev.get("hostapi", -1))].get("name") or ""
+            except Exception:
+                hote = ""
+            noms.append(dev.get("name") or "")
+            scores.append(_score_hote(hote))
+            index.append(idx)
+        ordre = classer_sorties(noms, voulu, micro_mains_libres(self.settings), scores)
+        if not ordre:
+            self._signaler_sortie(voulu, "introuvable — lunettes éteintes ou hors de portée")
+            return None, SAMPLE_RATE
+        refus = []
+        for position in ordre:
+            idx = index[position]
+            try:
+                natif = int(float(devices[idx].get("default_samplerate") or 0))
+            except (TypeError, ValueError):
+                natif = 0
+            essayes: list[int] = []
+            for taux in (SAMPLE_RATE, natif):
+                if taux <= 0 or taux in essayes:
+                    continue
+                essayes.append(taux)
+                try:
+                    sd.check_output_settings(device=idx, samplerate=taux, channels=1, dtype="int16")
+                except Exception:
+                    continue
+                self._annoncer_sortie(idx, noms[position], taux)
+                return idx, taux
+            refus.append(f"{noms[position]} (index {idx}, ni {SAMPLE_RATE} ni {natif} Hz)")
+        self._signaler_sortie(voulu, "refuse toutes les fréquences essayées (" + "; ".join(refus) + ")")
+        return None, SAMPLE_RATE
+
+    def _ouvrir_sortie(self, sd, device: int | None, taux: int) -> tuple:
+        """Flux de sortie ouvert sur `device` au taux `taux`, sinon sur la sortie par défaut à 24 kHz.
+
+        Renvoie (flux, taux réellement ouvert). Lève SortieAudioIndisponible si rien ne s'ouvre :
+        c'est alors à la voix Windows de reprendre (`_handle_failure`)."""
+        if device is not None:
+            try:
+                flux = sd.RawOutputStream(samplerate=taux, channels=1, dtype="int16", blocksize=max(1, taux // 10), device=device)
+                return flux, taux
+            except Exception as exc:
+                log.warning("sortie audio %s refusée à l'ouverture (%s) : sortie par défaut utilisée", device, exc)
+                self._sortie_annoncee = ()
+        try:
+            flux = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=2400)
+            return flux, SAMPLE_RATE
+        except Exception as exc:
+            raise SortieAudioIndisponible(f"aucune sortie audio ne s'ouvre, pas même celle par défaut ({exc})") from exc
 
     def _stream_and_play(self, text: str) -> None:
-        import sounddevice as sd
+        sd = self._sounddevice()
 
         u = self.settings.user
         voice_id = u.elevenlabs_voice_id or DEFAULT_VOICE_ID
@@ -326,14 +614,13 @@ class ElevenLabsSpeaker:
             raise err
         first = True
         pending = b""
-        device = self._output_device(sd)
+        device, taux = self._output_device(sd)
         try:
-            out_stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=2400, device=device)
-        except Exception as exc:
-            if device is None:
-                raise
-            log.warning("sortie audio %s refusée (%s) : sortie par défaut", device, exc)
-            out_stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=2400)
+            out_stream, taux = self._ouvrir_sortie(sd, device, taux)
+        except Exception:
+            resp.close()
+            raise
+        convertisseur = Reechantillonneur(SAMPLE_RATE, taux)
         with out_stream as out:
             for chunk in resp.iter_content(chunk_size=4800):
                 if self._stop_flag.is_set():
@@ -346,8 +633,10 @@ class ElevenLabsSpeaker:
                 pending += chunk
                 usable = len(pending) - (len(pending) % 2)  # int16 : nombre pair d'octets
                 if usable:
-                    out.write(pending[:usable])
+                    pret = convertisseur.convertir(pending[:usable])
                     pending = pending[usable:]
+                    if pret:  # le convertisseur peut garder un morceau trop court pour la suite
+                        out.write(pret)
         resp.close()
 
     def shutdown(self) -> None:

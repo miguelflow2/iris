@@ -17,14 +17,32 @@ export function SettingsView(): JSX.Element {
   // entendue. Il faut donc pouvoir l'arrêter, et voir qu'elle tourne.
   const [calibRestant, setCalibRestant] = useState(0)
   const loadSites = () => api.get('/api/sites').then((r) => setSites(r.sites)).catch(() => undefined)
+  // Courriel et téléphonie. Jusqu'au 6 septembre 2026, Postier.configurer existait, testé, et
+  // aucun écran ne permettait d'y entrer le mot de passe d'application : IRIS savait écrire un
+  // courriel sans jamais pouvoir apprendre depuis quelle adresse. Le secret ne revient jamais du
+  // serveur (routes_communications.py) : le formulaire repart vide après chaque enregistrement.
+  const [courriel, setCourriel] = useState<any>(null)
+  const [courrielForm, setCourrielForm] = useState({ adresse: '', mot_de_passe_application: '' })
+  const [courrielOccupe, setCourrielOccupe] = useState(false) // « Tester » peut bloquer 20 s sur un port fermé
+  const [telephonie, setTelephonie] = useState<any>(null)
+  const [twilioForm, setTwilioForm] = useState({ account_sid: '', auth_token: '', numero: '' })
+  const loadCourriel = () => api.get('/api/courriel/etat').then(setCourriel).catch(() => undefined)
+  const loadTelephonie = () => api.get('/api/telephonie/etat').then(setTelephonie).catch(() => undefined)
+  const LIEN_MOTS_DE_PASSE_APPLICATION = 'https://myaccount.google.com/apppasswords'
 
   useEffect(() => setDraft(settings), [settings])
   useEffect(() => { api.get('/api/remote').then(setRemote).catch(() => undefined) }, [settings?.remote_access])
+  // L'adresse déjà enregistrée se remet dans le champ : on ne la retape pas pour changer un mot de passe.
+  useEffect(() => {
+    if (courriel?.adresse) setCourrielForm((f) => (f.adresse ? f : { ...f, adresse: courriel.adresse }))
+  }, [courriel?.adresse])
 
   useEffect(() => {
     api.get('/api/voice/voices').then((r) => setVoices(r.voices)).catch(() => undefined)
     api.get('/api/voice/elevenlabs').then(setEleven).catch(() => undefined)
     loadSites()
+    loadCourriel()
+    loadTelephonie()
     return api.on((e: IrisEvent) => {
       if (e.type === 'voice.model_progress') setProgress({ done: e.done, total: e.total })
       if (e.type === 'voice.model_ready') setProgress(null)
@@ -37,6 +55,41 @@ export function SettingsView(): JSX.Element {
   const commit = (key: string) => {
     if (draft[key] !== settings[key]) set({ [key]: draft[key] })
   }
+
+  const enregistrerCourriel = () => api.post('/api/courriel/configurer', {
+    adresse: courrielForm.adresse.trim(), mot_de_passe_application: courrielForm.mot_de_passe_application,
+  }).then((etat) => {
+    setCourriel(etat)
+    setCourrielForm({ adresse: etat.adresse || '', mot_de_passe_application: '' })
+    toast(etat.avertissement || `Compte ${etat.adresse} enregistré dans le coffre.`, etat.avertissement ? 'error' : 'success')
+  }).catch((e) => toast(e.message, 'error'))
+
+  const testerCourriel = () => {
+    setCourrielOccupe(true)
+    api.post('/api/courriel/tester')
+      .then((r) => toast(r.message || 'Connexion réussie.', 'success'))
+      .catch((e) => toast(e.message, 'error'))
+      .finally(() => setCourrielOccupe(false))
+  }
+
+  const oublierCourriel = () => api.delete('/api/courriel').then((etat) => {
+    setCourriel(etat)
+    setCourrielForm({ adresse: '', mot_de_passe_application: '' })
+    toast('Compte courriel oublié : IRIS ne peut plus envoyer de courriel.', 'info')
+  }).catch((e) => toast(e.message, 'error'))
+
+  const enregistrerTwilio = () => api.post('/api/telephonie/configurer', {
+    account_sid: twilioForm.account_sid.trim(), auth_token: twilioForm.auth_token.trim(), numero: twilioForm.numero.trim(),
+  }).then((etat) => {
+    setTelephonie(etat)
+    setTwilioForm({ account_sid: '', auth_token: '', numero: '' })
+    toast(`Compte Twilio enregistré (numéro ${etat.numero_expediteur}).`, 'success')
+  }).catch((e) => toast(e.message, 'error'))
+
+  const oublierTwilio = () => api.delete('/api/telephonie').then((etat) => {
+    setTelephonie(etat)
+    toast('Compte Twilio oublié.', 'info')
+  }).catch((e) => toast(e.message, 'error'))
 
   return (
     <div className="page">
@@ -255,6 +308,37 @@ export function SettingsView(): JSX.Element {
         ))}
       </div>
 
+      <h2>Courriel</h2>
+      <div className="card col">
+        <p className="small muted" style={{ margin: 0 }}>
+          IRIS écrit et envoie des courriels à votre demande : « Dis-moi Iris, écris à Sophie que j’arrive à 14 h ».
+          Elle vous relit le message en entier et n’envoie rien sans votre accord. Le mot de passe est rangé dans le
+          coffre Windows : il n’est jamais affiché, jamais transmis à l’IA.
+        </p>
+        <div className="row wrap">
+          {courriel?.configure ? <span className="pill ok">compte enregistré</span> : <span className="pill warn">aucun compte</span>}
+          {courriel?.adresse ? <span className="small muted">{courriel.adresse}{courriel.smtp_hote ? ` · ${courriel.smtp_hote}:${courriel.smtp_port}` : ''}</span> : null}
+          {courriel?.mode_local ? <span className="small" style={{ color: 'var(--warn)' }}>Mode local actif : aucun courriel ne partira tant qu’il l’est.</span> : null}
+        </div>
+        <div className="grid-2">
+          <Field label="Adresse Gmail">
+            <input className="input" type="email" autoComplete="off" placeholder="prenom@gmail.com" value={courrielForm.adresse} onChange={(e) => setCourrielForm({ ...courrielForm, adresse: e.target.value })} />
+          </Field>
+          <Field label="Mot de passe d’application" hint="16 lettres générées par Google, pas le mot de passe habituel du compte. Saisi par vous, jamais affiché.">
+            <input className="input mono" type="password" autoComplete="new-password" placeholder={courriel?.configure ? '•••••••• (remplacer)' : 'xxxx xxxx xxxx xxxx'} value={courrielForm.mot_de_passe_application} onChange={(e) => setCourrielForm({ ...courrielForm, mot_de_passe_application: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && courrielForm.adresse.trim() && courrielForm.mot_de_passe_application.trim()) enregistrerCourriel() }} />
+          </Field>
+        </div>
+        <div className="small muted">
+          Pour obtenir ce mot de passe : <a href={LIEN_MOTS_DE_PASSE_APPLICATION} onClick={(e) => { e.preventDefault(); window.iris.openExternal(LIEN_MOTS_DE_PASSE_APPLICATION) }}>myaccount.google.com/apppasswords</a> — il faut la validation en deux étapes sur le compte Google, sinon la page n’existe pas.
+          Le mot de passe habituel du compte est refusé par Gmail depuis 2022.
+        </div>
+        <div className="row wrap">
+          <button className="btn primary sm" disabled={!courrielForm.adresse.trim() || !courrielForm.mot_de_passe_application.trim() || courrielOccupe} onClick={enregistrerCourriel}>Enregistrer</button>
+          <button className="btn sm" disabled={!courriel?.configure || courrielOccupe} onClick={testerCourriel} title="Se connecte au serveur d’envoi avec ces identifiants, sans envoyer le moindre message.">{courrielOccupe ? 'Test en cours…' : 'Tester la connexion'}</button>
+          {courriel?.adresse ? <button className="btn danger sm" disabled={courrielOccupe} onClick={oublierCourriel}>Oublier le compte</button> : null}
+        </div>
+      </div>
+
       <h2>Mémoire</h2>
       <div className="card">
         <SettingRow title="Résumé automatique de la journée" desc="Chaque soir, IRIS résume décisions, promesses, chiffres et idées de la journée dans la mémoire.">
@@ -313,7 +397,46 @@ export function SettingsView(): JSX.Element {
         ) : null}
       </div>
 
-
+      <h2>SMS et appels</h2>
+      <div className="card col">
+        <p className="small muted" style={{ margin: 0 }}>
+          IRIS ne peut pas envoyer un texto depuis cet ordinateur : Apple ne le permet à aucun programme. Elle prépare
+          le message, et il apparaît en haut de la page IRIS de votre téléphone (section « Téléphone » ci-dessus) :
+          Messages s’ouvre déjà rempli, c’est vous qui touchez Envoyer. Votre correspondant voit votre vrai numéro,
+          et rien ne part sans ce geste.
+        </p>
+        {telephonie ? (
+          <div className="row wrap">
+            <span className="pill ok">voie active : {telephonie.voie}</span>
+            <span className="small muted">
+              {telephonie.en_attente ? `${telephonie.en_attente} message${telephonie.en_attente > 1 ? 's' : ''} en attente sur le téléphone` : 'rien en attente'}
+              {` · ${telephonie.envois_restants_cette_heure} envoi${telephonie.envois_restants_cette_heure > 1 ? 's' : ''} encore possible${telephonie.envois_restants_cette_heure > 1 ? 's' : ''} cette heure`}
+            </span>
+          </div>
+        ) : null}
+        <details>
+          <summary className="small" style={{ cursor: 'pointer' }}>Envoi automatique par Twilio (optionnel, compte payant)</summary>
+          <div className="col" style={{ paddingTop: 8 }}>
+            <p className="small muted" style={{ margin: 0 }}>
+              Utile seulement pour qu’IRIS envoie un SMS toute seule, depuis un numéro loué (environ 1,15 $ US par
+              mois, 1,7 ¢ par message) : le correspondant voit alors ce numéro-là, pas le vôtre. Le compte s’ouvre sur
+              twilio.com avec une carte de crédit et une pièce d’identité ; IRIS ne peut pas le faire à votre place.
+              Les identifiants vont dans le coffre Windows.
+              {telephonie?.fournisseur && telephonie.fournisseur !== 'twilio' ? ' Tant que le fournisseur de téléphonie reste « iphone », ce compte dort : rien ne part de l’ordinateur.' : ''}
+            </p>
+            {telephonie?.identifiant ? <div className="small muted">Compte enregistré : {telephonie.identifiant} · numéro {telephonie.numero_expediteur}</div> : null}
+            <div className="grid-2">
+              <Field label="Account SID" hint="Commence par AC, 34 caractères."><input className="input mono" autoComplete="off" placeholder="AC…" value={twilioForm.account_sid} onChange={(e) => setTwilioForm({ ...twilioForm, account_sid: e.target.value })} /></Field>
+              <Field label="Auth Token" hint="Saisi par vous, jamais affiché."><input className="input mono" type="password" autoComplete="new-password" value={twilioForm.auth_token} onChange={(e) => setTwilioForm({ ...twilioForm, auth_token: e.target.value })} /></Field>
+              <Field label="Numéro loué" hint="Au format +1 suivi de dix chiffres."><input className="input mono" placeholder="+1 514 555 0100" value={twilioForm.numero} onChange={(e) => setTwilioForm({ ...twilioForm, numero: e.target.value })} /></Field>
+            </div>
+            <div className="row wrap">
+              <button className="btn primary sm" disabled={!twilioForm.account_sid.trim() || !twilioForm.auth_token.trim() || !twilioForm.numero.trim()} onClick={enregistrerTwilio}>Enregistrer</button>
+              {telephonie?.identifiant ? <button className="btn danger sm" onClick={oublierTwilio}>Oublier le compte</button> : null}
+            </div>
+          </div>
+        </details>
+      </div>
 
       <h2>Stockage</h2>
       <div className="card">

@@ -9,7 +9,7 @@ import time
 
 from ..config import Settings
 from ..events import EventHub
-from .elevenlabs import ElevenLabsSpeaker
+from .elevenlabs import PRECHAUFFAGE, ElevenLabsSpeaker, classer_sorties, micro_mains_libres
 
 log = logging.getLogger("iris.tts")
 
@@ -85,10 +85,10 @@ def speakable(text: str, limit: int = 1500, language: str = "fr") -> str:
     return text[:limit]
 
 
-# Passe dans la file d'attente comme une phrase, mais n'en est pas une : elle ouvre le
-# peripherique audio sans qu'on entende rien. Un objet, pas une chaine : une chaine finirait tot ou
-# tard prononcee a voix haute par un chemin qu'on aurait oublie.
-PRECHAUFFAGE = object()
+# PRECHAUFFAGE (importé d'elevenlabs.py, partagé par les deux voix) passe dans la file d'attente
+# comme une phrase, mais n'en est pas une : elle ouvre le périphérique audio sans qu'on entende
+# rien. Un objet, pas une chaîne : une chaîne finirait tôt ou tard prononcée à voix haute par un
+# chemin qu'on aurait oublié. Les tests l'importent d'ici : le nom reste exposé par ce module.
 
 
 class TextToSpeech:
@@ -169,7 +169,7 @@ class TextToSpeech:
             return ""
 
     def _choisir_sortie(self, jetons: list, voulu: str) -> tuple:
-        """Jeton dont la description contient `voulu` (minuscules), sinon (None, "").
+        """Jeton dont la description convient à `voulu` (minuscules), sinon (None, "").
 
         Le réglage est une correspondance partielle, comme pour le micro : « M01 Pro_F444 » désigne
         chez Miguel DEUX sorties, « Stereo » (A2DP) et « Hands-Free AG Audio » (HFP). C'est
@@ -178,18 +178,18 @@ class TextToSpeech:
         parler vers « Stereo » à ce moment-là, c'est parler dans le vide. Hands-Free reste audible
         dans les deux états, au prix du 8 kHz mono. Une voix moins belle vaut mieux qu'une voix
         inaudible. C'est aussi ce que vise déjà main.py quand on choisit le micro des lunettes.
+
+        La règle elle-même vit dans elevenlabs.py (`classer_sorties`) : ElevenLabs suivait une
+        autre règle, et sur la configuration réelle (micro « Hands-Free », sortie « Stereo » nommée
+        en toutes lettres) aucune des deux voix n'atteignait le canal mains libres. Avec le micro en
+        mains libres, la sortie stéréo demandée est maintenant redirigée vers le canal mains libres
+        du même casque — pour les deux voix.
         """
-        repli = None
-        for jeton in jetons:
-            desc = self._decrire(jeton)
-            bas = desc.lower()
-            if voulu not in bas:
-                continue
-            if "hands-free" in bas or "mains libres" in bas:
-                return jeton, desc
-            if repli is None:
-                repli = (jeton, desc)
-        return repli or (None, "")
+        descriptions = [self._decrire(jeton) for jeton in jetons]
+        ordre = classer_sorties(descriptions, voulu, micro_mains_libres(self.settings))
+        if not ordre:
+            return None, ""
+        return jetons[ordre[0]], descriptions[ordre[0]]
 
     def _replier_sur_defaut(self, sapi, jetons: list) -> str:
         """Ramène la voix sur une sortie encore présente quand la sortie voulue a disparu.
@@ -271,8 +271,20 @@ class TextToSpeech:
         Les huit secondes sont le basculement du casque en profil telephone, paye une seule fois.
         En regime etabli il ne reste que six dixiemes de seconde par phrase. Mais ce basculement,
         s'il n'est pas provoque a l'avance, tombe exactement au pire moment : au tout premier
-        << Dis-moi Iris >>, celui qu'on fait devant une salle."""
-        if not self.available or self._use_elevenlabs():
+        << Dis-moi Iris >>, celui qu'on fait devant une salle.
+
+        C'est le chemin QUI VA PARLER qu'on préchauffe. Avant, ce préchauffage sortait tôt dès
+        qu'ElevenLabs répondait — c'est-à-dire sur la configuration réelle de Miguel, où c'est
+        ElevenLabs qui parle : le canal n'était jamais préchauffé, et la pré-connexion HTTPS
+        d'ElevenLabs n'ouvre aucun périphérique. Le casque est le même pour les deux voix : une fois
+        basculé par ElevenLabs, il l'est aussi pour la voix Windows si elle doit reprendre."""
+        if self._use_elevenlabs():
+            try:
+                self.eleven.prechauffer()
+            except Exception as exc:
+                log.debug("prechauffage de la sortie ElevenLabs impossible : %s", exc)
+            return
+        if not self.available:
             return
         try:
             self._ensure_started()
