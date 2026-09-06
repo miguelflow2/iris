@@ -48,17 +48,20 @@ def faire_cle(plan: str, expiration: str, courriel: str, secret: bytes) -> str:
 
 
 def verifier_cle(cle: str, secret: bytes) -> dict | None:
-    """Équivalent exact de plans.verify_key(), y compris son découpage `split("-", 2)`.
+    """Équivalent EXACT de plans.verify_key() côté application, y compris son découpage.
 
-    Ce découpage est reproduit volontairement : c'est le code qui tournera chez le client.
-    Si l'application le corrige un jour en `rsplit("-", 1)`, cette copie devra suivre.
+    Correction du 6 septembre 2026. Ce code découpait par `split("-", 2)` alors que l'application
+    utilise `rsplit("-", 1)` — l'ancien commentaire annonçait lui-même la dette (« si l'application
+    le corrige un jour, cette copie devra suivre »), et l'application L'A corrigée. La charge utile
+    est du base64 url-safe : elle peut contenir des « - ». Il faut donc couper la signature par la
+    DROITE, sinon une clé dont la charge contient un tiret est rejetée alors qu'elle est valide.
     Voir `cle_utilisable()` : le serveur ne livre jamais une clé que ce code rejetterait.
     """
     try:
         cle = (cle or "").strip()
         if not cle.startswith("IRIS-"):
             return None
-        _, charge, signature = cle.split("-", 2)
+        charge, signature = cle[len("IRIS-"):].rsplit("-", 1)
         attendue = hmac.new(secret, charge.encode(), hashlib.sha256).hexdigest()[:20]
         if not hmac.compare_digest(attendue, signature):
             return None

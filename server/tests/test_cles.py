@@ -63,6 +63,10 @@ def test_cle_avec_tiret_dans_la_charge_utile_est_lisible():
 
     cle, _note = cles.emettre("pro", "2027-09-03", courriel_piege, SECRET_HISTORIQUE)
     assert plans.verify_key(cle) is not None, "la clé émise doit être lisible par l'application"
+    # Le cœur du correctif du 6 septembre : le SERVEUR relit sa propre clé. Il découpait avec
+    # split("-", 2) et rejetait cette clé-là — divergence avec l'application, corrigée en rsplit.
+    relue = cles.verifier_cle(cle, SECRET_HISTORIQUE)
+    assert relue is not None and relue["plan"] == "pro", "le serveur doit relire une clé au tiret piégé"
 
 
 def test_plan_inconnu_refuse():
