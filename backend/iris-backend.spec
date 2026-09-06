@@ -38,6 +38,10 @@ for pkg in (
 
 hiddenimports += collect_submodules("keyring.backends")
 hiddenimports += collect_submodules("num2words")
+# Lecture de PDF (iris/lecture_fichiers.py). Import paresseux dans une fonction : on l'ajoute
+# explicitement pour que l'exécutable l'embarque à coup sûr — un « module absent » découvert chez
+# un client sur son premier PDF serait exactement le genre de raté qu'on ne peut plus se permettre.
+hiddenimports += collect_submodules("pypdf")
 hiddenimports += ["pyttsx3.drivers", "pyttsx3.drivers.sapi5", "pyttsx3.drivers.nsss", "pyttsx3.drivers.espeak"]
 hiddenimports += ["uvicorn.logging", "uvicorn.loops.auto", "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets.auto", "uvicorn.lifespan.on"]
 hiddenimports += ["PIL.Image", "PIL.JpegImagePlugin", "PIL.PngImagePlugin", "psutil", "numpy"]
