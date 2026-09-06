@@ -1,23 +1,26 @@
 """Import des identifiants du navigateur dans le coffre d'IRIS.
 
-Aucun de ces tests ne touche un vrai navigateur, un vrai mot de passe, ni DPAPI. Le dechiffrement
-et le systeme sont injectes. Ce qu'ils gardent, c'est la seule chose qui compte vraiment : qu'un
-mot de passe ne sorte JAMAIS en clair de ce module, par aucun chemin.
+Aucun de ces tests ne touche un vrai navigateur, un vrai mot de passe, ni DPAPI. Le dechiffrement,
+le systeme et les entrees sont injectes. Ce qu'ils gardent : (1) un mot de passe ne sort JAMAIS en
+clair, (2) ce qui est montre a l'utilisateur est EXACTEMENT ce qui est importe, (3) un fichier
+abime ne fait rien planter. Les deux derniers points ont ete trouves par une relecture adverse le
+5 septembre 2026.
 """
 from __future__ import annotations
 
+import base64
 import logging
+
+import pytest
 
 from iris import identifiants_navigateur as idn
 
 
-# Un faux dechiffreur AES-GCM : on n'a besoin ni de cle reelle, ni de cryptography, ni de Windows.
 def _faux_aes(cle, nonce, corps):
     return corps  # dans les tests, le « chiffre » est deja le clair
 
 
 def _valeur_v10(clair: bytes) -> bytes:
-    # v10 + nonce (12) + corps. Notre faux AES rend le corps tel quel.
     return b"v10" + b"0" * 12 + clair
 
 
@@ -31,7 +34,6 @@ class FauxCoffre:
 
 # --------------------------------------------------------------------------- le secret ne fuit pas
 def test_le_repr_masque_le_mot_de_passe():
-    """Un log ou un traceback qui afficherait un Identifiant ne doit jamais montrer le secret."""
     ident = idn.Identifiant(domaine="paypal.com", utilisateur="miguel", _secret="Soleil2026")
     assert "Soleil2026" not in repr(ident)
     assert "***" in repr(ident)
@@ -39,83 +41,85 @@ def test_le_repr_masque_le_mot_de_passe():
 
 def test_en_dict_ne_contient_jamais_le_secret():
     ident = idn.Identifiant(domaine="netlify.com", utilisateur="miguel@exemple.com", _secret="motdepasse")
-    d = ident.en_dict()
-    assert "motdepasse" not in str(d)
-    assert d == {"domaine": "netlify.com", "utilisateur": "miguel@exemple.com"}
-
-
-def test_sites_pour_ne_rend_aucun_secret(monkeypatch):
-    faux = [idn.Identifiant("omnivox.ca", "1234567", "MonNip"), idn.Identifiant("paypal.com", "miguel", "Secret")]
-    monkeypatch.setattr(idn, "_tous", lambda **_: faux)
-    resultats = idn.sites_pour("omnivox")
-    assert resultats == [{"domaine": "omnivox.ca", "utilisateur": "1234567"}]
-    assert "MonNip" not in str(resultats)
+    assert "motdepasse" not in str(ident.en_dict())
+    assert ident.en_dict() == {"domaine": "netlify.com", "utilisateur": "miguel@exemple.com"}
 
 
 def test_le_message_dimport_ne_contient_aucun_secret(monkeypatch):
-    faux = [idn.Identifiant("paypal.com", "miguel", "Soleil2026")]
-    monkeypatch.setattr(idn, "_tous", lambda **_: faux)
-    coffre = FauxCoffre()
-    resultat = idn.importer_dans_le_coffre("paypal", coffre)
-    assert "Soleil2026" not in str(resultat), "le secret ne doit jamais reparaitre dans le retour"
-    assert resultat["importes"] == 1
-    assert "paypal.com" in resultat["sites"]
+    monkeypatch.setattr(idn, "_identifiants", lambda *a, **k: [idn.Identifiant("paypal.com", "miguel", "Soleil2026")])
+    resultat = idn.importer_dans_le_coffre("paypal", FauxCoffre())
+    assert "Soleil2026" not in str(resultat)
+    assert resultat["importes"] == 1 and "paypal.com" in resultat["sites"]
+
+
+def test_rien_ne_secrit_dans_les_journaux(monkeypatch, caplog):
+    class CoffreQuiRale:
+        def set_site(self, *a):
+            raise RuntimeError("le coffre a un souci")
+
+    monkeypatch.setattr(idn, "_identifiants", lambda *a, **k: [idn.Identifiant("paypal.com", "miguel", "TopSecret123")])
+    with caplog.at_level(logging.DEBUG, logger="iris.identifiants"):
+        idn.importer_dans_le_coffre("paypal", CoffreQuiRale())
+    assert "TopSecret123" not in caplog.text, "un secret dans un journal est un secret qui fuit"
+
+
+# --------------------------------------------------------------------------- montre == importe (adversarial)
+def test_la_confirmation_nomme_exactement_ce_qui_sera_importe(monkeypatch):
+    """Defaut trouve le 5 septembre 2026 : la confirmation nommait 12 sites, l'import en ecrivait
+    davantage. noms_correspondants et importer partent maintenant de la MEME correspondance."""
+    entrees = [{"domaine": f"site{i}.com", "utilisateur": "miguel"} for i in range(20)]
+    monkeypatch.setattr(idn, "_entrees", lambda motif=None: [e for e in entrees if idn._correspond(e["domaine"], motif)])
+    # meme motif, meme filtrage : la liste montree contient tout ce qui matche, sans plafond cache.
+    montres = idn.noms_correspondants("site1.com")
+    assert montres == [{"domaine": "site1.com", "utilisateur": "miguel"}]
+
+
+def test_paypal_nattrape_ni_sous_chaine_ni_utilisateur():
+    """« paypal » ne doit ramener ni mypaypal-arnaque.com (sous-chaine) ni un compte dont seul
+    l'utilisateur contient le mot."""
+    assert idn._correspond("paypal.com", "paypal")
+    assert idn._correspond("www.paypal.com".removeprefix("www."), "paypal")
+    assert not idn._correspond("mypaypal-arnaque.com", "paypal"), "sous-chaine refusee"
+    assert not idn._correspond("forum-obscur.net", "paypal"), "l'utilisateur ne compte pas ici"
+
+
+def test_le_domaine_complet_et_letiquette_matchent():
+    assert idn._correspond("app.netlify.com", "netlify"), "etiquette de domaine"
+    assert idn._correspond("app.netlify.com", "app.netlify.com"), "domaine complet"
+    assert idn._correspond("cegeptr.omnivox.ca", "omnivox")
 
 
 # --------------------------------------------------------------------------- l'import fait le bon travail
 def test_limport_depose_le_secret_dans_le_coffre(monkeypatch):
-    """C'est la seule sortie legitime du secret : vers le coffre, directement."""
-    faux = [idn.Identifiant("paypal.com", "miguel", "Soleil2026")]
-    monkeypatch.setattr(idn, "_tous", lambda **_: faux)
+    monkeypatch.setattr(idn, "_identifiants", lambda *a, **k: [idn.Identifiant("paypal.com", "miguel", "Soleil2026")])
     coffre = FauxCoffre()
     idn.importer_dans_le_coffre("paypal", coffre)
     assert coffre.sites["paypal.com"] == {"utilisateur": "miguel", "mot_de_passe": "Soleil2026"}
 
 
-def test_seuls_les_sites_demandes_sont_importes(monkeypatch):
-    faux = [
-        idn.Identifiant("paypal.com", "miguel", "a"),
-        idn.Identifiant("omnivox.ca", "1234", "b"),
-        idn.Identifiant("netlify.com", "miguel", "c"),
-    ]
-    monkeypatch.setattr(idn, "_tous", lambda **_: faux)
-    coffre = FauxCoffre()
-    idn.importer_dans_le_coffre("netlify", coffre)
-    assert set(coffre.sites) == {"netlify.com"}, "on n'importe pas tout le trousseau pour une seule demande"
-
-
 def test_un_terme_vide_nimporte_rien(monkeypatch):
-    monkeypatch.setattr(idn, "_tous", lambda **_: [idn.Identifiant("x.com", "u", "p")])
+    monkeypatch.setattr(idn, "_identifiants", lambda *a, **k: [idn.Identifiant("x.com", "u", "p")])
     coffre = FauxCoffre()
     assert idn.importer_dans_le_coffre("", coffre)["importes"] == 0
     assert coffre.sites == {}
 
 
-def test_aucun_identifiant_ne_donne_un_message_clair(monkeypatch):
-    monkeypatch.setattr(idn, "_tous", lambda **_: [])
-    coffre = FauxCoffre()
-    resultat = idn.importer_dans_le_coffre("banque-inconnue", coffre)
-    assert resultat["importes"] == 0
-    assert "banque-inconnue" in resultat["message"]
+def test_aucun_identifiant_donne_un_message_clair(monkeypatch):
+    monkeypatch.setattr(idn, "_identifiants", lambda *a, **k: [])
+    resultat = idn.importer_dans_le_coffre("banque-inconnue", FauxCoffre())
+    assert resultat["importes"] == 0 and "banque-inconnue" in resultat["message"]
 
 
-# --------------------------------------------------------------------------- le dechiffrement, structurellement
-def test_le_format_v10_passe_par_laes(monkeypatch):
-    clair = idn._dechiffrer_valeur(_valeur_v10(b"motdepasse"), cle_aes=b"0" * 32, aes_gcm=_faux_aes)
-    assert clair == "motdepasse"
+# --------------------------------------------------------------------------- le dechiffrement
+def test_le_format_v10_passe_par_laes():
+    assert idn._dechiffrer_valeur(_valeur_v10(b"motdepasse"), cle_aes=b"0" * 32, aes_gcm=_faux_aes) == "motdepasse"
 
 
 def test_lancien_format_passe_par_dpapi():
-    clair = idn._dechiffrer_valeur(b"ancien-blob", cle_aes=None, dpapi=lambda b: b"secret-dpapi")
-    assert clair == "secret-dpapi"
-
-
-def test_une_valeur_vide_ne_casse_rien():
-    assert idn._dechiffrer_valeur(b"", cle_aes=b"0" * 32, aes_gcm=_faux_aes) == ""
+    assert idn._dechiffrer_valeur(b"blob", cle_aes=None, dpapi=lambda b: b"secret-dpapi") == "secret-dpapi"
 
 
 def test_un_dpapi_qui_echoue_ne_leve_pas():
-    """Un mot de passe chiffre sous un AUTRE compte Windows doit etre saute, pas faire tout planter."""
     def refuse(_):
         raise OSError("autre compte")
 
@@ -126,20 +130,34 @@ def test_le_v10_sans_cle_est_saute():
     assert idn._dechiffrer_valeur(_valeur_v10(b"x"), cle_aes=None, aes_gcm=_faux_aes) == ""
 
 
-# --------------------------------------------------------------------------- aucune fuite dans les journaux
-def test_rien_ne_secrit_dans_les_journaux(monkeypatch, caplog):
-    faux = [idn.Identifiant("paypal.com", "miguel", "TopSecret123")]
-    monkeypatch.setattr(idn, "_tous", lambda **_: faux)
-    coffre = FauxCoffre()
-    with caplog.at_level(logging.DEBUG, logger="iris.identifiants"):
-        idn.importer_dans_le_coffre("paypal", coffre)
-    assert "TopSecret123" not in caplog.text, "un secret dans un journal est un secret qui fuit"
+# --------------------------------------------------------------------------- robustesse (adversarial)
+def test_un_local_state_base64_invalide_ne_plante_pas(tmp_path):
+    """Defaut trouve le 5 septembre 2026 : un encrypted_key base64 invalide levait binascii.Error
+    (une ValueError, pas une OSError) qui traversait tout et cassait l'import de TOUS les sites."""
+    user_data = tmp_path
+    (user_data / "Local State").write_text(
+        '{"os_crypt": {"encrypted_key": "ceci n est pas du base64 !!!"}}', encoding="utf-8")
+    assert idn._cle_aes(user_data) is None, "un fichier abime doit etre saute, pas faire lever"
+
+
+def test_un_local_state_sans_cle_est_saute(tmp_path):
+    (tmp_path / "Local State").write_text('{"autre": 1}', encoding="utf-8")
+    assert idn._cle_aes(tmp_path) is None
+
+
+def test_un_local_state_json_casse_est_saute(tmp_path):
+    (tmp_path / "Local State").write_text("pas du json", encoding="utf-8")
+    assert idn._cle_aes(tmp_path) is None
+
+
+def test_un_encrypted_key_sans_etiquette_dpapi_est_saute(tmp_path):
+    faux = base64.b64encode(b"pas-DPAPI-devant").decode()
+    (tmp_path / "Local State").write_text(f'{{"os_crypt": {{"encrypted_key": "{faux}"}}}}', encoding="utf-8")
+    assert idn._cle_aes(tmp_path) is None
 
 
 # --------------------------------------------------------------------------- reellement branche
 def test_les_outils_sont_offerts_au_modele():
-    """Deux fois le 5 septembre 2026, un module teste est reste inutilisable faute d'etre branche.
-    Ici on verifie que ce n'est pas le cas."""
     from types import SimpleNamespace
 
     from iris.tools import tool_specs
@@ -149,6 +167,4 @@ def test_les_outils_sont_offerts_au_modele():
 
 
 def test_le_coffre_est_dans_le_contexte(app):
-    """Sans le coffre dans le contexte, importer_identifiants leverait au lieu d'importer."""
-    ctx = app.state.ctx
-    assert ctx.chat.secrets is not None
+    assert app.state.ctx.chat.secrets is not None

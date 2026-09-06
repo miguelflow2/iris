@@ -387,6 +387,10 @@ TOOL_SPECS: list[ToolSpec] = [
             {
                 "dossier": {"type": "string", "description": "Chemin du projet, ex. ~/Documents/IRIS/site-flowcare"},
                 "consigne": {"type": "string", "description": "Ce qu'OpenCode doit faire, complet et autonome"},
+                # Ce mot entre dans la phrase que l'utilisateur lit avant d'approuver
+                # (« Envoyer OpenCode corriger dans site-flowcare ») : c'est là toute son utilité.
+                "genre": {"type": "string", "enum": ["correction", "ajout", "revue", "tache"],
+                          "description": "Nature du travail ; sert à annoncer ce qu'on confie"},
             },
             ["dossier", "consigne"],
         ),
@@ -474,18 +478,36 @@ def opencode_raison(service: Any) -> str:
     return str(raison or "").strip() or OPENCODE_ABSENT
 
 
-async def _appeler_delegation(deleguer: Any, dossier: str, consigne: str, confirmer: ConfirmFn) -> Any:
-    """Appelle la méthode de délégation du service, par mot-clé si elle les nomme, sinon dans
-    l'ordre (dossier, consigne, confirmer) — l'ordre de `envoyer_sms_apres_accord`."""
+def parametres_delegation(deleguer: Any) -> set[str]:
+    """Les paramètres que la méthode de délégation accepte réellement.
+
+    On les lit au lieu de les supposer : `Contremaitre.deleguer_apres_accord` prend
+    (genre, dossier, consigne, confirmer, source) et `genre` n'a pas de valeur par défaut. Appeler
+    seulement par (dossier, consigne, confirmer) lèverait un TypeError au moment précis où Miguel
+    demande de corriger un bogue — c'est-à-dire jamais pendant les tests, toujours en démonstration.
+    """
     import inspect
 
     try:
-        parametres = inspect.signature(deleguer).parameters
-    except (TypeError, ValueError):  # objet non introspectable : on tente le positionnel
-        parametres = {}
-    if {"dossier", "consigne"} <= set(parametres):
+        return set(inspect.signature(deleguer).parameters)
+    except (TypeError, ValueError):  # objet non introspectable
+        return set()
+
+
+async def _appeler_delegation(deleguer: Any, *, genre: str, dossier: str, consigne: str,
+                              confirmer: ConfirmFn, source: str) -> Any:
+    """Appelle la délégation par mot-clé quand la méthode nomme ses paramètres, sinon dans l'ordre
+    (dossier, consigne, confirmer) — celui de `envoyer_sms_apres_accord`."""
+    import inspect
+
+    parametres = parametres_delegation(deleguer)
+    if {"dossier", "consigne"} <= parametres:
+        arguments: dict[str, Any] = {"dossier": dossier, "consigne": consigne}
+        if "genre" in parametres:
+            arguments["genre"] = genre
+        if "source" in parametres:
+            arguments["source"] = source
         nom_confirme = next((n for n in ("confirmer", "confirm", "confirmation") if n in parametres), None)
-        arguments = {"dossier": dossier, "consigne": consigne}
         if nom_confirme:
             arguments[nom_confirme] = confirmer
         retour = deleguer(**arguments)
@@ -595,36 +617,53 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                 )
             if not consigne:
                 return _err("Il manque la consigne : dis à OpenCode ce qu'il doit faire, complètement.")
-            # Pas d'erreur ici : c'est une phrase à relayer telle quelle, pas un échec à réessayer.
-            if getattr(ctx, "source", "text") == "voice":
-                return PAS_A_LA_VOIX
             deleguer = _premier_membre(service, NOMS_DELEGATION)
             if deleguer is None or not callable(deleguer):
                 return _err(
                     "Le service OpenCode est là mais ne sait pas déléguer : aucune méthode "
                     f"parmi {', '.join(NOMS_DELEGATION)}. C'est un défaut de câblage, pas un refus."
                 )
+            source = getattr(ctx, "source", "text") or "text"
+            # Le trou vocal. Le service sait déjà le traiter — sa phrase est meilleure que la nôtre,
+            # elle NOMME le dossier —, alors on le laisse faire dès qu'il accepte `source`. Sinon
+            # on refuse ici, parce que le pire des comportements serait d'ouvrir une modale que
+            # Miguel ne verra pas : 180 secondes d'attente, puis un « refusé » silencieux qui
+            # ressemble à une panne. Ce n'est pas une erreur d'outil, c'est une phrase à relayer.
+            if source == "voice" and "source" not in parametres_delegation(deleguer):
+                return PAS_A_LA_VOIX
             try:
-                resultat = await _appeler_delegation(deleguer, dossier, consigne, ctx.confirm)
+                resultat = await _appeler_delegation(
+                    deleguer, genre=(args.get("genre") or "tache").strip().lower(),
+                    dossier=dossier, consigne=consigne, confirmer=ctx.confirm, source=source,
+                )
             except Exception as exc:
-                return _err(f"Délégation impossible : {exc}")
+                # Périmètre refusé, dossier inexistant, consigne vide : le service parle français et
+                # ses messages sont écrits pour être lus à voix haute. On les relaie tels quels.
+                return _err(str(exc) or f"Délégation impossible : {exc!r}")
             if isinstance(resultat, dict):
                 # Le dossier que le service a RÉSOLU fait foi ; la chaîne dite par le modèle ne
                 # désigne pas forcément le même endroit (mesuré : un chemin « \\?\… » se normalise
-                # en tout autre chose). C'est lui qui part au registre.
+                # en tout autre chose).
                 cible = str(resultat.get("dossier") or dossier)
-                accorde = bool(resultat.get("ok")) and resultat.get("accorde") is not False
+                accorde = bool(resultat.get("ok"))
                 # Le registre chaîné répond déjà à « qu'a fait IRIS » pour le courriel et les
-                # commandes ; même canal, donc rien à construire côté audit. On n'y met JAMAIS le
-                # contenu des fichiers : le détail est tronqué à 500 caractères et n'est pas
-                # chiffré comme le sont les messages.
-                ctx.consent.log(
-                    "opencode_termine" if accorde else "opencode_refuse",
-                    agent=ctx.agent, detail=f"{cible} — {consigne[:200]}",
-                )
-                phrase = resultat.get("phrase") or resultat.get("message")
+                # commandes. Le service y écrit lui-même dès qu'il a reçu le registre — trois
+                # entrées, opencode_delegue / opencode_termine / opencode_refus. On ne trace donc
+                # ici QUE s'il ne peut pas le faire : deux lignes pour un seul geste rendraient le
+                # journal illisible, et un journal illisible ne prouve plus rien.
+                if getattr(service, "registre", None) is None:
+                    ctx.consent.log(
+                        "opencode_termine" if accorde else "opencode_refuse",
+                        agent=ctx.agent, detail=f"{cible} — {consigne[:200]}",
+                    )
+                phrase = resultat.get("message") or resultat.get("phrase")
                 if phrase:
-                    return str(phrase) if accorde else _err(str(phrase))
+                    # À la voix, un « non » du service n'est pas un échec d'outil : c'est le
+                    # renvoi vers l'écran, la seule chose utile à dire. Le marquer en erreur ferait
+                    # répondre « je n'ai pas réussi », qui est faux et décourageant.
+                    if accorde or source == "voice":
+                        return str(phrase)
+                    return _err(str(phrase))
                 return json.dumps(resultat, ensure_ascii=False)
             return str(resultat)
 
@@ -708,13 +747,21 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
             if not _idn.disponible():
                 return _err("Aucun navigateur avec des identifiants enregistrés n'a été trouvé sur cet ordinateur.")
             terme = (args.get("terme") or "").strip()
-            # On dit à l'utilisateur ce qu'on va faire AVANT de toucher à quoi que ce soit, et on
-            # nomme les sites concernés — jamais un mot de passe. Refus = rien n'est importé.
-            apercu = _idn.sites_pour(terme)
-            if not apercu:
+            # noms_correspondants ne déchiffre RIEN et applique la même règle que l'import : ce qu'on
+            # montre à l'utilisateur est donc exactement ce qui sera écrit. Un Local State abîmé ne
+            # doit pas non plus faire tomber l'outil.
+            try:
+                correspondances = _idn.noms_correspondants(terme)
+            except Exception as exc:
+                return _err(f"Je n'ai pas pu lire les identifiants du navigateur : {type(exc).__name__}.")
+            if not correspondances:
                 return f"Je n'ai trouvé aucun identifiant enregistré pour « {terme} » dans ton navigateur."
-            noms = ", ".join(sorted({s["domaine"] for s in apercu}))
-            approuve = await ctx.confirm("Récupérer des identifiants du navigateur", f"{noms} — vers le coffre d'IRIS")
+            if len(correspondances) > _idn.MAX_CORRESPONDANCES:
+                return (f"« {terme} » correspond à {len(correspondances)} comptes différents. "
+                        "Précise le site (par exemple son adresse) pour que je n'en importe pas trop d'un coup.")
+            # On NOMME chaque compte, en entier : domaine ET utilisateur. Refus = rien n'est importé.
+            libelle = ", ".join(f"{c['domaine']} ({c['utilisateur']})" for c in correspondances)
+            approuve = await ctx.confirm("Récupérer des identifiants du navigateur", f"{libelle} — vers le coffre d'IRIS")
             if not approuve:
                 return "Je n'ai rien importé : tu n'as pas confirmé."
             resultat = await asyncio.to_thread(_idn.importer_dans_le_coffre, terme, ctx.secrets)

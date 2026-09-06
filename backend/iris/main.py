@@ -61,6 +61,57 @@ def session_reelle() -> bool:
     return os.environ.get("IRIS_AUTO_SETUP", "") == "1"
 
 
+def construire_opencode(settings, registre, hub) -> Any:
+    """Crée le service de délégation à OpenCode, s'il est là.
+
+    Deux prudences, et elles ont chacune une raison précise.
+
+    D'abord `iris/opencode.py` est chargé par import paresseux : il a été écrit en parallèle de ce
+    câblage, et une IRIS qui refuse de démarrer parce qu'un module optionnel manque est un désastre
+    bien plus grand que l'absence de la délégation. Miguel présente mardi.
+
+    Ensuite la construction s'adapte à la signature réelle du service au lieu de la supposer :
+    on ne passe que les paramètres qu'il déclare. Le 5 septembre 2026, DEUX modules entiers, écrits
+    et testés, sont restés inutilisables toute une journée faute d'être branchés — un TypeError
+    silencieux ici produirait exactement le même résultat, et personne ne s'en apercevrait avant
+    d'avoir demandé à IRIS de corriger un bogue."""
+    try:
+        from . import opencode as module
+    except Exception as exc:
+        log.info("délégation OpenCode indisponible (module absent) : %s", exc)
+        return None
+    classe = next(
+        (c for c in (getattr(module, n, None)
+                     for n in ("Contremaitre", "ServiceOpenCode", "OpenCode", "Opencode", "ServiceDelegation"))
+         if isinstance(c, type)),
+        None,
+    )
+    if classe is None:
+        log.warning("iris/opencode.py est présent mais n'expose aucune classe de service connue")
+        return None
+    import inspect
+
+    try:
+        parametres = inspect.signature(classe).parameters
+    except (TypeError, ValueError):
+        parametres = {}
+    nommes = {
+        nom: valeur
+        for nom, valeur in (("settings", settings), ("reglages", settings), ("registre", registre),
+                            ("consent", registre), ("hub", hub))
+        if nom in parametres
+    }
+    try:
+        if not parametres:
+            return classe()
+        if nommes.get("settings") is not None or nommes.get("reglages") is not None:
+            return classe(**nommes)
+        return classe(settings, **nommes)  # premier paramètre positionnel : les réglages, comme partout ailleurs
+    except Exception as exc:
+        log.warning("service OpenCode non construit : %s", exc)
+        return None
+
+
 def courriel_du_jeton(jeton: str) -> str | None:
     """Le courriel encodé dans un jeton d'appareil VELA. Sert à savoir s'il faut en redemander un
     après que l'utilisateur a renseigné son courriel d'achat."""
@@ -103,6 +154,12 @@ class AppContext:
         self.voice.traduction = self.traduction
         self.courriel = Postier(self.settings, self.secrets)
         self.telephonie = Telephoniste(self.settings, self.secrets, registre=self.consent, hub=self.hub)
+        # Déléguer la programmation à OpenCode. Construit ICI, dans le même geste que le reste,
+        # et injecté dans le chat trois lignes plus bas : c'est la seule façon de ne pas répéter le
+        # 5 septembre 2026, où deux modules finis sont restés muets faute de câblage. Tant
+        # qu'OpenCode n'est pas installé, le service le dit et l'outil n'est même pas offert au
+        # modèle — IRIS se comporte exactement comme si rien n'avait été ajouté.
+        self.opencode = construire_opencode(self.settings, self.consent, self.hub)
         # Le verrou du pilotage vocal a besoin de savoir si les lunettes sont là.
         self.voice.glasses_connected = lambda: self.glasses.connected
         self.routines = RoutineService(self.db, self.hub)
@@ -116,6 +173,7 @@ class AppContext:
         self.chat.telephonie = self.telephonie
         self.chat.traduction = self.traduction
         self.chat.voice = self.voice
+        self.chat.opencode = self.opencode
         self.plans = PlanService(self.db, self.settings, self.hub, secrets=self.secrets)
         self.chat.plans = self.plans
         self.tts.plans = self.plans
@@ -1261,6 +1319,24 @@ def create_app(
     @app.post("/api/voice/calibrate", dependencies=auth)
     def voice_calibrate(body: CalibrateIn):
         return ctx.voice.calibrate(body.count)
+
+    # ------------------------------------------------------------------ délégation à OpenCode
+    @app.get("/api/opencode/etat", dependencies=auth)
+    def opencode_etat():
+        """Dit proprement pourquoi la délégation dort, au lieu de la faire disparaître en silence.
+
+        L'outil n'est pas offert au modèle tant qu'OpenCode n'est pas utilisable — c'est voulu, une
+        porte qui ne s'ouvre pas ne doit pas être montrée. Mais l'absence doit rester lisible
+        quelque part, sinon personne ne saura jamais qu'il suffit d'installer OpenCode."""
+        from .tools import opencode_raison, opencode_utilisable
+
+        service = getattr(ctx, "opencode", None)
+        utilisable = opencode_utilisable(service)
+        return {
+            "branche": service is not None,
+            "utilisable": utilisable,
+            "raison": "" if utilisable else opencode_raison(service),
+        }
 
     # ------------------------------------------------------------------ lunettes
     @app.get("/api/glasses/status", dependencies=auth)

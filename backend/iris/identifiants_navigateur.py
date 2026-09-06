@@ -6,25 +6,32 @@ coffre d'IRIS était une corvée injustifiée : ses mots de passe sont déjà da
 y lit, une fois, sur son ordre, et les dépose dans le coffre chiffré d'IRIS
 (`security/secrets.py`). Ensuite `web_login` s'en sert, et le modèle ne les voit jamais.
 
-TROIS RÈGLES, dans l'ordre où elles comptent.
+QUATRE RÈGLES, dans l'ordre où elles comptent.
 
 1. LE MOT DE PASSE NE SORT JAMAIS EN CLAIR D'ICI. Il est lu, puis remis au coffre, et c'est tout.
-   Il n'est jamais journalisé, jamais renvoyé à l'appelant, jamais prononcé, jamais affiché. Les
-   fonctions publiques ne rendent que des NOMS de sites et des noms d'utilisateur — jamais un
-   secret. C'est la règle qui protège Miguel : IRIS s'active à la voix, et un mot de passe qu'elle
-   pourrait dire à voix haute serait un mot de passe qu'un inconnu dans la pièce pourrait lui faire
-   dire.
+   Jamais journalisé, jamais renvoyé à l'appelant, jamais prononcé, jamais affiché. Les fonctions
+   publiques ne rendent que des NOMS de sites et d'utilisateurs. IRIS s'active à la voix : un mot de
+   passe qu'elle pourrait dire tout haut serait un mot de passe qu'un inconnu dans la pièce pourrait
+   lui faire dire.
 
-2. C'EST L'ORDINATEUR DE MIGUEL QUI DÉCHIFFRE, SOUS SON COMPTE. Windows chiffre ces mots de passe
-   avec DPAPI, lié au compte de session : personne d'autre, sur une autre machine, ne peut les
-   lire. Ce module ne fait donc que ce que Chrome fait déjà pour son propriétaire.
+2. CE QUI EST MONTRÉ EST EXACTEMENT CE QUI EST IMPORTÉ. La confirmation et l'import partent de la
+   MÊME règle de correspondance. Le 5 septembre 2026, une relecture adverse a montré l'inverse : la
+   confirmation nommait douze sites pendant que l'import en écrivait davantage. Un consentement qui
+   porte sur un sous-ensemble de l'action n'est pas un consentement.
 
-3. RIEN N'EST IMPORTÉ SANS ACCORD. Ce module lit et déchiffre ; c'est l'outil, plus haut, qui
-   demande la confirmation avant d'écrire quoi que ce soit dans le coffre.
+3. ON MATCHE LE DOMAINE, PAS UNE SOUS-CHAÎNE, PAS L'UTILISATEUR. « paypal » ne doit pas attraper
+   « mypaypal-arnaque.com » (sous-chaîne) ni tout le trousseau parce que l'adresse de Miguel, qui
+   sert d'identifiant partout, contient un mot cherché.
+
+4. C'EST L'ORDINATEUR DE MIGUEL QUI DÉCHIFFRE, SOUS SON COMPTE. Windows chiffre ces mots de passe
+   avec DPAPI, lié au compte de session : sur une autre machine, ils sont illisibles. Ce module ne
+   fait que ce que Chrome fait déjà pour son propriétaire. Et il ne déchiffre QUE les entrées qui
+   correspondent à la demande — jamais tout le trousseau pour n'en montrer que les noms.
 """
 from __future__ import annotations
 
 import base64
+import contextlib
 import ctypes
 import ctypes.wintypes
 import json
@@ -38,6 +45,10 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 log = logging.getLogger("iris.identifiants")
+
+# Au-delà, ce n'est plus « connecte-moi à un site » mais un import de masse : on redemande un terme
+# plus précis plutôt que de vider tout le trousseau dans le coffre.
+MAX_CORRESPONDANCES = 15
 
 
 @dataclass(frozen=True)
@@ -53,8 +64,24 @@ class Identifiant:
         return f"Identifiant(domaine={self.domaine!r}, utilisateur={self.utilisateur!r}, secret=***)"
 
     def en_dict(self) -> dict:
-        """Ce qu'on peut montrer : le site et l'utilisateur. Jamais le secret."""
         return {"domaine": self.domaine, "utilisateur": self.utilisateur}
+
+
+# --------------------------------------------------------------------------- correspondance
+def _correspond(domaine: str, motif: str) -> bool:
+    """Le motif désigne-t-il ce site ? On matche le DOMAINE, par étiquette, jamais par sous-chaîne.
+
+    « netlify » -> app.netlify.com (étiquette). « paypal » -> paypal.com, mais PAS
+    mypaypal-arnaque.com (sous-chaîne refusée). « app.netlify.com » -> lui-même (égalité)."""
+    d = (domaine or "").lower()
+    m = (motif or "").lower()
+    if not d or not m:
+        return False
+    return d == m or d.endswith("." + m) or m in d.split(".")
+
+
+def _domaine_de(url: str) -> str:
+    return (urlsplit(url or "").hostname or "").lower().removeprefix("www.")
 
 
 # --------------------------------------------------------------------------- DPAPI (sans dépendance)
@@ -63,10 +90,7 @@ class _BlobDonnees(ctypes.Structure):
 
 
 def _dpapi_dechiffrer(chiffre: bytes) -> bytes:
-    """CryptUnprotectData : ne réussit que sous le compte Windows qui a chiffré la donnée.
-
-    Appelé par ctypes plutôt que par win32crypt : une dépendance de moins, et surtout ça garde ce
-    module lisible pour qui voudra vérifier qu'il ne fait que déchiffrer, rien d'autre."""
+    """CryptUnprotectData : ne réussit que sous le compte Windows qui a chiffré la donnée."""
     entree = _BlobDonnees(len(chiffre), ctypes.cast(ctypes.c_char_p(chiffre), ctypes.POINTER(ctypes.c_char)))
     sortie = _BlobDonnees()
     ok = ctypes.windll.crypt32.CryptUnprotectData(
@@ -80,9 +104,8 @@ def _dpapi_dechiffrer(chiffre: bytes) -> bytes:
         ctypes.windll.kernel32.LocalFree(sortie.pbData)
 
 
-# --------------------------------------------------------------------------- les profils du navigateur
+# --------------------------------------------------------------------------- lecture des profils
 def _profils() -> list[Path]:
-    """Les dossiers de profil qui contiennent un fichier « Login Data »."""
     local = Path(os.environ.get("LOCALAPPDATA", ""))
     if not local.is_dir():
         return []
@@ -104,29 +127,31 @@ def _profils() -> list[Path]:
 
 
 def _cle_aes(user_data: Path) -> bytes | None:
-    """La clé AES du navigateur, tirée de « Local State » et déballée par DPAPI. None si absente."""
+    """La clé AES du navigateur, tirée de « Local State » et déballée par DPAPI. None si absente.
+
+    TOUT est dans le try, décodage base64 compris. Un « Local State » corrompu (base64 invalide ->
+    binascii.Error, sous-classe de ValueError) faisait autrement échouer l'import de TOUS les sites
+    de TOUS les navigateurs — défaut trouvé par une relecture adverse le 5 septembre 2026."""
     etat = user_data / "Local State"
     if not etat.is_file():
         return None
     try:
         brut = json.loads(etat.read_text(encoding="utf-8"))
-        encodee = brut["os_crypt"]["encrypted_key"]
-    except (json.JSONDecodeError, KeyError, OSError):
+        chiffre = base64.b64decode(brut["os_crypt"]["encrypted_key"])
+        if not chiffre.startswith(b"DPAPI"):
+            return None
+        return _dpapi_dechiffrer(chiffre[5:])  # les 5 premiers octets sont l'étiquette « DPAPI »
+    except (json.JSONDecodeError, KeyError, OSError, ValueError):
         return None
-    chiffre = base64.b64decode(encodee)
-    if not chiffre.startswith(b"DPAPI"):
-        return None
-    return _dpapi_dechiffrer(chiffre[5:])  # les 5 premiers octets sont l'étiquette « DPAPI »
 
 
 def _dechiffrer_valeur(valeur: bytes, cle_aes: bytes | None, dpapi=_dpapi_dechiffrer, aes_gcm=None) -> str:
     """Déchiffre un mot de passe stocké. Deux formats coexistent selon l'âge de l'entrée.
 
     `dpapi` et `aes_gcm` sont injectables pour que les tests n'aient besoin ni de Windows ni de
-    Chrome. En production, `aes_gcm` reste None et on utilise `cryptography`."""
+    Chrome. Aucune branche ne met le clair dans une exception : en cas d'échec, on rend « »."""
     if not valeur:
         return ""
-    # Format récent : « v10 » ou « v11 », puis nonce (12) + chiffré + étiquette GCM (16).
     if valeur[:3] in (b"v10", b"v11"):
         if not cle_aes:
             return ""
@@ -139,53 +164,84 @@ def _dechiffrer_valeur(valeur: bytes, cle_aes: bytes | None, dpapi=_dpapi_dechif
             return aes_gcm(cle_aes, nonce, corps).decode("utf-8", "replace")
         except Exception:
             return ""
-    # Ancien format : DPAPI directement.
     try:
         return dpapi(valeur).decode("utf-8", "replace")
     except OSError:
         return ""
 
 
-def _lire_profil(profil: Path, user_data: Path, dpapi=_dpapi_dechiffrer, aes_gcm=None) -> list[Identifiant]:
-    """Les identifiants d'UN profil. Passe par une copie : « Login Data » est verrouillé tant que le
-    navigateur tourne, et on ne demande pas à Miguel de fermer Chrome pour se connecter."""
-    source = profil / "Login Data"
+@contextlib.contextmanager
+def _base_copiee(fichier: Path):
+    """Ouvre en lecture une COPIE de la base : le fichier est verrouillé tant que le navigateur
+    tourne, et on ne demande pas à Miguel de fermer Chrome pour se connecter. La copie est toujours
+    supprimée, même en cas d'erreur."""
     copie = None
-    trouves: list[Identifiant] = []
     try:
-        cle = _cle_aes(user_data)
         with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as tampon:
             copie = Path(tampon.name)
-        shutil.copy2(source, copie)
+        shutil.copy2(fichier, copie)
         with sqlite3.connect(f"file:{copie}?mode=ro", uri=True, timeout=5) as cx:
             cx.row_factory = sqlite3.Row
-            lignes = cx.execute(
-                "SELECT origin_url, username_value, password_value FROM logins "
-                "WHERE blacklisted_by_user = 0 AND username_value <> ''"
-            ).fetchall()
-        for ligne in lignes:
-            secret = _dechiffrer_valeur(ligne["password_value"], cle, dpapi=dpapi, aes_gcm=aes_gcm)
-            if not secret:
-                continue
-            domaine = (urlsplit(ligne["origin_url"] or "").hostname or "").lower().removeprefix("www.")
-            if not domaine:
-                continue
-            trouves.append(Identifiant(domaine=domaine, utilisateur=ligne["username_value"], _secret=secret))
-    except (sqlite3.Error, OSError) as exc:
-        log.debug("identifiants illisibles (%s) : %s", profil.name, exc)
+            yield cx
     finally:
         if copie is not None:
             try:
                 copie.unlink(missing_ok=True)
             except OSError:
                 pass
-    return trouves
 
 
-def _tous(dpapi=_dpapi_dechiffrer, aes_gcm=None) -> list[Identifiant]:
+def _entrees(motif: str | None = None) -> list[dict]:
+    """Les (domaine, utilisateur) de tous les profils, SANS rien déchiffrer.
+
+    C'est ce qui construit la confirmation. Ne toucher à aucun mot de passe ici est double gain :
+    la confirmation n'a pas à déchiffrer quoi que ce soit, et on ne matérialise jamais un trousseau
+    en clair juste pour en montrer les noms."""
+    vus: set[tuple[str, str]] = set()
+    sortie: list[dict] = []
+    for profil in _profils():
+        try:
+            with _base_copiee(profil / "Login Data") as cx:
+                lignes = cx.execute(
+                    "SELECT origin_url, username_value FROM logins "
+                    "WHERE blacklisted_by_user = 0 AND username_value <> ''"
+                ).fetchall()
+        except (sqlite3.Error, OSError) as exc:
+            log.debug("identifiants illisibles (%s) : %s", profil.name, exc)
+            continue
+        for ligne in lignes:
+            domaine = _domaine_de(ligne["origin_url"])
+            if not domaine or (motif is not None and not _correspond(domaine, motif)):
+                continue
+            cle = (domaine, ligne["username_value"])
+            if cle not in vus:
+                vus.add(cle)
+                sortie.append({"domaine": domaine, "utilisateur": ligne["username_value"]})
+    return sortie
+
+
+def _identifiants(motif: str, dpapi=_dpapi_dechiffrer, aes_gcm=None) -> list[Identifiant]:
+    """Les identifiants qui correspondent à `motif`, AVEC le secret. On ne déchiffre QUE les lignes
+    qui correspondent : le trousseau entier n'est jamais mis en clair en mémoire."""
     resultats: list[Identifiant] = []
     for profil in _profils():
-        resultats.extend(_lire_profil(profil, profil.parent, dpapi=dpapi, aes_gcm=aes_gcm))
+        cle = _cle_aes(profil.parent)
+        try:
+            with _base_copiee(profil / "Login Data") as cx:
+                lignes = cx.execute(
+                    "SELECT origin_url, username_value, password_value FROM logins "
+                    "WHERE blacklisted_by_user = 0 AND username_value <> ''"
+                ).fetchall()
+        except (sqlite3.Error, OSError) as exc:
+            log.debug("identifiants illisibles (%s) : %s", profil.name, exc)
+            continue
+        for ligne in lignes:
+            domaine = _domaine_de(ligne["origin_url"])
+            if not domaine or not _correspond(domaine, motif):
+                continue
+            secret = _dechiffrer_valeur(ligne["password_value"], cle, dpapi=dpapi, aes_gcm=aes_gcm)
+            if secret:
+                resultats.append(Identifiant(domaine=domaine, utilisateur=ligne["username_value"], _secret=secret))
     return resultats
 
 
@@ -194,22 +250,17 @@ def disponible() -> bool:
     return bool(_profils())
 
 
-def sites_pour(terme: str, dpapi=_dpapi_dechiffrer, aes_gcm=None) -> list[dict]:
-    """Les sites enregistrés qui correspondent à `terme`, SANS mots de passe.
+def noms_correspondants(terme: str) -> list[dict]:
+    """Les (domaine, utilisateur) enregistrés qui correspondent à `terme`, SANS mots de passe.
 
-    Sert à répondre « pour quel compte ? » quand plusieurs collent. On ne rend que domaine +
-    utilisateur : de quoi choisir, rien de secret."""
+    Sert à construire la confirmation : ce qui est montré à Miguel est EXACTEMENT ce que
+    `importer_dans_le_coffre` écrira, parce que les deux passent par `_correspond`."""
     motif = (terme or "").strip().lower()
     if not motif:
         return []
-    vus, sortie = set(), []
-    for ident in _tous(dpapi=dpapi, aes_gcm=aes_gcm):
-        if motif in ident.domaine or motif in ident.utilisateur.lower():
-            cle = (ident.domaine, ident.utilisateur)
-            if cle not in vus:
-                vus.add(cle)
-                sortie.append(ident.en_dict())
-    return sortie[:12]
+    entrees = _entrees(motif)
+    entrees.sort(key=lambda e: (e["domaine"], e["utilisateur"]))
+    return entrees
 
 
 def importer_dans_le_coffre(terme: str, secrets, dpapi=_dpapi_dechiffrer, aes_gcm=None) -> dict:
@@ -217,22 +268,21 @@ def importer_dans_le_coffre(terme: str, secrets, dpapi=_dpapi_dechiffrer, aes_gc
 
     Le mot de passe va DIRECTEMENT du navigateur au coffre, sans jamais transiter par une valeur de
     retour, un journal ou un message. On ne rend que le compte de ce qui a été importé et les noms
-    des sites — jamais un secret."""
+    des sites."""
     motif = (terme or "").strip().lower()
     if not motif:
         return {"importes": 0, "sites": [], "message": "Dis-moi le nom du site à retrouver."}
     importes, noms = 0, []
-    for ident in _tous(dpapi=dpapi, aes_gcm=aes_gcm):
-        if motif not in ident.domaine and motif not in ident.utilisateur.lower():
-            continue
+    for ident in _identifiants(motif, dpapi=dpapi, aes_gcm=aes_gcm):
         try:
-            # Le nom sous lequel le site vit dans le coffre : son domaine. web_login le retrouve ainsi.
             secrets.set_site(ident.domaine, ident.utilisateur, ident._secret)
             importes += 1
             if ident.domaine not in noms:
                 noms.append(ident.domaine)
         except Exception as exc:
-            log.warning("échec de l'import de %s : %s", ident.domaine, exc)
+            # On ne journalise QUE le type : `set_site` vient de recevoir le mot de passe en
+            # argument, et l'objet exception d'un coffre futur pourrait le porter dans son message.
+            log.warning("échec de l'import de %s : %s", ident.domaine, type(exc).__name__)
     if not importes:
         return {"importes": 0, "sites": [],
                 "message": f"Je n'ai trouvé aucun identifiant enregistré pour « {terme} » dans ton navigateur."}
