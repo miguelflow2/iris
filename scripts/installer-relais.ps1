@@ -83,7 +83,7 @@ $SOURCES_WINSW = @(
 $PAGE_WINSW = "https://github.com/winsw/winsw/releases"
 
 $CLES_CONNUES = @(
-    "VELA_OPENROUTER_KEY", "VELA_SECRET", "VELA_LICENCES_URL",
+    "VELA_OPENROUTER_KEY", "VELA_ANTHROPIC_KEY", "VELA_SECRET", "VELA_LICENCES_URL",
     "VELA_ELEVENLABS_KEY", "VELA_LICENCE_SECRET", "VELA_DONNEES"
 )
 
@@ -474,18 +474,28 @@ $variables = Lire-FichierEnv $fichierEnv
 if (Test-Path $fichierEnv) { Write-Host "   Fichier existant relu : on ne redemande que ce qui manque." }
 else { Write-Host "   Aucun fichier .env : creation." }
 
-if (-not $variables["VELA_OPENROUTER_KEY"]) {
+# Le relais a besoin d'AU MOINS UNE cle amont. Deux choix, selon ce qu'on veut servir :
+#   - Anthropic (VELA_ANTHROPIC_KEY, sk-ant-...) : Claude en direct. En test, on ne paie que ce
+#     compte-la. Le forfait gratuit, lui, ne pourra pas etre servi sans cle OpenRouter.
+#   - OpenRouter (VELA_OPENROUTER_KEY, sk-or-v1-...) : les modeles gratuits ET Claude (via revente).
+# On peut donner les deux : Claude part alors chez Anthropic, le gratuit chez OpenRouter.
+if (-not $variables["VELA_ANTHROPIC_KEY"] -and -not $variables["VELA_OPENROUTER_KEY"]) {
     Write-Host ""
-    Write-Host "   VELA_OPENROUTER_KEY - la cle OpenRouter de VELA. INDISPENSABLE : sans elle, le" -ForegroundColor Yellow
-    Write-Host "   relais accepte les connexions et repond 503 a chaque demande d'IRIS." -ForegroundColor Yellow
-    Write-Host "   Elle se trouve sur openrouter.ai > Keys. Elle ne s'affichera pas en la tapant."
-    $variables["VELA_OPENROUTER_KEY"] = Lire-SecretCache "   Cle OpenRouter"
-    if (-not $variables["VELA_OPENROUTER_KEY"]) {
-        Write-Host "   Rien saisi : sans cette cle le service ne sert a rien. Arret." -ForegroundColor Red
+    Write-Host "   Le relais a besoin d'au moins une cle IA." -ForegroundColor Yellow
+    Write-Host "   - Pour du TEST avec Claude en direct : ta cle Anthropic (sk-ant-..., console.anthropic.com)."
+    Write-Host "   - Pour le forfait gratuit et/ou Claude via revente : ta cle OpenRouter (sk-or-v1-..., openrouter.ai > Keys)."
+    Write-Host "   Laisse vide et appuie sur Entree pour sauter celle que tu ne veux pas. Rien ne s'affiche en tapant."
+    $variables["VELA_ANTHROPIC_KEY"] = Lire-SecretCache "   Cle Anthropic (Claude), ou Entree"
+    $variables["VELA_OPENROUTER_KEY"] = Lire-SecretCache "   Cle OpenRouter, ou Entree"
+    if (-not $variables["VELA_ANTHROPIC_KEY"] -and -not $variables["VELA_OPENROUTER_KEY"]) {
+        Write-Host "   Aucune des deux : le relais ne pourrait rien servir. Arret." -ForegroundColor Red
         exit 1
     }
 }
-else { Write-Host "   VELA_OPENROUTER_KEY : deja renseignee." -ForegroundColor Green }
+else {
+    if ($variables["VELA_ANTHROPIC_KEY"])  { Write-Host "   VELA_ANTHROPIC_KEY : deja renseignee (Claude en direct)." -ForegroundColor Green }
+    if ($variables["VELA_OPENROUTER_KEY"]) { Write-Host "   VELA_OPENROUTER_KEY : deja renseignee." -ForegroundColor Green }
+}
 
 if (-not $variables["VELA_SECRET"]) {
     # Elle signe les jetons d'appareil. Sans elle, relais.py retombe sur une valeur par defaut

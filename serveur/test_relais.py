@@ -436,3 +436,37 @@ def test_le_gratuit_natteint_jamais_claude_meme_en_le_demandant(relais):
     """La cle qui paie est celle de VELA : un curieux ne doit pas pouvoir se servir de Claude gratuitement."""
     for demande in ("anthropic/claude-opus-5", "anthropic/claude-sonnet-5"):
         assert not relais.modele_autorise(demande, "gratuit").startswith("anthropic/")
+
+
+# --------------------------------------------------------------------------- Claude en direct chez Anthropic
+def test_un_modele_claude_part_chez_anthropic_quand_la_cle_est_la(relais, monkeypatch):
+    """Décision du 6 septembre 2026 : en test, Claude tourne via la clé Anthropic rechargée, en
+    direct, pas par OpenRouter. On retire le préfixe « anthropic/ » qu'Anthropic n'attend pas."""
+    monkeypatch.setattr(relais, "CLE_ANTHROPIC", "sk-ant-factice")
+    base, entetes, effectif = relais.amont_pour("anthropic/claude-opus-5")
+    assert base == relais.AMONT_ANTHROPIC
+    assert effectif == "claude-opus-5", "le préfixe anthropic/ doit être retiré"
+    assert entetes["Authorization"] == "Bearer sk-ant-factice"
+
+
+def test_sans_cle_anthropic_claude_repasse_par_openrouter(relais, monkeypatch):
+    monkeypatch.setattr(relais, "CLE_ANTHROPIC", "")
+    base, _e, effectif = relais.amont_pour("anthropic/claude-opus-5")
+    assert base == relais.AMONT
+    assert effectif == "anthropic/claude-opus-5", "OpenRouter attend le préfixe, lui"
+
+
+def test_les_modeles_gratuits_ne_partent_jamais_chez_anthropic(relais, monkeypatch):
+    monkeypatch.setattr(relais, "CLE_ANTHROPIC", "sk-ant-factice")
+    base, _e, _m = relais.amont_pour("minimax/minimax-m3:free")
+    assert base == relais.AMONT, "un modèle gratuit reste chez OpenRouter"
+
+
+def test_une_cle_anthropic_suffit_a_faire_repondre_le_relais(relais, monkeypatch):
+    """Le relais ne doit plus exiger la clé OpenRouter : la clé Anthropic seule suffit à servir."""
+    monkeypatch.setattr(relais, "CLE_AMONT", "")
+    monkeypatch.setattr(relais, "CLE_ANTHROPIC", "sk-ant-factice")
+    from fastapi.testclient import TestClient
+    c = TestClient(relais.app)
+    r = c.post("/api/appareil", json={"email": "x@y.com", "machine": "m"})
+    assert r.status_code == 200, "avec une clé Anthropic seule, l'enregistrement doit marcher"

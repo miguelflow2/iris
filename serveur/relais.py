@@ -42,6 +42,11 @@ log = logging.getLogger("vela.relais")
 
 AMONT = "https://openrouter.ai/api/v1"
 CLE_AMONT = os.environ.get("VELA_OPENROUTER_KEY", "").strip()
+# Point d'acces compatible OpenAI d'Anthropic. Quand cette cle est presente, les modeles Claude
+# partent DIRECTEMENT chez Anthropic plutot que par OpenRouter — utile en test (on ne paie que le
+# compte Anthropic deja recharge) et souvent moins cher qu'OpenRouter, qui prend une marge.
+AMONT_ANTHROPIC = "https://api.anthropic.com/v1"
+CLE_ANTHROPIC = os.environ.get("VELA_ANTHROPIC_KEY", "").strip()
 SECRET_JETON = os.environ.get("VELA_SECRET", "").strip().encode() or b"VELA-relais-jeton-a-remplacer"
 # Doit rester identique à LICENSE_SECRET dans backend/iris/plans.py : sinon les clés émises ici
 # seront rejetées par IRIS.
@@ -360,6 +365,25 @@ def jetons_du_flux(ligne: bytes) -> int:
     return total
 
 
+def amont_pour(modele: str) -> tuple[str, dict, str]:
+    """Ou envoyer cette demande : (adresse, en-tetes, modele effectif).
+
+    Un modele Claude part chez Anthropic si sa cle est configuree (on retire le prefixe
+    « anthropic/ » qu'Anthropic n'attend pas) ; sinon, et pour tout le reste, chez OpenRouter."""
+    est_claude = modele.startswith("anthropic/claude") or modele.startswith("claude-")
+    if est_claude and CLE_ANTHROPIC:
+        effectif = modele.split("/", 1)[1] if modele.startswith("anthropic/") else modele
+        entetes = {"Authorization": "Bearer " + CLE_ANTHROPIC, "Content-Type": "application/json"}
+        return AMONT_ANTHROPIC, entetes, effectif
+    entetes = {
+        "Authorization": "Bearer " + CLE_AMONT,
+        "HTTP-Referer": "https://vela.app/iris",
+        "X-Title": "IRIS (VELA)",
+        "Content-Type": "application/json",
+    }
+    return AMONT, entetes, modele
+
+
 def modele_autorise(demande: str, plan: str) -> str:
     """Le client propose, le relais dispose. Un plan Gratuit n'obtient jamais Claude, quoi qu'il envoie."""
     permis = MODELES_PAR_PLAN.get(plan, GRATUITS)
@@ -414,7 +438,7 @@ def sante():
 def enregistrer_appareil(corps: Appareil):
     """Premier contact d'une installation d'IRIS. Aucun mot de passe : le jeton n'ouvre l'accès
     qu'à l'IA, jamais aux données de qui que ce soit."""
-    if not CLE_AMONT:
+    if not CLE_AMONT and not CLE_ANTHROPIC:
         raise HTTPException(503, "Le relais n'a pas de clé IA configurée.")
     etat = abonnement(corps.email)
     return {
@@ -518,7 +542,7 @@ async def completions(request: Request, authorization: str | None = Header(defau
     """Transmet la demande à l'IA, sous le modèle auquel l'abonnement donne droit.
 
     Rien n'est conservé du contenu : ni les messages reçus, ni la réponse renvoyée."""
-    if not CLE_AMONT:
+    if not CLE_AMONT and not CLE_ANTHROPIC:
         raise HTTPException(503, "Le relais n'a pas de clé IA configurée.")
     identite, plan = _identifier(authorization)
     try:
@@ -529,25 +553,26 @@ async def completions(request: Request, authorization: str | None = Header(defau
         raise HTTPException(400, "Requête sans messages.")
 
     consommer(identite, plan)
-    charge["model"] = modele_autorise(str(charge.get("model") or ""), plan)
-    entetes = {
-        "Authorization": "Bearer " + CLE_AMONT,
-        "HTTP-Referer": "https://vela.app/iris",
-        "X-Title": "IRIS (VELA)",
-        "Content-Type": "application/json",
-    }
-    log.info("relais : plan=%s modele=%s flux=%s", plan, charge["model"], bool(charge.get("stream")))
+    modele = modele_autorise(str(charge.get("model") or ""), plan)
+    base, entetes, charge["model"] = amont_pour(modele)
+    # En mode « Claude seul » (une seule cle configuree), un forfait gratuit demande un modele
+    # OpenRouter dont la cle est absente : sans ce garde, on enverrait « Bearer  » (vide), qu httpx
+    # refuse avec une erreur illisible. On repond proprement a la place.
+    if entetes["Authorization"].strip() == "Bearer":
+        raise HTTPException(503, "Ce modele n est pas disponible sur ce relais (cle du fournisseur absente).")
+    log.info("relais : plan=%s modele=%s amont=%s flux=%s", plan, charge["model"],
+             "anthropic" if base == AMONT_ANTHROPIC else "openrouter", bool(charge.get("stream")))
 
     if not charge.get("stream"):
         async with httpx.AsyncClient(timeout=180) as client:
-            reponse = await client.post(AMONT + "/chat/completions", json=charge, headers=entetes)
+            reponse = await client.post(base + "/chat/completions", json=charge, headers=entetes)
         rendu = reponse.json()
         enregistrer_jetons(identite, jetons_de(rendu))
         return JSONResponse(rendu, status_code=reponse.status_code)
 
     async def flux():
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", AMONT + "/chat/completions", json=charge, headers=entetes) as amont:
+            async with client.stream("POST", base + "/chat/completions", json=charge, headers=entetes) as amont:
                 if amont.status_code >= 400:
                     detail = (await amont.aread()).decode(errors="replace")[:400]
                     log.warning("amont %s : %s", amont.status_code, detail)

@@ -76,11 +76,27 @@ seules choses que le script ne peut pas fabriquer à ta place.
 
 ---
 
+## Deux façons de servir Claude, selon la clé donnée
+
+Le relais a besoin d'**au moins une** clé d'IA. Le choix décide d'où vient Claude et qui paie :
+
+| Clé fournie | Ce que le relais sert | Qui paie Claude |
+|---|---|---|
+| **Anthropic** (`sk-ant-…`) | Claude **en direct** chez Anthropic (préfixe `anthropic/` retiré) | le compte Anthropic (celui que Miguel a rechargé) |
+| **OpenRouter** (`sk-or-v1-…`) | les modèles gratuits **et** Claude par revente | le compte OpenRouter |
+| **les deux** | Claude part chez Anthropic, le gratuit chez OpenRouter | chacun son compte |
+
+**En test, donne la clé Anthropic seule** : Claude tourne, et tu ne paies que le compte que tu as
+déjà rechargé. Le forfait gratuit ne pourra pas être servi (pas de clé OpenRouter) — sans
+importance pour un essai où l'on teste un client payant. Prouvé le 6 septembre : un client premium
+a reçu Claude Sonnet à travers le relais, sans coller aucune clé, servi directement par Anthropic.
+
 ## Ce que toi seul peux fournir
 
-1. **La clé OpenRouter de VELA.** Le relais la demande au premier lancement (`installer-relais.ps1`)
-   et la range dans `serveur/.env`, jamais affichée. C'est elle qui paie Claude pour les abonnés
-   payants. **Sans elle, le relais répond 503 à tout le monde.**
+1. **Une clé d'IA** (au moins une). Le relais la demande au premier lancement (`installer-relais.ps1`)
+   et la range dans `serveur/.env`, jamais affichée. Pour du test avec Claude : ta clé Anthropic.
+   Pour le forfait gratuit et la vente : ta clé OpenRouter. **Sans aucune des deux, le relais répond
+   503 à tout le monde.**
 2. **La clé ElevenLabs**, si la voix des forfaits doit marcher.
 3. **Un domaine + un compte Cloudflare**, pour l'adresse stable (le mode nommé).
 4. **Le choix de la machine.** Pour l'entrevue, ton portable suffit. Pour de vrais clients qui
