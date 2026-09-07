@@ -96,3 +96,18 @@ def test_iris_se_presente_comme_vela(app):
     for cerveau in ("claude", "openrouter"):
         texte = chat._system_prompt(cerveau, has_tools=True, memory_ctx="", source="text")
         assert "tu es IRIS" in texte
+
+
+# --------------------------------------------------------------------------- 400 : on réessaie sans les options avancées
+def test_un_400_sur_options_avancees_est_rejoue_sans_elles():
+    """Constat du 6 septembre 2026 : opus-5 répondait à un appel simple mais renvoyait 400 avec
+    thinking:adaptive + output_config. Le connecteur doit retirer ces options et rejouer, pas
+    échouer — sinon Claude est inutilisable alors que la clé est bonne."""
+    import inspect
+
+    from iris.connectors import claude
+
+    source = inspect.getsource(claude.ClaudeConnector.stream)
+    assert "BadRequestError" in source
+    assert "output_config" in source and "thinking" in source
+    assert "nouvel essai sans ces options" in source

@@ -143,6 +143,21 @@ class ClaudeConnector(BaseConnector):
                         yield chunk
                 else:
                     raise
+            except anthropic.BadRequestError as exc:
+                # 400 : l'API a refusé une option avancée (réflexion adaptative, output_config…) que
+                # ce modèle ou cette version du service n'accepte pas telle quelle. Constat du
+                # 6 septembre 2026 : opus-5 répondait à un appel simple mais renvoyait 400 avec ces
+                # options. Plutôt que d'échouer, on les retire UNE fois et on rejoue — le modèle
+                # réfléchit de toute façon par défaut. C'est ce qui garde Claude utilisable.
+                retirables = [k for k in ("thinking", "output_config") if k in params]
+                if retirables and not holder.get("started"):
+                    for k in retirables:
+                        params.pop(k, None)
+                    log.warning("Claude a refusé %s (400) : nouvel essai sans ces options.", ", ".join(retirables))
+                    async for chunk in self._stream_once(client, params, holder):
+                        yield chunk
+                else:
+                    raise _map_error(exc) from exc
             except anthropic.APIError as exc:
                 raise _map_error(exc) from exc
 
