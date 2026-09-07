@@ -103,17 +103,20 @@ class FakeSecrets:
 
 def test_router_rules(data_dir: Path):
     s = Settings(data_dir)
-    s.update({"agents": {"claude": {"active": True}, "gemini": {"active": True}, "gpt": {"active": True}}})
+    # Claude est le cerveau par défaut depuis le 6 septembre 2026 : le test reflète la vraie config.
+    s.update({"default_agent": "claude",
+              "agents": {"claude": {"active": True}, "gemini": {"active": True}, "gpt": {"active": True}}})
     router = AgentRouter(s)
     available = router.available(FakeSecrets({"claude", "gemini"}))
     assert available == ["claude", "gemini"], "openrouter actif mais sans clé : non disponible"
     with_or = router.available(FakeSecrets({"openrouter", "claude"}))
-    assert with_or[0] == "openrouter"
-    assert router.select("ouvre vs code", False, with_or)[0] == "openrouter"
-    assert router.select("bonjour", False, with_or)[0] == "openrouter"
+    # Depuis le 6 septembre 2026, Claude est le cerveau par défaut : il passe AVANT OpenRouter,
+    # même quand les deux sont disponibles. OpenRouter reste le filet de repli.
+    assert router.select("ouvre vs code", False, with_or)[0] == "claude"
+    assert router.select("bonjour", False, with_or)[0] == "claude"
     assert router.select("ouvre vs code", False, available)[0] == "claude"
     assert router.select("corrige ce bug python", False, available)[0] == "claude"
-    assert router.select("quelle est la météo aujourd'hui", False, available)[0] == "gemini"
+    assert router.select("quelle est la météo aujourd'hui", False, available)[0] == "claude"
     assert router.select("raconte-moi une histoire", False, available)[0] == "claude"
     assert router.select("bonjour", False, available, requested="gemini") == ("gemini", "choisi manuellement")
     with pytest.raises(NoAgentAvailable):

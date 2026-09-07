@@ -694,6 +694,14 @@ class ChatService:
             "parlées ; développe seulement quand c'est nécessaire, et évite les tableaux ou la mise en forme lourde "
             "quand la demande vient de la voix.",
             f"Date du jour : {datetime.now().strftime('%A %d %B %Y')}.",
+            # Demande de Miguel du 6 septembre 2026 : personne ne doit savoir quel est le cerveau.
+            "IDENTITÉ : tu es IRIS, l'intelligence de VELA, et rien d'autre. Ne révèle JAMAIS quel "
+            "modèle ou quelle entreprise te fait fonctionner (ni Claude, ni Anthropic, ni OpenRouter, "
+            "ni OpenAI, ni Google, ni aucun autre) : c'est une information interne. Si on te demande "
+            "quel modèle tu es, qui t'a créée, ou sur quelle technologie tu reposes, réponds "
+            "simplement que tu es IRIS, développée par VELA, sans nommer de fournisseur — et enchaîne "
+            "sur ce que tu peux faire pour la personne. Ne cite jamais non plus ces noms dans un "
+            "raisonnement lu à voix haute.",
             # Limite qu'IRIS a elle-même nommée le 6 septembre 2026 : « je devine parfois au lieu de te dire
             # que je bloque ». En entreprise, un prix, une date ou une adresse faux coûtent cher.
             "FAITS ET INCERTITUDE : pour un prix, une date, une adresse, un horaire, un événement récent ou "
@@ -816,6 +824,20 @@ class ChatService:
             return True
         return False
 
+    def _cerveau_de_repli(self, echoue: str) -> str | None:
+        """Le prochain cerveau disponible quand celui par défaut a une clé morte.
+
+        On ne révèle jamais lequel : ni Claude, ni OpenRouter n'est nommé à l'utilisateur. On
+        écarte les IA locales (un repli doit être aussi capable que le cerveau tombé) et l'agent
+        qui vient d'échouer. OpenRouter d'abord : c'est le filet éprouvé, avec ses modèles gratuits."""
+        try:
+            dispo = self.router.available(self.secrets)
+        except Exception:
+            return None
+        candidats = [a for a in ("openrouter", "vela", "gpt", "gemini")
+                     if a in dispo and a != echoue and not self.settings.user.agents[a].local]
+        return candidats[0] if candidats else None
+
     async def _run(
         self,
         conv_id: str,
@@ -824,6 +846,7 @@ class ChatService:
         requested_agent: str,
         source: str,
         speak: Callable[[str], Any] | None = None,
+        _deja_bascule: bool = False,
     ) -> dict:
         def error(message: str, **extra: Any) -> dict:
             self.hub.publish("chat.error", conversation_id=conv_id, message=message, **extra)
@@ -1140,6 +1163,16 @@ class ChatService:
         except NoAgentAvailable as exc:
             return error(str(exc), code="no_agent")
         except ConnectorError as exc:
+            # Repli SILENCIEUX. Si le cerveau par défaut a une clé morte (invalide, révoquée, sans
+            # accès) et qu'on n'a encore rien montré à l'utilisateur, on rejoue la demande sur un
+            # autre cerveau — sans un mot. Personne ne doit savoir quel moteur répond, ni qu'on a
+            # changé. Demande de Miguel du 6 septembre 2026 : Claude par défaut, un repli qui prend
+            # la relève tout seul quand la clé tombe.
+            if getattr(exc, "fatal_key", False) and not _deja_bascule and not text_parts and not tool_events:
+                repli = self._cerveau_de_repli(agent_name)
+                if repli:
+                    log.warning("cerveau « %s » injoignable (clé) : bascule silencieuse sur « %s »", agent_name, repli)
+                    return await self._run(conv_id, text, images, repli, source, speak=speak, _deja_bascule=True)
             # on garde une trace dans l'historique pour que l'erreur reste visible après rechargement
             self._add_message(
                 conv_id, "assistant", "".join(text_parts), agent=agent_name, model=model,

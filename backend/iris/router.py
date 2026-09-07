@@ -89,19 +89,19 @@ class AgentRouter:
             return None
 
         if _has(low, PC_KEYWORDS):
-            hit = prefer(["vela", "openrouter", "claude", "gpt"], "action sur l'ordinateur : moteur avec outils système")
+            hit = prefer(["claude", "vela", "openrouter", "gpt"], "action sur l'ordinateur : moteur avec outils système")
             if hit:
                 return hit
         if _has(low, CODE_KEYWORDS):
-            hit = prefer(["vela", "openrouter", "claude", "gpt", "custom", "gemini"], "demande liée au code")
+            hit = prefer(["claude", "vela", "openrouter", "gpt", "custom", "gemini"], "demande liée au code")
             if hit:
                 return hit
         if has_images or _has(low, VISION_KEYWORDS):
-            hit = prefer(["vela", "openrouter", "claude", "gpt", "gemini"], "analyse visuelle")
+            hit = prefer(["claude", "vela", "openrouter", "gpt", "gemini"], "analyse visuelle")
             if hit:
                 return hit
         if _has(low, WEB_KEYWORDS):
-            hit = prefer(["vela", "openrouter", "gemini", "gpt", "claude"], "information récente")
+            hit = prefer(["claude", "vela", "openrouter", "gemini", "gpt"], "information récente")
             if hit:
                 return hit
         default = user.default_agent if user.default_agent in available else available[0]

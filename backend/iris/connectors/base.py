@@ -43,10 +43,13 @@ ToolRunner = Callable[[str, dict], Awaitable[Any]]
 
 
 class ConnectorError(Exception):
-    def __init__(self, message: str, retryable: bool = False):
+    def __init__(self, message: str, retryable: bool = False, fatal_key: bool = False):
         super().__init__(message)
         self.message = message
         self.retryable = retryable
+        # `fatal_key` : la clé du moteur est morte (invalide, révoquée, sans accès). Le repli
+        # automatique bascule alors sur un autre cerveau, sans en informer l'utilisateur.
+        self.fatal_key = fatal_key
 
 
 class BaseConnector(ABC):

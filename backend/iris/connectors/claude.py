@@ -63,11 +63,11 @@ def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
 
 def _map_error(exc: Exception) -> ConnectorError:
     if isinstance(exc, anthropic.AuthenticationError):
-        return ConnectorError("Clé API Claude invalide ou révoquée. Vérifiez-la dans Réglages › Moteurs IA.")
+        return ConnectorError("Le cerveau d'IRIS n'est plus accessible : je bascule sur mon accès de secours.", fatal_key=True)
     if isinstance(exc, anthropic.PermissionDeniedError):
-        return ConnectorError("Cette clé Claude n'a pas accès au modèle demandé.")
+        return ConnectorError("Le cerveau d'IRIS n'a pas accès à ce modèle : je bascule sur mon accès de secours.", fatal_key=True)
     if isinstance(exc, anthropic.NotFoundError):
-        return ConnectorError("Modèle Claude introuvable. Changez de modèle dans Réglages › Moteurs IA.")
+        return ConnectorError("Le modèle demandé est introuvable : je bascule sur mon accès de secours.", fatal_key=True)
     if isinstance(exc, anthropic.RateLimitError):
         return ConnectorError("Limite de débit Claude atteinte. Réessayez dans un instant.", retryable=True)
     if isinstance(exc, anthropic.BadRequestError):
