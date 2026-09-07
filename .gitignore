@@ -28,3 +28,9 @@ release/
 
 # donnees de developpement locales
 backend/dev-data/
+
+# outils binaires du serveur (cloudflared, WinSW) : gros, telechargeables, jamais versionnes
+serveur/outils/
+serveur/*-service.exe
+serveur/journaux/
+serveur/donnees/
