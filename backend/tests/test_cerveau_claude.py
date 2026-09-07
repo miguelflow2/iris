@@ -111,3 +111,16 @@ def test_un_400_sur_options_avancees_est_rejoue_sans_elles():
     assert "BadRequestError" in source
     assert "output_config" in source and "thinking" in source
     assert "nouvel essai sans ces options" in source
+
+
+def test_pas_de_doublon_de_nom_doutil_envoye_au_modele():
+    """400 « Tool names must be unique » du 6 septembre 2026 : la recherche web native d'Anthropic
+    et l'outil web_search d'IRIS portaient le meme nom. Le connecteur doit dedupliquer, sinon Claude
+    echoue sur TOUTE demande avec outils — c'est-a-dire presque toutes."""
+    import inspect
+
+    from iris.connectors import claude
+
+    source = inspect.getsource(claude.ClaudeConnector.stream)
+    assert "par_nom" in source and "Tool names must be unique" in source, \
+        "le connecteur doit dedupliquer les noms d'outils avant l'envoi"

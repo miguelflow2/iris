@@ -128,7 +128,14 @@ class ClaudeConnector(BaseConnector):
         if tools:
             tool_defs.extend(t.to_anthropic() for t in tools)
         if tool_defs:
-            params["tools"] = tool_defs
+            # Deux outils du même nom = 400 « Tool names must be unique ». Cas réel du 6 septembre
+            # 2026 : la recherche web native d'Anthropic et l'outil « web_search » d'IRIS portent le
+            # même nom. On garde le DERNIER de chaque nom — celui d'IRIS, que run_tool sait exécuter,
+            # l'emporte sur la version native que rien ici ne consommerait.
+            par_nom: dict[str, dict] = {}
+            for definition in tool_defs:
+                par_nom[definition.get("name")] = definition
+            params["tools"] = list(par_nom.values())
 
         for _round in range(max(1, int(opts.max_rounds or MAX_TOOL_ROUNDS))):
             holder: dict = {}
