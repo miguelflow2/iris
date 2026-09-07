@@ -60,9 +60,13 @@ GRATUITS = [
     "google/gemma-4-31b-it:free",
     "nvidia/nemotron-3.5-lightning:free",
 ]
+# Décision de Miguel du 6 septembre 2026 : « Claude aux payants, gratuit aux gratuits ». Chaque
+# abonnement finance son propre cerveau. Le PREMIER modèle de chaque liste est le défaut du forfait
+# (voir modele_autorise), donc tout forfait payant MÈNE avec Claude — c'est ce que le client paie.
+# Le gratuit ne l'atteint jamais, quoi qu'il demande : sa facture serait à la charge de VELA.
 MODELES_PAR_PLAN: dict[str, list[str]] = {
     "gratuit": GRATUITS,
-    "pro": ["google/gemini-2.5-flash", "openai/gpt-5-mini"] + GRATUITS,
+    "pro": ["anthropic/claude-sonnet-5", "google/gemini-2.5-flash", "openai/gpt-5-mini"] + GRATUITS,
     "premium": ["anthropic/claude-sonnet-5", "google/gemini-2.5-flash", "openai/gpt-5-mini"] + GRATUITS,
     "entreprise": ["anthropic/claude-opus-5", "anthropic/claude-sonnet-5", "google/gemini-2.5-flash"] + GRATUITS,
 }

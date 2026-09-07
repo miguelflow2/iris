@@ -416,3 +416,23 @@ def test_les_plafonds_de_voix_se_reglent_sans_toucher_au_code(monkeypatch, tmp_p
     assert recharge.PLAFONDS_CARACTERES["gratuit"] == 1234
     assert recharge.PLAFOND_CARACTERES_GLOBAL == 99999
     assert recharge.CARACTERES_MAX_PAR_REQUETE == 77
+
+
+# --------------------------------------------------------------------------- l'economie : Claude aux payants
+def test_tout_forfait_payant_mene_avec_claude(relais):
+    """Decision de Miguel du 6 septembre 2026 : chaque abonnement finance son propre cerveau. Le
+    defaut d'un forfait payant DOIT etre un modele Claude — c'est ce que le client paie."""
+    for plan in ("pro", "premium", "entreprise"):
+        defaut = relais.modele_autorise("", plan)
+        assert defaut.startswith("anthropic/claude-"), f"{plan} ne mene pas avec Claude : {defaut}"
+
+
+def test_le_gratuit_mene_avec_un_modele_gratuit(relais):
+    defaut = relais.modele_autorise("", "gratuit")
+    assert defaut.endswith(":free"), f"le gratuit doit couter 0 a VELA : {defaut}"
+
+
+def test_le_gratuit_natteint_jamais_claude_meme_en_le_demandant(relais):
+    """La cle qui paie est celle de VELA : un curieux ne doit pas pouvoir se servir de Claude gratuitement."""
+    for demande in ("anthropic/claude-opus-5", "anthropic/claude-sonnet-5"):
+        assert not relais.modele_autorise(demande, "gratuit").startswith("anthropic/")
