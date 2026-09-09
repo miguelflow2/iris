@@ -1,22 +1,22 @@
-# Blueprint Render — héberge le relais IA de VELA gratuitement, 24/7, SANS carte.
+# Blueprint Render — héberge la PLATEFORME VELA : le relais IA + le serveur de licences.
 #
 # Utilisation : Render › New › Blueprint › choisir le dépôt « miguelflow2/iris ».
-# Render lit ce fichier, crée le service, et te DEMANDE de coller les clés marquées
-# « sync: false » (elles ne sont donc PAS écrites ici, jamais dans git).
+# Render lit ce fichier, crée les DEUX services, et te DEMANDE de coller les valeurs
+# marquées « sync: false » (secrets — jamais écrits dans git).
 #
-# Ne déploie QUE le relais : c'est lui que l'app des clients appelle pour l'IA. Le relais
-# répond aussi à /api/licence en repli, donc les vérifications de licence marchent aussi.
-# Le serveur de licences séparé (webhooks paiement) n'est utile qu'une fois les paiements
-# ouverts, et un 2ᵉ service dépasserait les 750 h/mois gratuites — on le laisse pour plus tard.
+# CHAÎNE DES ABONNEMENTS (option B) :
+#   site (bouton Stripe) → paiement → Stripe envoie un webhook à vela-licences
+#   → vela-licences génère une clé d'abonnement → le relais (vela-relais) interroge
+#   vela-licences via VELA_LICENCES_URL → l'app IRIS lit le forfait et active les fonctions.
 
 services:
+  # ----------------------------------------------------------------- RELAIS IA
   - type: web
     name: vela-relais
     runtime: python
     plan: free
     rootDir: serveur
     buildCommand: pip install -r requirements.txt
-    # Render fournit $PORT ; on écoute sur 0.0.0.0 (le proxy de Render s'y connecte).
     startCommand: uvicorn relais:app --host 0.0.0.0 --port $PORT
     autoDeploy: true
     envVars:
@@ -28,7 +28,60 @@ services:
         sync: false
       - key: VELA_ELEVENLABS_KEY
         sync: false
-      # Sur Render le disque est éphémère (remis à zéro à chaque redéploiement) : on range
-      # les données de quota dans /tmp pour éviter toute confusion. Non critique pour le pilote.
+      # Relie le relais au serveur de licences : colle ici l'URL publique de vela-licences
+      # une fois créé (ex. https://vela-licences.onrender.com). Sans elle, le relais met
+      # tout le monde en « gratuit » (aucun abonnement reconnu).
+      - key: VELA_LICENCES_URL
+        sync: false
+      # Doit être IDENTIQUE à IRIS_LICENSE_SECRET de vela-licences (sinon les clés sont rejetées).
+      - key: VELA_LICENCE_SECRET
+        sync: false
       - key: VELA_DONNEES
         value: /tmp/vela-donnees
+
+  # ----------------------------------------------------------- SERVEUR LICENCES
+  - type: web
+    name: vela-licences
+    runtime: python
+    plan: free
+    rootDir: server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn licences.app:creer_app --factory --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*
+    autoDeploy: true
+    envVars:
+      # ⚠️ « production » REFUSE de démarrer tant que PayPal n'est pas configuré (garde-fou
+      # actuel du code). Pour un lancement STRIPE SEUL, on reste en « developpement » AVEC
+      # vérification des signatures activée (sûr), le temps que j'assouplisse ce garde-fou
+      # (tâche B4). Puis on passera à « production ».
+      - key: IRIS_ENV
+        value: developpement
+      - key: IRIS_WEBHOOK_SANS_VERIFICATION
+        value: "0"
+      # --- Stripe (SECRETS — à coller après le KYC) ---
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      # Identifiants de prix (non secrets). ⚠️ VÉRIFIE que ce sont bien les prix LIVE (pas test).
+      - key: STRIPE_PRIX_PRO
+        value: price_1UDj2dRmWY2SyhA0Hd0DeRwX
+      - key: STRIPE_PRIX_PREMIUM
+        value: price_1UDj4ARmWY2SyhA0WltWem3R
+      - key: STRIPE_PRIX_ENTREPRISE
+        value: price_1UDj5zRmWY2SyhA0XEiYt2Fs
+      # Secret HMAC des clés d'abonnement — IDENTIQUE au relais (VELA_LICENCE_SECRET) ET à
+      # l'app (backend/iris/plans.py, LICENSE_SECRET). Un seul et même secret partout.
+      - key: IRIS_LICENSE_SECRET
+        sync: false
+      - key: IRIS_JETON_ADMIN
+        sync: false
+      - key: IRIS_DEVISES
+        value: CAD
+      # PERSISTANCE (choix B) : base Postgres externe GRATUITE (Neon ou Supabase).
+      # Crée un projet gratuit, copie la « connection string » (postgresql://...) et colle-la ici.
+      # Tant qu'elle est absente, le serveur retombe sur SQLite (éphémère sur Render) — donc
+      # les abonnements vendus ne survivraient PAS à un redéploiement. À REMPLIR avant de vendre.
+      - key: DATABASE_URL
+        sync: false

@@ -3,18 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Les lunettes VELA — fiche du produit</title>
-<meta name="description" content="Les lunettes VELA : micro et haut-parleurs, connexion Bluetooth au PC, étui de charge USB-C, ni caméra ni écran. 250 $, seules ; l’application IRIS est gratuite. Photos, caractéristiques et achat.">
+<title>Les lunettes VELA</title>
+<meta name="description" content="Les lunettes VELA : micro et son, aucune caméra, aucun écran. Elles se relient à votre PC ; IRIS fait le reste. 250 $ CAD, un seul versement. Précommande, fabriquées au Québec.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
-<!-- ?v= : numéro de version à incrémenter à chaque modification de la CSS ou du JS,
-     dans les onze pages à la fois. Voir README.md. -->
-<link rel="stylesheet" href="assets/style.css?v=5">
+<link rel="canonical" href="https://velaglass.ca/lunettes.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Mulish:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="assets/style.css?v=8">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VELA">
+<meta property="og:locale" content="fr_CA">
+<meta property="og:title" content="Les lunettes VELA">
+<meta property="og:description" content="Les lunettes VELA : micro et son, aucune caméra, aucun écran. 250 $ CAD, un seul versement. Précommande, fabriquées au Québec.">
+<meta property="og:url" content="https://velaglass.ca/lunettes.html">
+<meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+<meta property="og:image:width" content="900">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="Lunettes VELA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Les lunettes VELA">
+<meta name="twitter:description" content="Les lunettes VELA : micro et son, aucune caméra, aucun écran. 250 $ CAD, un seul versement.">
+<meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+
+<!-- JSON-LD : fiche produit. Aucun lien X (pas encore de compte VELA). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://velaglass.ca/#organization",
+      "name": "VELA",
+      "url": "https://velaglass.ca/",
+      "sameAs": [
+        "https://www.instagram.com/vela_iris2026/",
+        "https://www.linkedin.com/in/vela-glass-427361431/",
+        "https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw"
+      ]
+    },
+    {
+      "@type": "Product",
+      "name": "Lunettes VELA",
+      "description": "Monture sobre qui porte le micro et le son : ni caméra, ni écran. Reliée à l’ordinateur en Bluetooth, avec l’assistante vocale IRIS. Fabriquées au Québec.",
+      "brand": { "@type": "Brand", "name": "VELA" },
+      "url": "https://velaglass.ca/lunettes.html",
+      "image": "https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg",
+      "offers": {
+        "@type": "Offer",
+        "price": "250",
+        "priceCurrency": "CAD",
+        "availability": "https://schema.org/PreOrder",
+        "url": "https://velaglass.ca/lunettes.html"
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip" href="#contenu">Aller au contenu</a>
 
-<!-- Pictogrammes : mêmes symboles que l'accueil, rangés dans le document.
-     Aucune requête réseau, le site reste identique hors ligne. -->
+<div class="beta-banner">
+  <div class="wrap"><b>Beta</b> — le service d’IA en ligne se déploie&nbsp;; certaines réponses ne sont pas encore disponibles.</div>
+</div>
+
+<!-- ==========================================================================
+     Pictogrammes au trait, rangés une seule fois et appelés par <use href="#…">.
+     Même sprite que l'accueil : aucune requête réseau, tout marche hors ligne.
+     ========================================================================== -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <symbol id="i-micro" viewBox="0 0 24 24">
     <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
@@ -22,26 +79,28 @@
   </symbol>
   <symbol id="i-son" viewBox="0 0 24 24">
     <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
-    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/>
-    <path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
+    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
   </symbol>
   <symbol id="i-sans-camera" viewBox="0 0 24 24">
     <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
-    <path d="M8.4 7 10 4.2h4L15.6 7"/>
-    <circle cx="12" cy="13.3" r="3.5"/>
-    <path d="M3 21 21 3"/>
+    <path d="M8.4 7 10 4.2h4L15.6 7"/><circle cx="12" cy="13.3" r="3.5"/><path d="M3 21 21 3"/>
   </symbol>
-  <symbol id="i-batterie" viewBox="0 0 24 24">
-    <rect x="2.4" y="7.6" width="16.6" height="8.8" rx="2.4"/>
-    <path d="M21.6 10.8v2.4"/>
-    <rect x="5" y="10" width="6.4" height="4" rx="1" fill="currentColor" stroke="none"/>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M3 10.6 12 3.6l9 7"/><path d="M5 9.4V20h14V9.4"/><path d="M9.6 20v-5.4h4.8V20"/>
   </symbol>
-  <symbol id="i-lunettes" viewBox="0 0 24 24">
-    <rect x="1.4" y="8.6" width="8.7" height="7" rx="3"/>
-    <rect x="13.9" y="8.6" width="8.7" height="7" rx="3"/>
-    <path d="M10.1 11.8h3.8"/>
+  <symbol id="i-fais" viewBox="0 0 24 24">
+    <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
+    <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
+  </symbol>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
   </symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
+  <symbol id="i-chaine" viewBox="0 0 24 24">
+    <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
+    <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
+  </symbol>
 </svg>
 
 <header class="site-head">
@@ -68,41 +127,39 @@
 
 <main id="contenu">
 
-  <!-- ================================================================ le produit -->
+  <!-- =============================================================== hero produit -->
   <section class="hero-produit">
     <div class="hero-glow" aria-hidden="true"></div>
-
     <div class="wrap hp-grid">
 
       <div class="hp-txt">
-        <p class="eyebrow">La fiche du produit</p>
+        <p class="eyebrow">Fiche produit · fabriquées au Québec</p>
         <h1 class="hp-titre">Les lunettes <em>VELA</em>.</h1>
         <p class="hp-lead">
-          Une monture noire à branches larges, qui loge le micro et les haut-parleurs. Elle se connecte
-          à votre ordinateur en Bluetooth&nbsp;; l’application IRIS s’y branche, retient l’appareil et s’y
-          reconnecte toute seule. Ni caméra, ni écran, ni voyant sur la face avant.
+          Une monture sobre qui porte le micro et le son. Aucune caméra, aucun écran.
+          Elle se relie à votre ordinateur&nbsp;; IRIS répond dans l’oreille et agit sur commande.
         </p>
 
         <div class="prix-bloc">
-          <p class="pb-quoi">Lunettes VELA <span>· l’application IRIS est gratuite</span></p>
+          <p class="pb-quoi">Les lunettes <span>· l’application IRIS est gratuite</span></p>
           <p class="pb-prix">250&nbsp;$<span class="pb-dev">CAD</span></p>
-          <p class="pb-taxes">Taxes en sus. Un seul versement&nbsp;: aucun abonnement obligatoire, aucun
-            prélèvement automatique.</p>
+          <p class="pb-taxes">Taxes en sus. Un seul versement, jamais d’abonnement forcé.</p>
           <p class="pb-actions">
-            <a class="btn primary btn-xl" href="https://paypal.me/irisvela461/250.00CAD"
-               target="_blank" rel="noopener noreferrer">Acheter&nbsp;· 250&nbsp;$</a>
-            <a class="btn" href="#achat">Comment ça se passe</a>
+            <a class="btn primary btn-xl" href="https://buy.stripe.com/3cIbJ33UI78a91ZbsS0Ny04"
+               target="_blank" rel="noopener noreferrer">Précommander les lunettes — 250&nbsp;$</a>
+            <a class="btn" href="#photos">Voir les photos</a>
           </p>
           <p class="pb-note">
-            Le bouton ouvre PayPal avec le montant déjà rempli. Ensuite, tout se règle par courriel avec
-            une personne&nbsp;: le reçu, la monture choisie et la livraison.
+            Paiement par carte (Stripe) ou virement Interac à
+            <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a>.
+            Ensuite, la monture choisie et la livraison se règlent par courriel, avec une vraie personne.
           </p>
         </div>
 
         <ul class="hp-faits">
-          <li><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg> Micro et haut-parleurs</li>
+          <li><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg> Micro et son</li>
           <li><svg class="ico" aria-hidden="true"><use href="#i-sans-camera"/></svg> Aucune caméra</li>
-          <li><svg class="ico" aria-hidden="true"><use href="#i-batterie"/></svg> Étui de charge USB-C</li>
+          <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg> Un seul paiement</li>
         </ul>
       </div>
 
@@ -111,23 +168,23 @@
           <img src="assets/photos/lunettes-fond-sombre.jpg"
                srcset="assets/photos/lunettes-fond-sombre-450.jpg 450w,
                        assets/photos/lunettes-fond-sombre.jpg 900w"
-               sizes="(max-width: 900px) calc(100vw - 48px), 480px"
+               sizes="(max-width: 820px) calc(100vw - 48px), 460px"
                width="900" height="900" loading="eager" decoding="async" fetchpriority="high"
                alt="Les lunettes VELA à verres teintés, de trois quarts sur fond noir : monture épaisse, branches larges, aucune caméra.">
         </div>
-        <figcaption>Le modèle à verres teintés, en lumière rasante.</figcaption>
+        <figcaption>Le modèle à verres teintés. Ni caméra, ni écran.</figcaption>
       </figure>
 
     </div>
   </section>
 
-  <!-- ================================================================= photos -->
+  <!-- ================================================================= galerie -->
   <section class="band" id="photos">
     <div class="wrap">
       <div class="sec-head center">
-        <p class="section-label">Les photos</p>
-        <h2>Le produit tel qu’il est.</h2>
-        <p>Aucune vue d’artiste, aucun rendu&nbsp;: ce sont les photos du matériel qui vous est livré.</p>
+        <p class="section-label">En vrai</p>
+        <h2>Le produit, tel qu’il vous arrive.</h2>
+        <p>Pas de rendu 3D. Ce sont les photos de la monture qu’on vous poste.</p>
       </div>
 
       <div class="galerie">
@@ -151,8 +208,7 @@
                  width="900" height="900" loading="lazy" decoding="async"
                  alt="Les lunettes VELA de trois quarts, branches ouvertes, verres transparents, sans aucune caméra.">
           </div>
-          <figcaption>De trois quarts. Les branches sont larges&nbsp;: c’est là que logent le micro,
-            le son et la batterie.</figcaption>
+          <figcaption>De trois quarts. Les branches larges logent le micro et le son.</figcaption>
         </figure>
         <figure>
           <div class="pv-plaque">
@@ -174,7 +230,7 @@
                  width="900" height="900" loading="lazy" decoding="async"
                  alt="Les lunettes VELA posées devant deux étuis rigides, l’un noir, l’autre brun clair.">
           </div>
-          <figcaption>Les deux étuis&nbsp;: la coque noire de rangement, la coque brune qui recharge.</figcaption>
+          <figcaption>Les deux étuis&nbsp;: le rangement noir, la coque brune qui recharge.</figcaption>
         </figure>
         <figure>
           <div class="pv-plaque">
@@ -185,7 +241,7 @@
                  width="900" height="900" loading="lazy" decoding="async"
                  alt="Les lunettes VELA posées dans leur étui de charge brun clair, relié à un câble USB-C.">
           </div>
-          <figcaption>Les lunettes dans l’étui de charge, branché en USB-C.</figcaption>
+          <figcaption>Dans l’étui de charge, branché en USB-C.</figcaption>
         </figure>
         <figure>
           <div class="pv-plaque est-sombre">
@@ -205,63 +261,49 @@
   <!-- ============================================================ dans la boîte -->
   <section id="boite">
     <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Dans la boîte</p>
+        <h2>Trois objets, et une appli gratuite.</h2>
+        <p>Ce que vous recevez, et rien de superflu.</p>
+      </div>
+
       <div class="grid grid-2">
-        <div>
-          <p class="section-label">Ce qu’il y a dans la boîte</p>
-          <h2>Trois objets, et une application gratuite.</h2>
-          <ul class="boite" style="margin-top:22px">
-            <li>
-              <span class="n">1</span>
-              <span><b>La monture</b>
-                <span class="d">Verres transparents ou verres teintés&nbsp;: les deux modèles existent.
-                Dites-nous lequel vous voulez dans le courriel que vous nous envoyez avec le reçu, juste
-                après le paiement.</span></span>
-            </li>
-            <li>
-              <span class="n">2</span>
-              <span><b>L’étui de charge</b>
-                <span class="d">La coque brune. Les lunettes s’y posent, elle se branche en USB-C.
-                Le câble est fourni avec.</span></span>
-            </li>
-            <li>
-              <span class="n">3</span>
-              <span><b>L’étui rigide de rangement</b>
-                <span class="d">La coque noire, pour transporter les lunettes sans les abîmer.</span></span>
-            </li>
-            <li>
-              <span class="n">4</span>
-              <span><b>L’application IRIS</b>
-                <span class="d">Elle n’est pas dans la boîte&nbsp;: elle se
-                <a href="installer.html">télécharge gratuitement</a>, et le plan Gratuit suffit pour se servir
-                des lunettes tous les jours. L’abonnement se prend à part, si un jour vous en voulez plus.</span></span>
-            </li>
-          </ul>
+        <ul class="boite">
+          <li>
+            <span class="n">1</span>
+            <span><b>La monture</b>
+              <span class="d">Verres transparents ou teintés&nbsp;: vous choisissez lequel par courriel,
+              juste après le paiement.</span></span>
+          </li>
+          <li>
+            <span class="n">2</span>
+            <span><b>L’étui de charge</b>
+              <span class="d">La coque brune. Les lunettes s’y posent&nbsp;; elle se branche en USB-C,
+              câble fourni.</span></span>
+          </li>
+          <li>
+            <span class="n">3</span>
+            <span><b>L’étui rigide</b>
+              <span class="d">La coque noire, pour transporter les lunettes sans les abîmer.</span></span>
+          </li>
+          <li>
+            <span class="n">4</span>
+            <span><b>L’application IRIS</b>
+              <span class="d">Pas dans la boîte&nbsp;: elle se
+              <a href="installer.html#telecharger">télécharge gratuitement</a>, et fonctionne dès
+              l’installation.</span></span>
+          </li>
+        </ul>
 
-          <div class="callout" style="margin-top:22px">
-            <p class="small" style="margin:0">Le contenu exact de votre envoi vous est confirmé par
-              courriel avant l’expédition. VELA est une petite maison&nbsp;: c’est une personne qui prépare
-              votre colis, pas un entrepôt.</p>
+        <div>
+          <div class="callout">
+            <p>Les lunettes se présentent à Windows comme un casque Bluetooth. Vous pouvez donc vous en
+              servir comme écouteurs, avec IRIS ou avec n’importe quelle appli.</p>
           </div>
-        </div>
-
-        <div>
-          <p class="section-label">Ce que ça demande</p>
-          <h2>Un PC Windows, et rien d’autre.</h2>
-          <ul class="check" style="margin-top:22px">
-            <li>Windows&nbsp;10 ou 11 en 64&nbsp;bits, avec le Bluetooth.</li>
-            <li>L’application IRIS, gratuite à télécharger&nbsp;;
-              <a href="installer.html">l’installation prend quelques minutes</a>.</li>
-            <li>Une connexion internet pour les agents d’IA — sauf en mode 100&nbsp;% local, où plus rien
-              ne sort de l’ordinateur.</li>
-          </ul>
-          <p class="small muted" style="margin-top:16px">
-            Les lunettes se présentent à Windows comme un casque Bluetooth&nbsp;: vous pouvez donc les
-            utiliser comme écouteurs avec n’importe quelle application, IRIS ou pas.
-          </p>
-          <p class="small muted">
-            IRIS fonctionne aussi très bien <strong>sans les lunettes</strong>, avec le micro et les
-            haut-parleurs de l’ordinateur. Les lunettes ajoutent la voix, elles ne la remplacent pas.
-          </p>
+          <div class="callout">
+            <p>IRIS marche aussi très bien <strong>sans les lunettes</strong>, avec le micro et les
+              haut-parleurs du PC. Les lunettes ajoutent la voix&nbsp;; elles ne sont pas obligatoires.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -272,14 +314,14 @@
     <div class="wrap">
       <div class="sec-head center">
         <p class="section-label">Caractéristiques</p>
-        <h2>Ce qui est vérifié, et ce qui ne l’est pas.</h2>
-        <p>Nous n’écrivons ici que ce que nous avons constaté nous-mêmes sur l’exemplaire en main.
-          Ce que nous n’avons pas mesuré n’est pas inventé&nbsp;: c’est dit.</p>
+        <h2>Ce qui est vérifié — et ce qui ne l’est pas.</h2>
+        <p>On n’écrit ici que ce qu’on a constaté sur l’exemplaire en main. Ce qu’on n’a pas mesuré,
+          on le dit&nbsp;; on ne l’invente pas.</p>
       </div>
 
       <div class="table-scroll">
         <table>
-          <caption>Les lunettes VELA, relevé du 4 septembre 2026 sur l’exemplaire en main.</caption>
+          <caption>Relevé sur l’exemplaire en main.</caption>
           <thead>
             <tr>
               <th scope="col">Point</th>
@@ -289,164 +331,101 @@
           <tbody>
             <tr>
               <th scope="row">Monture</th>
-              <td>Noire, mate, branches larges. Deux versions&nbsp;: verres transparents ou verres teintés.</td>
+              <td>Noire, mate, branches larges. Deux versions&nbsp;: verres transparents ou teintés.</td>
             </tr>
             <tr>
               <th scope="row">Micro</th>
-              <td>Oui. Les lunettes exposent le profil mains libres du Bluetooth&nbsp;: Windows les voit
-                comme un microphone, et IRIS peut écouter par là.</td>
+              <td>Oui. Windows voit les lunettes comme un microphone&nbsp;; IRIS écoute par là.</td>
             </tr>
             <tr>
               <th scope="row">Son</th>
-              <td>Oui. Profil audio stéréo du Bluetooth&nbsp;: la voix d’IRIS, la musique, n’importe quel
-                son du PC. Contrôle de lecture pris en charge.</td>
+              <td>Oui, en stéréo&nbsp;: la voix d’IRIS, la musique, n’importe quel son du PC.</td>
             </tr>
             <tr>
               <th scope="row">Caméra</th>
-              <td><strong>Aucune.</strong> Le modèle vendu aujourd’hui ne filme pas et ne photographie
-                pas. <span class="pill">assumé</span></td>
+              <td><strong>Aucune.</strong> Les lunettes ne filment pas et ne photographient pas.</td>
             </tr>
             <tr>
-              <th scope="row">Écran, affichage</th>
+              <th scope="row">Écran</th>
               <td><strong>Aucun.</strong> Rien ne s’affiche dans les verres.</td>
             </tr>
             <tr>
               <th scope="row">Connexion</th>
-              <td>Bluetooth. L’application détecte les lunettes, s’y connecte, les mémorise et rétablit
-                la connexion toute seule si elle tombe.</td>
+              <td>Bluetooth. IRIS mémorise les lunettes et rétablit la connexion toute seule.</td>
             </tr>
             <tr>
               <th scope="row">Batterie</th>
-              <td>Rechargeable par l’étui de charge, en USB-C. IRIS affiche le niveau de charge quand les
-                lunettes l’annoncent.<br>
-                <span class="small muted">L’autonomie en heures n’a pas encore été mesurée par VELA&nbsp;:
-                nous ne l’annoncerons pas avant de l’avoir chronométrée.</span></td>
+              <td>Rechargeable par l’étui, en USB-C.
+                <span class="small muted">Autonomie non chronométrée par VELA&nbsp;: on ne l’annonce pas
+                avant de l’avoir mesurée.</span></td>
             </tr>
             <tr>
               <th scope="row">Poids, dimensions</th>
-              <td><span class="small muted">Non mesurés par VELA. Ils seront ajoutés ici une fois pesés
-                et mesurés, pas avant.</span></td>
+              <td><span class="small muted">Non mesurés. On les ajoutera ici une fois pesés, pas avant.</span></td>
             </tr>
             <tr>
               <th scope="row">Résistance à l’eau</th>
-              <td><span class="small muted">Aucun indice de protection n’est annoncé. À traiter comme des
-                lunettes électroniques ordinaires&nbsp;: à l’abri de la pluie.</span></td>
+              <td><span class="small muted">Aucun indice annoncé. À garder à l’abri de la pluie, comme
+                des lunettes électroniques ordinaires.</span></td>
             </tr>
             <tr>
-              <th scope="row">Verres correcteurs</th>
-              <td><span class="small muted">Le remplacement des verres par des verres à votre vue n’a pas
-                été essayé par VELA. Écrivez-nous avant d’acheter si c’est votre besoin.</span></td>
-            </tr>
-            <tr>
-              <th scope="row">Systèmes compatibles</th>
-              <td>Avec IRIS&nbsp;: Windows 10 et 11, 64&nbsp;bits. Comme simple casque Bluetooth&nbsp;:
-                tout appareil qui accepte un casque.</td>
+              <th scope="row">Compatibilité</th>
+              <td>Avec IRIS&nbsp;: Windows 10 et 11, 64&nbsp;bits. En simple casque&nbsp;: tout appareil
+                Bluetooth.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="callout" style="margin-top:20px">
-        <p><strong>Pourquoi des cases vides.</strong> Un fabricant annoncerait ici une autonomie et un
-        poids repris de sa fiche commerciale. Nous préférons laisser la ligne vide jusqu’à l’avoir vérifiée
-        nous-mêmes. C’est la même règle que pour le registre d’IRIS&nbsp;: rien qui ne se vérifie.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================================================== ce que les lunettes donnent -->
-  <section id="avec-iris">
-    <div class="wrap">
-      <div class="sec-head center">
-        <p class="section-label">Avec IRIS</p>
-        <h2>Ce que les lunettes changent au quotidien.</h2>
-      </div>
-
-      <div class="grid grid-3">
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
-          <h3>Vous parlez de loin</h3>
-          <p>«&nbsp;Dis-moi Iris&nbsp;», et le dialogue continue sans qu’il faille répéter le mot
-            d’activation. Vous n’avez pas à revenir vous pencher sur l’ordinateur.</p>
-        </div>
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg></span>
-          <h3>Elle répond dans l’oreille</h3>
-          <p>La voix arrive par les branches, sans rien enfoncer dans les oreilles et sans couper le
-            son de la pièce.</p>
-        </div>
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-lunettes"/></svg></span>
-          <h3>Vous choisissez les entrées</h3>
-          <p>Micro des lunettes ou micro du PC, son dans les lunettes ou dans les haut-parleurs&nbsp;:
-            l’application vous laisse mélanger les deux.</p>
-        </div>
-      </div>
-
-      <p class="actions" style="margin-top:24px;justify-content:center">
-        <a class="btn" href="fonctionnalites.html">La liste complète de ce qu’IRIS sait faire</a>
-      </p>
-
-      <div class="callout warn" style="margin-top:26px">
-        <p><strong>Ce que les lunettes ne font pas.</strong> Elles ne fonctionnent pas seules&nbsp;: sans
-        un ordinateur Windows allumé à portée de Bluetooth, ce sont des lunettes avec un casque dedans.
-        Commander IRIS depuis le téléphone, loin de la maison, n’existe pas encore&nbsp;; c’est écrit
-        noir sur blanc dans <a href="fonctionnalites.html">ce qui n’existe pas encore</a>.</p>
+        <p><strong>Pourquoi des cases vides.</strong> Un catalogue reprendrait ici une autonomie
+        et un poids « commerciaux ». On préfère la ligne vide jusqu’à l’avoir vérifiée nous-mêmes.</p>
       </div>
     </div>
   </section>
 
   <!-- ================================================================== achat -->
-  <section class="band" id="achat">
+  <section id="achat">
     <div class="wrap narrow">
       <p class="section-label">L’achat</p>
-      <h2>Trois étapes, dont une que nous faisons à la main.</h2>
+      <h2>Trois étapes, dont une à la main.</h2>
       <p class="lead" style="margin-bottom:24px">
-        Autant le dire tout de suite&nbsp;: il n’y a pas de panier ni de suivi de colis automatique.
-        Vous payez, puis une personne vous répond.
+        Pas de panier ni de suivi automatique. Vous payez, puis une personne vous répond.
       </p>
 
       <ol class="steps-list">
         <li>
-          <h3>Vous payez par PayPal</h3>
-          <p>Le bouton ouvre PayPal avec les 250&nbsp;$ déjà remplis. Vous n’avez rien à saisir ni à
-            calculer. C’est un versement unique&nbsp;: aucun prélèvement ne suivra.</p>
+          <h3>Vous payez</h3>
+          <p>Le bouton ouvre une page Stripe sécurisée, les 250&nbsp;$ déjà remplis. Ou par virement
+            Interac à <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a>. Un seul
+            versement&nbsp;: aucun prélèvement ne suit.</p>
         </li>
         <li>
           <h3>Vous nous écrivez</h3>
-          <p>Faites suivre le reçu de PayPal à
-            <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a>, en précisant la monture
-            voulue (verres transparents ou teintés) et votre adresse de livraison.</p>
+          <p>Faites suivre le reçu, en précisant la monture voulue (transparente ou teintée) et votre
+            adresse de livraison.</p>
         </li>
         <li>
           <h3>Vous recevez vos lunettes</h3>
-          <p>Le délai et les modalités de livraison vous sont confirmés dans le même échange. De votre côté,
-            vous <a href="installer.html">installez IRIS</a> gratuitement&nbsp;: le plan Gratuit suffit pour
-            vous en servir dès le premier jour, il n’y a aucune clé à attendre.</p>
-          <p class="small muted">Notre courriel porte un numéro de commande. La page
-            <a href="suivi.html">Suivre ma commande</a> dit ce qu’il en est — et ce qui n’est pas encore
-            connu, plutôt que d’afficher une date devinée.</p>
+          <p>On convient le délai et la livraison dans le même échange. De votre côté,
+            <a href="installer.html#telecharger">installez IRIS</a> gratuitement&nbsp;: elle fonctionne
+            dès le premier jour.</p>
         </li>
       </ol>
 
       <div class="callout warn">
-        <p><strong>Les 250&nbsp;$ paient les lunettes, et rien d’autre.</strong> Aucun abonnement n’y est
-        rattaché&nbsp;: le paiement est unique, il ne crée pas de prélèvement récurrent, et IRIS reste au plan
-        Gratuit tant que vous n’en décidez pas autrement. <a href="plans.html">L’abonnement</a> est une autre
-        décision, un autre paiement, et il s’arrête quand vous voulez.</p>
+        <p><strong>Les 250&nbsp;$ paient les lunettes, rien d’autre.</strong> Aucun abonnement n’y est
+        rattaché. <a href="plans.html">L’abonnement à IRIS</a> est une autre décision, un autre paiement,
+        et il s’arrête quand vous voulez.</p>
       </div>
 
       <p class="actions" style="margin-top:8px">
-        <a class="btn primary btn-xl" href="https://paypal.me/irisvela461/250.00CAD"
-           target="_blank" rel="noopener noreferrer">Acheter&nbsp;· 250&nbsp;$</a>
+        <a class="btn primary btn-xl" href="https://buy.stripe.com/3cIbJ33UI78a91ZbsS0Ny04"
+           target="_blank" rel="noopener noreferrer">Précommander — 250&nbsp;$</a>
         <a class="btn" href="contact.html">Une question avant de payer&nbsp;?</a>
       </p>
       <p class="small muted" style="margin-top:14px">
-        Prix en dollars canadiens, taxes en sus. Vous pouvez aussi
-        <a href="plans.html">utiliser IRIS seule</a>, sans les lunettes, à partir de 0&nbsp;$.
-      </p>
-      <p class="small muted" style="margin-top:6px">
-        Vous venez de payer&nbsp;? <a href="merci.html">Voici ce qui se passe maintenant</a>.
+        Vous venez de payer&nbsp;? <a href="merci.html">La suite est ici</a>.
         Déjà commandé&nbsp;? <a href="suivi.html">Suivre ma commande</a>.
       </p>
     </div>
@@ -465,20 +444,25 @@
           </svg>
           <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
         </a>
-        <p>Des lunettes qui vous écoutent,<br>sans jamais vous regarder.</p>
+        <p>Votre voix donne le cap.<br>IRIS tient la barre.</p>
+        <nav class="foot-social" aria-label="VELA sur les réseaux sociaux">
+          <a href="https://www.instagram.com/vela_iris2026/" target="_blank" rel="noopener noreferrer me">Instagram</a>
+          <a href="https://www.linkedin.com/in/vela-glass-427361431/" target="_blank" rel="noopener noreferrer me">LinkedIn</a>
+          <a href="https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw" target="_blank" rel="noopener noreferrer me">YouTube</a>
+        </nav>
       </div>
       <div>
-        <h4>Le produit</h4>
+        <h3>Le produit</h3>
         <ul>
           <li><a href="lunettes.html">Les lunettes VELA</a></li>
           <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
-          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="confidentialite.html">Confidentialité</a></li>
           <li><a href="plans.html">Plans et prix</a></li>
           <li><a href="installer.html">Installer IRIS</a></li>
         </ul>
       </div>
       <div>
-        <h4>Nous joindre</h4>
+        <h3>Nous joindre</h3>
         <ul>
           <li><a href="suivi.html">Suivre ma commande</a></li>
           <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
@@ -497,6 +481,6 @@
   </div>
 </footer>
 
-<script src="assets/site.js?v=5"></script>
+<script src="assets/site.js?v=8"></script>
 </body>
 </html>

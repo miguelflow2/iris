@@ -108,7 +108,31 @@ def test_un_appareil_obtient_son_acces_et_voit_ses_modeles(client, relais):
     reponse = client.post("/api/appareil", json={"machine": "abc", "email": "premium@exemple.com"}).json()
     assert reponse["plan"] == "premium"
     modeles = client.get("/v1/models", headers={"Authorization": "Bearer " + reponse["jeton"]}).json()
-    assert "anthropic/claude-sonnet-5" in [m["id"] for m in modeles["data"]]
+    ids = [m["id"] for m in modeles["data"]]
+    # Le client ne voit que des identifiants NEUTRES « vela-… », jamais le nom d'un fournisseur.
+    assert ids and all(i.startswith("vela-") for i in ids), ids
+    # Le modèle phare du forfait payant est bien exposé — sous son nom neutre, pas son vrai nom.
+    assert relais.nom_neutre("anthropic/claude-sonnet-5") in ids
+
+
+def test_v1_models_ne_montre_aucun_nom_de_fournisseur(client, relais):
+    """Le client final ne doit lire aucun nom de fournisseur dans la liste de ses modèles :
+    ni « anthropic », ni « openai », ni « google », ni le nom d'une famille de modèles."""
+    abonne(relais, "ent@exemple.com", "entreprise")
+    jeton = client.post("/api/appareil", json={"machine": "m", "email": "ent@exemple.com"}).json()["jeton"]
+    corps = client.get("/v1/models", headers={"Authorization": "Bearer " + jeton}).text.lower()
+    for marque in ("anthropic", "openai", "google", "openrouter", "claude", "gpt", "gemini",
+                   "minimax", "nvidia", "nemotron", "gemma"):
+        assert marque not in corps, "« {} » a fui dans /v1/models".format(marque)
+
+
+def test_un_nom_neutre_se_retraduit_vers_le_vrai_modele(relais):
+    """Si un client renvoie un nom neutre, le relais retrouve le vrai modèle, dans la limite du
+    forfait : la façade cache le fournisseur sans empêcher le bon modèle de répondre."""
+    assert relais.modele_autorise("vela-max", "entreprise") == "anthropic/claude-opus-5"
+    assert relais.modele_autorise("vela-avance", "premium") == "anthropic/claude-sonnet-5"
+    # Un plan gratuit qui renvoie le nom neutre d'un modèle payant reste au gratuit.
+    assert relais.modele_autorise("vela-max", "gratuit").endswith(":free")
 
 
 # --------------------------------------------------------------------------- l'abonnement

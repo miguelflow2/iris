@@ -13,6 +13,13 @@ extraResources:
     to: backend
     filter:
       - "**/*"
+  # Modèle d'écoute Vosk français (petit, hors-ligne). Copié dans resources/backend/models, là où
+  # stt.py::dossiers_modeles le cherche (exe.parent / "models") : IRIS entend dès la 1re seconde,
+  # sur une machine neuve, sans aucun téléchargement.
+  - from: backend/dev-data/models/vosk-model-small-fr-0.22
+    to: backend/models/vosk-model-small-fr-0.22
+    filter:
+      - "**/*"
 asar: true
 compression: normal
 win:

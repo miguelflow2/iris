@@ -78,6 +78,15 @@ class Config:
     paypal_webhook_id: str = ""
     paypal_environnement: str = "sandbox"   # « sandbox » ou « live »
 
+    # --- Stripe ---------------------------------------------------------
+    # S'ajoute à PayPal, ne le remplace pas. Tous ces champs viennent de variables d'environnement.
+    stripe_secret_key: str = ""             # STRIPE_SECRET_KEY  (sk_... — SECRET, jamais journalisé)
+    stripe_webhook_secret: str = ""         # STRIPE_WEBHOOK_SECRET (whsec_... — SECRET, vérif signature)
+    stripe_publishable_key: str = ""        # STRIPE_PUBLISHABLE_KEY (pk_... — publique, sans risque)
+    stripe_prix_pro: str = ""               # STRIPE_PRIX_PRO        (price_... du plan Pro)
+    stripe_prix_premium: str = ""           # STRIPE_PRIX_PREMIUM    (price_... du plan Premium)
+    stripe_prix_entreprise: str = ""        # STRIPE_PRIX_ENTREPRISE (price_... du plan Entreprise)
+
     # --- clés d'abonnement ---------------------------------------------
     secret_hmac: bytes = SECRET_HISTORIQUE
     secret_hmac_fourni: bool = False       # vrai si IRIS_LICENSE_SECRET était défini
@@ -121,6 +130,40 @@ class Config:
         return PAYPAL_API.get(self.paypal_environnement, PAYPAL_API["sandbox"])
 
     @property
+    def stripe_configure(self) -> bool:
+        """Stripe est utilisable pour recevoir des webhooks : clé secrète + secret de webhook."""
+        return bool(self.stripe_secret_key and self.stripe_webhook_secret)
+
+    @property
+    def stripe_amorce(self) -> bool:
+        """Au moins une variable Stripe est définie : l'intention d'utiliser Stripe est là."""
+        return any((
+            self.stripe_secret_key, self.stripe_webhook_secret, self.stripe_publishable_key,
+            self.stripe_prix_pro, self.stripe_prix_premium, self.stripe_prix_entreprise,
+        ))
+
+    @property
+    def correspondance_prix_stripe(self) -> dict[str, str]:
+        """Table {identifiant de prix Stripe -> plan interne}, sans les prix non configurés."""
+        table: dict[str, str] = {}
+        for prix, plan in (
+            (self.stripe_prix_pro, "pro"),
+            (self.stripe_prix_premium, "premium"),
+            (self.stripe_prix_entreprise, "entreprise"),
+        ):
+            if prix:
+                table[prix] = plan
+        return table
+
+    def prix_stripe_du_plan(self, plan: str) -> str:
+        """Identifiant de prix Stripe d'un plan (pour créer une session Checkout), ou chaîne vide."""
+        return {
+            "pro": self.stripe_prix_pro,
+            "premium": self.stripe_prix_premium,
+            "entreprise": self.stripe_prix_entreprise,
+        }.get(plan, "")
+
+    @property
     def production(self) -> bool:
         return self.environnement.lower().startswith("prod")
 
@@ -143,6 +186,12 @@ def charger(fichier_env: Path | None = None) -> Config:
         paypal_secret=(os.environ.get("PAYPAL_SECRET") or "").strip(),
         paypal_webhook_id=(os.environ.get("PAYPAL_WEBHOOK_ID") or "").strip(),
         paypal_environnement=(os.environ.get("PAYPAL_ENV") or "sandbox").strip().lower(),
+        stripe_secret_key=(os.environ.get("STRIPE_SECRET_KEY") or "").strip(),
+        stripe_webhook_secret=(os.environ.get("STRIPE_WEBHOOK_SECRET") or "").strip(),
+        stripe_publishable_key=(os.environ.get("STRIPE_PUBLISHABLE_KEY") or "").strip(),
+        stripe_prix_pro=(os.environ.get("STRIPE_PRIX_PRO") or "").strip(),
+        stripe_prix_premium=(os.environ.get("STRIPE_PRIX_PREMIUM") or "").strip(),
+        stripe_prix_entreprise=(os.environ.get("STRIPE_PRIX_ENTREPRISE") or "").strip(),
         secret_hmac=secret_env.encode() if secret_env else SECRET_HISTORIQUE,
         secret_hmac_fourni=bool(secret_env),
         base_donnees=Path(os.environ.get("IRIS_BASE") or (RACINE / "licences.db")),
@@ -174,9 +223,23 @@ def valider(cfg: Config) -> None:
             "IRIS_WEBHOOK_SANS_VERIFICATION=1 est interdit quand IRIS_ENV=production : "
             "le service refuserait de vérifier la signature des webhooks PayPal."
         )
-    if cfg.production and not cfg.paypal_configure:
+    # Garde-fou pour Stripe : s'il est amorcé (au moins une variable posée) mais incomplet, on
+    # refuse tout de suite. Sans STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET, aucune signature de
+    # webhook Stripe n'est vérifiable — c'est équivalent à désactiver la vérification en production.
+    # (On garde ce message précis avant le garde-fou plus général ci-dessous.)
+    if cfg.production and cfg.stripe_amorce and not cfg.stripe_configure:
         raise ConfigurationInvalide(
-            "En production, PAYPAL_CLIENT_ID, PAYPAL_SECRET et PAYPAL_WEBHOOK_ID sont obligatoires."
+            "En production, si Stripe est utilisé, STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET "
+            "sont obligatoires (sans eux, aucune signature de webhook Stripe ne peut être vérifiée)."
+        )
+    # Nouvelle règle : en production, il faut AU MOINS UN fournisseur de paiement configuré,
+    # PayPal OU Stripe. On lance aujourd'hui en Stripe seul, donc un Stripe configuré suffit,
+    # même sans PayPal. On ne refuse QUE si NI PayPal NI Stripe n'est prêt.
+    if cfg.production and not cfg.paypal_configure and not cfg.stripe_configure:
+        raise ConfigurationInvalide(
+            "En production, au moins un fournisseur de paiement doit être configuré : "
+            "soit PayPal (PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_WEBHOOK_ID), "
+            "soit Stripe (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET)."
         )
     if cfg.production and not cfg.jeton_admin:
         log.warning("Aucun IRIS_JETON_ADMIN : la page d'administration sera désactivée.")

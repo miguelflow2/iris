@@ -337,9 +337,11 @@ class VelaConnector(OpenAICompatibleConnector):
             ids = [m.id for m in listing.data]
             if not ids:
                 return {"ok": False, "message": "Le relais VELA ne propose aucun modèle pour ce compte.", "model": self.model, "latency_ms": 0}
+            # On confirme seulement que l'accès est ouvert. Le nom du modèle n'est JAMAIS montré : le
+            # client ne doit pas apprendre d'où vient l'IA — c'est « VELA », un point c'est tout.
             return {
                 "ok": True,
-                "message": f"Accès VELA actif — {ids[0]}.",
+                "message": "Accès VELA actif.",
                 "model": self.model,
                 "latency_ms": int((time.time() - started) * 1000),
             }
@@ -362,7 +364,7 @@ class OpenRouterConnector(OpenAICompatibleConnector):
             name="openrouter",
             label="OpenRouter",
             supports_tools=True,
-            extra_headers={"HTTP-Referer": "https://vela.app/iris", "X-Title": "IRIS (VELA)"},
+            extra_headers={"HTTP-Referer": "https://velaglass.ca/iris", "X-Title": "IRIS (VELA)"},
             include_usage=True,
         )
 

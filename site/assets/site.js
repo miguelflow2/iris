@@ -36,6 +36,41 @@
     // Volontairement permissif : refuser une adresse valide serait pire que l'inverse.
     var courrielValide = function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); };
 
+    // Repli de copie pour les navigateurs sans navigator.clipboard (contexte non
+    // sécurisé, page ouverte depuis le disque en file://, navigateurs anciens) :
+    // une zone de texte cachée, sélectionnée, puis execCommand('copy'). Renvoie
+    // true si la copie a réussi.
+    var copieDeSecours = function (texte) {
+      try {
+        var zone = document.createElement('textarea');
+        zone.value = texte;
+        zone.setAttribute('readonly', '');
+        zone.style.position = 'fixed';
+        zone.style.top = '-9999px';
+        document.body.appendChild(zone);
+        zone.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(zone);
+        return ok;
+      } catch (e) {
+        return false;
+      }
+    };
+
+    // Copie l'adresse dans le presse-papiers. On privilégie l'API moderne, et on
+    // retombe sur le repli si elle est absente ou refusée. Le rappel reçoit true
+    // en cas de succès, false sinon, pour ajuster le message de confirmation.
+    var copierCourriel = function (texte, rappel) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texte).then(
+          function () { rappel(true); },
+          function () { rappel(copieDeSecours(texte)); }
+        );
+        return;
+      }
+      rappel(copieDeSecours(texte));
+    };
+
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var nom = document.getElementById('nom');
@@ -73,25 +108,52 @@
         + '?subject=' + encodeURIComponent('VELA — ' + sujet.value)
         + '&body=' + encodeURIComponent(corps);
 
-      // Le message de confirmation porte aussi le lien : si le navigateur bloque l'ouverture du
-      // logiciel de courriel, la personne a de quoi continuer au lieu de rester devant rien.
+      // Beaucoup de visiteurs n'ont pas de logiciel de courriel branché sur leur
+      // navigateur (Gmail dans un onglet, par exemple) : pour eux, le lien mailto
+      // ne fait rien. On affiche donc TOUJOURS l'adresse en clair et un bouton
+      // pour la copier, en plus de la tentative d'ouverture — personne ne reste
+      // devant un bouton qui semble mort.
+      // (#reponse est un <p> : on n'y met que des éléments en ligne, jamais de bloc.)
       reponse.hidden = false;
       reponse.className = 'form-reponse succes';
       reponse.textContent = '';
       reponse.appendChild(document.createTextNode(
-        'Votre logiciel de courriel vient de s’ouvrir avec le message déjà rédigé : il ne reste qu’à '
-        + 'l’envoyer. Rien ne s’est ouvert ? '));
-      var secours = document.createElement('a');
-      secours.href = lien;
-      secours.id = 'lien-secours';
-      secours.textContent = 'Rouvrir le message';
-      reponse.appendChild(secours);
-      reponse.appendChild(document.createTextNode(', ou écrivez directement à '));
+        'Nous tentons d’ouvrir votre logiciel de courriel avec le message déjà rédigé. '
+        + 'Si rien ne s’ouvre — c’est fréquent depuis un navigateur — écrivez-nous directement à '));
       var direct = document.createElement('a');
       direct.href = 'mailto:' + COURRIEL;
       direct.textContent = COURRIEL;
       reponse.appendChild(direct);
-      reponse.appendChild(document.createTextNode('.'));
+      reponse.appendChild(document.createTextNode('. '));
+
+      reponse.appendChild(document.createElement('br'));
+
+      // Le message de copie vit à côté du bouton ; il reste vide tant qu'on n'a
+      // rien copié. #reponse étant déjà une zone aria-live, son contenu ajouté
+      // est annoncé sans avoir à en refaire une ici.
+      var copie = document.createElement('span');
+      copie.className = 'small muted';
+
+      var boutonCopier = document.createElement('button');
+      boutonCopier.type = 'button';
+      boutonCopier.className = 'btn sm';
+      boutonCopier.textContent = 'Copier l’adresse';
+      boutonCopier.addEventListener('click', function () {
+        copierCourriel(COURRIEL, function (ok) {
+          copie.textContent = ok
+            ? ' Adresse copiée.'
+            : ' Copie impossible : sélectionnez l’adresse ci-dessus, puis Ctrl+C.';
+        });
+      });
+      reponse.appendChild(boutonCopier);
+      reponse.appendChild(document.createTextNode(' '));
+
+      var secours = document.createElement('a');
+      secours.href = lien;
+      secours.id = 'lien-secours';
+      secours.textContent = 'Rouvrir le message pré-rédigé';
+      reponse.appendChild(secours);
+      reponse.appendChild(copie);
 
       window.location.href = lien;
     });
@@ -318,7 +380,7 @@
             afficher('erreur', [
               paragraphe('Aucune commande ne correspond à ce numéro et à ce courriel. '
                 + 'Vérifiez que l’adresse est bien celle utilisée pour payer — c’est souvent celle '
-                + 'du compte PayPal, qui n’est pas toujours celle qu’on utilise tous les jours.'),
+                + 'indiquée au paiement Square, qui n’est pas toujours celle qu’on utilise tous les jours.'),
               lienSecours(numero)
             ]);
             return;
@@ -409,7 +471,7 @@
   var GENESIS = '0000000000000000000000000000000000000000000000000000000000000000';
   var base = [
     { time: '08 h 12 min 04 s', what: 'Consentement accordé', detail: 'Texte de vos demandes' },
-    { time: '08 h 12 min 39 s', what: 'Envoi à un agent externe', detail: 'transcription → OpenRouter' },
+    { time: '08 h 12 min 39 s', what: 'Envoi à un agent externe', detail: 'transcription → service IA de VELA' },
     { time: '09 h 03 min 15 s', what: 'Capture d’écran locale', detail: 'écran principal, restée sur l’appareil' },
     { time: '09 h 03 min 21 s', what: 'Commande exécutée', detail: 'ouverture de l’application « Code »' },
     { time: '11 h 47 min 58 s', what: 'Mode 100 % local activé', detail: 'plus aucun envoi externe' }

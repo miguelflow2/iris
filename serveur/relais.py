@@ -100,6 +100,39 @@ MODELES_PAR_PLAN: dict[str, list[str]] = {
 }
 QUOTAS = {"gratuit": 300, "pro": 600, "premium": 1000, "entreprise": 1500}
 
+# --------------------------------------------------------------------------- façade des noms
+# Le client final ne doit jamais lire le nom d'un fournisseur. Or l'identifiant brut d'un modèle
+# LE nomme : « anthropic/… », « openai/… », « google/… » disent tout de suite d'où vient l'IA. À
+# l'INTÉRIEUR, on continue de travailler sur ces identifiants bruts — c'est eux qu'attendent
+# OpenRouter et Anthropic. Cette table ne sert qu'à la FAÇADE : ce que /v1/models et /api/appareil
+# montrent au client, et la retraduction d'un nom neutre s'il nous le renvoie. « rapide » = les
+# modèles gratuits, « avance » = les payants intermédiaires, « max » = le sommet.
+NOMS_NEUTRES: dict[str, str] = {
+    "minimax/minimax-m3:free": "vela-rapide",
+    "google/gemma-4-31b-it:free": "vela-rapide-2",
+    "nvidia/nemotron-3.5-lightning:free": "vela-rapide-3",
+    "anthropic/claude-sonnet-5": "vela-avance",
+    "google/gemini-2.5-flash": "vela-avance-2",
+    "openai/gpt-5-mini": "vela-avance-3",
+    "anthropic/claude-opus-5": "vela-max",
+}
+
+
+def nom_neutre(modele: str) -> str:
+    """Le nom neutre à MONTRER pour un identifiant brut. Jamais l'identifiant lui-même : un modèle
+    absent de la table reçoit tout de même un nom stable dérivé d'une empreinte — opaque, sans
+    marque — pour que rien ne fuite même après un ajout oublié dans MODELES_PAR_PLAN."""
+    connu = NOMS_NEUTRES.get(modele)
+    if connu:
+        return connu
+    return "vela-" + hashlib.sha256(modele.encode()).hexdigest()[:8]
+
+
+# Retraduction : un client qui renvoie un nom neutre (« vela-avance ») doit retrouver le vrai
+# modèle. Ne couvre que les noms explicitement exposés ; un nom inconnu laisse modele_autorise
+# retomber sur le défaut du forfait.
+_DEPUIS_NOM_NEUTRE: dict[str, str] = {v: k for k, v in NOMS_NEUTRES.items()}
+
 # Un quota en NOMBRE DE REQUÊTES ne protège pas grand-chose. Une question courte et une demande
 # accompagnée d'une capture d'écran, de la mémoire et d'un long historique comptent toutes les deux
 # pour un : la seconde peut coûter cent fois la première. Comme la clé qui paie est celle de
@@ -490,9 +523,13 @@ def _test_disque() -> tuple[bool, str]:
 
 
 def modele_autorise(demande: str, plan: str) -> str:
-    """Le client propose, le relais dispose. Un plan Gratuit n'obtient jamais Claude, quoi qu'il envoie."""
+    """Le client propose, le relais dispose. Un plan Gratuit n'obtient jamais Claude, quoi qu'il envoie.
+
+    La demande peut être un identifiant brut OU un nom neutre exposé par la façade (« vela-avance ») :
+    on retraduit d'abord le nom neutre vers le vrai modèle, puis on vérifie le droit du forfait."""
+    reel = _DEPUIS_NOM_NEUTRE.get(demande, demande)
     permis = MODELES_PAR_PLAN.get(plan, GRATUITS)
-    return demande if demande in permis else permis[0]
+    return reel if reel in permis else permis[0]
 
 
 # --------------------------------------------------------------------------- l'application
@@ -575,7 +612,8 @@ def enregistrer_appareil(corps: Appareil):
         "jeton": emettre_jeton(corps.email, corps.machine),
         "plan": etat["plan"],
         "expires": etat["expires"],
-        "modeles": MODELES_PAR_PLAN[etat["plan"]],
+        # Noms NEUTRES : même une réponse que le client n'affiche pas ne doit pas nommer de fournisseur.
+        "modeles": [nom_neutre(m) for m in MODELES_PAR_PLAN[etat["plan"]]],
     }
 
 
@@ -718,7 +756,8 @@ async def voix(voice_id: str, request: Request, authorization: str | None = Head
 @app.get("/v1/models")
 def modeles(authorization: str | None = Header(default=None)):
     _, plan = _identifier(authorization)
-    return {"object": "list", "data": [{"id": m, "object": "model", "owned_by": "vela"} for m in MODELES_PAR_PLAN[plan]]}
+    # Noms NEUTRES uniquement : le client ne doit jamais lire le nom d'un fournisseur dans sa liste.
+    return {"object": "list", "data": [{"id": nom_neutre(m), "object": "model", "owned_by": "vela"} for m in MODELES_PAR_PLAN[plan]]}
 
 
 @app.post("/v1/chat/completions")

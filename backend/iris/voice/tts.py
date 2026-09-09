@@ -10,6 +10,7 @@ import time
 from ..config import Settings
 from ..events import EventHub
 from .elevenlabs import PRECHAUFFAGE, ElevenLabsSpeaker, classer_sorties, micro_mains_libres
+from .piper import PiperSpeaker
 
 log = logging.getLogger("iris.tts")
 
@@ -102,6 +103,12 @@ class TextToSpeech:
         self._engine = None
         self._voices: list[dict] = []
         self.available = enabled
+        # « Audio autorisé » figé à la construction, distinct de self.available (qui, lui, passe à
+        # False si l'init SAPI échoue au runtime). En production create_app passe enabled=True ; les
+        # tests passent enabled=False et NE DOIVENT alors ouvrir aucun périphérique — ni Windows, ni
+        # ElevenLabs, ni Piper. Gardé séparé d'available pour qu'une panne SAPI n'étouffe jamais
+        # ElevenLabs en production (elle parlerait encore, seule la voix Windows serait perdue).
+        self._audio_enabled = enabled
         self.error: str | None = None if enabled else "synthèse vocale désactivée"
         self.speaking = False
         self._thread: threading.Thread | None = None
@@ -113,6 +120,9 @@ class TextToSpeech:
         self._sortie_avertie = ""  # nom déjà signalé introuvable (on n'avertit qu'une fois)
         self.eleven = ElevenLabsSpeaker(settings, hub)
         self.eleven.fallback_speak = lambda text: self._speak_windows(text)
+        # Voix française locale (mode indépendant) : repli sur Windows si la synthèse locale échoue.
+        self.piper = PiperSpeaker(settings, hub)
+        self.piper.fallback_speak = lambda text: self._speak_windows(text)
 
     def _ensure_started(self) -> None:
         """Démarre le thread moteur à la première utilisation (évite d'initialiser SAPI inutilement)."""
@@ -278,19 +288,57 @@ class TextToSpeech:
         ElevenLabs qui parle : le canal n'était jamais préchauffé, et la pré-connexion HTTPS
         d'ElevenLabs n'ouvre aucun périphérique. Le casque est le même pour les deux voix : une fois
         basculé par ElevenLabs, il l'est aussi pour la voix Windows si elle doit reprendre."""
+        # TTS désactivée (enabled=False au démarrage) = on ne touche À AUCUN périphérique audio, quel
+        # que soit le moteur. En production create_app passe enabled=True, donc rien ne change ; mais
+        # les tests (enabled=False) ne doivent JAMAIS ouvrir de vrai périphérique PortAudio — sur une
+        # machine sans carte son (CI, bac à sable) l'ouverture/fermeture corrompt le tas natif. Avant,
+        # ce garde-fou ne coupait que la voix Windows : ElevenLabs et Piper préchauffaient quand même.
+        if not self._audio_enabled:
+            return
         if self._use_elevenlabs():
             try:
                 self.eleven.prechauffer()
             except Exception as exc:
                 log.debug("prechauffage de la sortie ElevenLabs impossible : %s", exc)
+            # ElevenLabs parle, mais Piper reste le repli hors-ligne : son modèle ONNX met ~5 s à se
+            # charger la toute première fois. Sans préchargement, cette attente tomberait sur la
+            # PREMIERE phrase de repli — souvent l'instant même où le nuage vient de tomber, le pire
+            # moment. On charge donc le modèle en tâche de fond. On n'ouvre AUCUN périphérique audio
+            # ici (charger l'ONNX ne touche pas PortAudio) : préchauffage léger, qui ne gêne ni
+            # ElevenLabs ni le fil du micro — le canal qui parle vraiment reste préchauffé au-dessus.
+            self._prechauffer_piper_fond()
             return
-        if not self.available:
+        if self._use_piper():
+            try:
+                self.piper.prechauffer()
+            except Exception as exc:
+                log.debug("prechauffage de la sortie Piper impossible : %s", exc)
             return
-        try:
+        try:  # voix Windows : la disponibilité est déjà garantie par le garde-fou en tête de méthode
             self._ensure_started()
             self._queue.put(PRECHAUFFAGE)
         except Exception as exc:
             log.debug("prechauffage de la voix impossible : %s", exc)
+
+    def _prechauffer_piper_fond(self) -> None:
+        """Charge le modèle Piper (repli hors-ligne) en arrière-plan, sans ouvrir de périphérique.
+
+        Appelé quand un AUTRE moteur est primaire (ElevenLabs sur la configuration réelle de Miguel) :
+        Piper ne parlera peut-être jamais, mais s'il doit reprendre hors-ligne, son modèle ONNX (~5 s
+        au tout premier chargement) sera déjà en mémoire — la première phrase de repli ne paiera plus
+        cette attente. On ne touche PAS à PortAudio ici (charger le modèle n'ouvre aucune sortie audio),
+        donc ce préchauffage n'interfère ni avec ElevenLabs ni avec le fil du micro. Le garde-fou
+        _audio_enabled a déjà écarté le cas des tests avant qu'on arrive ici ; et si Piper est absent
+        (modèle non installé, paquet piper manquant), on ne fait simplement rien. Fil démon : le
+        démarrage n'attend pas, et le chargement est abandonné à l'extinction sans rien bloquer."""
+        if not self.piper.available:
+            return  # Piper indisponible (fichiers .onnx absents) : aucun modèle à précharger
+        def _charger_en_silence() -> None:
+            try:
+                self.piper._charger()  # ~5 s la première fois, payés ici en fond, pas devant la salle
+            except Exception as exc:
+                log.debug("préchargement du modèle Piper impossible : %s", exc)
+        threading.Thread(target=_charger_en_silence, name="iris-piper-prechauffe", daemon=True).start()
 
     def _prechauffer_maintenant(self) -> None:
         """Prononce une syllabe a volume nul : le peripherique s'ouvre, personne n'entend rien."""
@@ -382,15 +430,31 @@ class TextToSpeech:
     plans = None  # PlanService (injecté)
 
     def _use_elevenlabs(self) -> bool:
-        if self.settings.user.tts_engine == "windows":
+        u = self.settings.user
+        if u.tts_engine in ("windows", "piper"):
             return False
+        if u.local_only:
+            return False  # mode indépendant : aucune voix ne passe par le nuage
         if self.plans is not None and not self.plans.feature_allowed("elevenlabs"):
             return False
         return self.eleven.available
 
+    def _use_piper(self) -> bool:
+        """Piper (français local) est choisi quand ElevenLabs ne l'est pas et que Windows n'est pas
+        imposé : c'est le meilleur repli hors-ligne, une vraie voix française avant l'accent Windows."""
+        if self.settings.user.tts_engine == "windows":
+            return False
+        if self._use_elevenlabs():
+            return False  # ElevenLabs garde la priorité quand il est utilisable
+        return self.piper.available
+
     @property
     def engine(self) -> str:
-        return "elevenlabs" if self._use_elevenlabs() else "windows"
+        if self._use_elevenlabs():
+            return "elevenlabs"
+        if self._use_piper():
+            return "piper"
+        return "windows"
 
     def speak(self, text: str, force: bool = False) -> bool:
         if not force and not self.settings.user.tts_enabled:
@@ -398,12 +462,17 @@ class TextToSpeech:
         clean = speakable(text, language=self.settings.user.language)
         if not clean:
             return False
-        if self._use_elevenlabs() and self.eleven.speak(clean):
+        # TTS désactivée (tests, enabled=False) : ne dispatcher vers AUCUN moteur qui ouvre un
+        # périphérique audio réel (ElevenLabs/Piper), même si une clé ou un modèle est présent —
+        # _speak_windows, lui, se garde déjà tout seul via self.available. Voir _audio_enabled.
+        if self._audio_enabled and self._use_elevenlabs() and self.eleven.speak(clean):
             if self.plans is not None:
                 try:
                     self.plans.count_tts(len(clean))
                 except Exception:
                     pass
+            return True
+        if self._audio_enabled and self._use_piper() and self.piper.speak(clean):
             return True
         return self._speak_windows(clean)
 
@@ -419,6 +488,7 @@ class TextToSpeech:
 
     def stop(self) -> None:
         self.eleven.stop()
+        self.piper.stop()
         try:
             while True:
                 self._queue.get_nowait()
@@ -434,11 +504,12 @@ class TextToSpeech:
     def wait_idle(self, timeout: float = 30.0) -> bool:
         deadline = time.time() + timeout
         ok = self.eleven.wait_idle(timeout)
+        ok = self.piper.wait_idle(max(0.1, deadline - time.time())) and ok
         return self._idle.wait(max(0.1, deadline - time.time())) and ok
 
     @property
     def is_speaking(self) -> bool:
-        return self.speaking or self.eleven.speaking
+        return self.speaking or self.eleven.speaking or self.piper.speaking
 
     def voices(self) -> list[dict]:
         self._ensure_started()
@@ -447,5 +518,6 @@ class TextToSpeech:
     def shutdown(self) -> None:
         self.stop()
         self.eleven.shutdown()
+        self.piper.shutdown()
         if self._thread is not None:
             self._queue.put(None)

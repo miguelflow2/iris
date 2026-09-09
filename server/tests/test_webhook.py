@@ -196,6 +196,32 @@ def test_mode_developpement_interdit_en_production():
         valider(cfg)
 
 
+def test_production_stripe_seul_demarre():
+    """Nouvelle règle : en production, Stripe configuré suffit — le démarrage est autorisé sans PayPal."""
+    from licences.config import Config, valider
+    cfg = Config(environnement="production",
+                 stripe_secret_key="sk_live_xxx", stripe_webhook_secret="whsec_xxx")
+    # Ne doit lever aucune exception : un seul fournisseur (Stripe) est configuré.
+    valider(cfg)
+
+
+def test_production_paypal_seul_demarre():
+    """Symétrique : PayPal seul configuré autorise toujours le démarrage, sans Stripe."""
+    from licences.config import Config, valider
+    cfg = Config(environnement="production",
+                 paypal_client_id="a", paypal_secret="b", paypal_webhook_id="c")
+    valider(cfg)
+
+
+def test_production_sans_aucun_fournisseur_echoue():
+    """En production, si NI PayPal NI Stripe n'est configuré, le service refuse de démarrer."""
+    import pytest
+    from licences.config import Config, ConfigurationInvalide, valider
+    cfg = Config(environnement="production")
+    with pytest.raises(ConfigurationInvalide):
+        valider(cfg)
+
+
 # ============================================================ montants non reconnus
 def test_montant_inconnu_ne_active_rien_et_part_en_manuel(client, base):
     reponse = poster_webhook(client, charges.capture_completee("bizarre@exemple.com", "42.00",

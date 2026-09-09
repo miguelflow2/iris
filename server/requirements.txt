@@ -3,4 +3,5 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27              # appels à l'API PayPal + client de test FastAPI
 python-multipart>=0.0.9  # formulaires de la page d'administration
+psycopg[binary]>=3.1     # Postgres (Neon/Supabase) en production ; SQLite reste le défaut
 pytest>=8.0

@@ -3,92 +3,121 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lunettes VELA — des lunettes qui vous écoutent, sans jamais vous regarder</title>
-<meta name="description" content="Les lunettes VELA portent le micro et le son : ni caméra, ni écran. 250 $. Avec IRIS, l’assistante qui pilote votre ordinateur à la voix et vous laisse tout vérifier — gratuite, ou abonnée à partir de 19,99 $ par mois.">
+<!-- TITRE + DESCRIPTION : propres à chaque page. Ici, la page d'accueil. -->
+<title>VELA — Votre voix donne le cap</title>
+<meta name="description" content="Des lunettes VELA qui écoutent, jamais qui filment. IRIS, l’assistante, tourne chez vous, en français. 250 $ CAD, un seul paiement. Fabriquées au Québec.">
+
+<!-- Favicon : la voile, inchangée. Ne pas modifier. -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
-<!-- Le ?v= est un numéro de version à INCRÉMENTER à chaque modification de la CSS ou du JS,
-     dans les ONZE pages à la fois. Sans lui, le navigateur d'un visiteur déjà venu continue
-     de servir l'ancienne feuille depuis son cache et le site s'affiche cassé. Voir README.md. -->
-<link rel="stylesheet" href="assets/style.css?v=5">
+
+<!-- Le ?v= est un numéro de version à INCRÉMENTER à chaque modification de la CSS
+     ou du JS, dans TOUTES les pages à la fois, sinon le cache d'un visiteur déjà
+     venu sert l'ancienne feuille. Refonte 2026-09-09 → v=8. -->
+<link rel="canonical" href="https://velaglass.ca/">
+
+<!-- Google Fonts : Fraunces (titres) + Mulish (corps). Préconnexion pour la vitesse. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Mulish:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="assets/style.css?v=8">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VELA">
+<meta property="og:locale" content="fr_CA">
+<meta property="og:title" content="VELA — Votre voix donne le cap">
+<meta property="og:description" content="Des lunettes qui écoutent, jamais qui filment. IRIS tourne chez vous, en français. 250 $ CAD, un seul paiement. Fabriquées au Québec.">
+<meta property="og:url" content="https://velaglass.ca/">
+<meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+<meta property="og:image:width" content="900">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="Lunettes VELA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VELA — Votre voix donne le cap">
+<meta name="twitter:description" content="Des lunettes qui écoutent, jamais qui filment. IRIS tourne chez vous, en français. 250 $ CAD, un seul paiement.">
+<meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+
+<!-- JSON-LD : aucun lien X (pas encore de compte VELA). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://velaglass.ca/#organization",
+      "name": "VELA",
+      "url": "https://velaglass.ca/",
+      "description": "Lunettes intelligentes VELA : elles portent le micro et le son, sans caméra ni écran, avec l’assistante vocale IRIS qui tourne sur votre ordinateur.",
+      "sameAs": [
+        "https://www.instagram.com/vela_iris2026/",
+        "https://www.linkedin.com/in/vela-glass-427361431/",
+        "https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://velaglass.ca/#website",
+      "url": "https://velaglass.ca/",
+      "name": "VELA",
+      "inLanguage": "fr-CA",
+      "publisher": { "@id": "https://velaglass.ca/#organization" }
+    },
+    {
+      "@type": "Product",
+      "name": "Lunettes VELA",
+      "description": "Les lunettes VELA portent le micro et le son : ni caméra, ni écran. Avec IRIS, l’assistante vocale qui pilote votre ordinateur à la voix.",
+      "brand": { "@type": "Brand", "name": "VELA" },
+      "url": "https://velaglass.ca/",
+      "offers": {
+        "@type": "Offer",
+        "price": "250",
+        "priceCurrency": "CAD",
+        "availability": "https://schema.org/PreOrder",
+        "url": "https://velaglass.ca/"
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip" href="#contenu">Aller au contenu</a>
 
+<div class="beta-banner">
+  <div class="wrap"><b>Beta</b> — le service d’IA en ligne se déploie&nbsp;; certaines réponses ne sont pas encore disponibles.</div>
+</div>
+
 <!-- ==========================================================================
-     Pictogrammes du site : dessinés au trait, rangés une seule fois ici et
-     appelés par <use href="#…">. Même document, donc aucune requête réseau :
-     tout fonctionne ouvert depuis le disque, hors ligne.
+     Pictogrammes au trait, rangés une seule fois et appelés par <use href="#…">.
+     Même document : aucune requête réseau, tout marche hors ligne.
      ========================================================================== -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-  <symbol id="i-voit" viewBox="0 0 24 24">
-    <path d="M1.8 12S5.6 5.6 12 5.6 22.2 12 22.2 12 18.4 18.4 12 18.4 1.8 12 1.8 12Z"/>
-    <path d="M14.14 9.36A3.4 3.4 0 1 0 15.27 12.94"/>
+  <symbol id="i-micro" viewBox="0 0 24 24">
+    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
+    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
   </symbol>
-  <symbol id="i-memoire" viewBox="0 0 24 24">
-    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
-    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
+  <symbol id="i-son" viewBox="0 0 24 24">
+    <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
+    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
+  </symbol>
+  <symbol id="i-sans-camera" viewBox="0 0 24 24">
+    <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
+    <path d="M8.4 7 10 4.2h4L15.6 7"/><circle cx="12" cy="13.3" r="3.5"/><path d="M3 21 21 3"/>
+  </symbol>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M3 10.6 12 3.6l9 7"/><path d="M5 9.4V20h14V9.4"/><path d="M9.6 20v-5.4h4.8V20"/>
   </symbol>
   <symbol id="i-fais" viewBox="0 0 24 24">
     <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
     <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
   </symbol>
-  <symbol id="i-consent" viewBox="0 0 24 24">
-    <rect x="2.6" y="7.4" width="18.8" height="9.2" rx="4.6"/>
-    <circle cx="16.8" cy="12" r="2.6"/>
-    <path d="M5.4 12 7 13.7 9.9 10.4"/>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
   </symbol>
-  <symbol id="i-indicateur" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>
-    <path d="M16.6 7.4a6.5 6.5 0 0 1 0 9.2"/><path d="M19.8 4.2a11 11 0 0 1 0 15.6"/>
-    <path d="M7.4 16.6a6.5 6.5 0 0 1 0-9.2"/><path d="M4.2 19.8a11 11 0 0 1 0-15.6"/>
-  </symbol>
-  <symbol id="i-local" viewBox="0 0 24 24">
-    <path d="M7.6 18.4h9.7a3.6 3.6 0 0 0 .5-7.1 5.3 5.3 0 0 0-9.8-1.6 4.4 4.4 0 0 0-.4 8.7Z"/>
-    <path d="M4 20.6 20 3.4"/>
-  </symbol>
-  <symbol id="i-chiffre" viewBox="0 0 24 24">
-    <rect x="4.2" y="10.4" width="15.6" height="10.4" rx="2.4"/>
-    <path d="M8 10.4V7.6a4 4 0 0 1 8 0v2.8"/>
-    <circle cx="12" cy="15.4" r="1.5"/>
-  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
   <symbol id="i-chaine" viewBox="0 0 24 24">
     <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
     <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
-  </symbol>
-  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
-  <symbol id="i-micro" viewBox="0 0 24 24">
-    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
-    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
-  </symbol>
-  <symbol id="i-horloge" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.7 2.2"/>
-  </symbol>
-  <symbol id="i-eclair" viewBox="0 0 24 24"><path d="M13.4 2.4 5.6 13.6h5.6l-.7 8 8.1-11.5h-5.9z"/></symbol>
-  <!-- Ajoutés pour le produit : la monture, le son, la caméra barrée, la batterie, la boîte. -->
-  <symbol id="i-lunettes" viewBox="0 0 24 24">
-    <rect x="1.4" y="8.6" width="8.7" height="7" rx="3"/>
-    <rect x="13.9" y="8.6" width="8.7" height="7" rx="3"/>
-    <path d="M10.1 11.8h3.8"/>
-  </symbol>
-  <symbol id="i-son" viewBox="0 0 24 24">
-    <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
-    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/>
-    <path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
-  </symbol>
-  <symbol id="i-sans-camera" viewBox="0 0 24 24">
-    <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
-    <path d="M8.4 7 10 4.2h4L15.6 7"/>
-    <circle cx="12" cy="13.3" r="3.5"/>
-    <path d="M3 21 21 3"/>
-  </symbol>
-  <symbol id="i-batterie" viewBox="0 0 24 24">
-    <rect x="2.4" y="7.6" width="16.6" height="8.8" rx="2.4"/>
-    <path d="M21.6 10.8v2.4"/>
-    <rect x="5" y="10" width="6.4" height="4" rx="1" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="i-boite" viewBox="0 0 24 24">
-    <path d="M3 7.8 12 3.4l9 4.4v8.4L12 20.6 3 16.2Z"/>
-    <path d="M3 7.8 12 12.2 21 7.8"/><path d="M12 12.2V20.6"/>
   </symbol>
 </svg>
 
@@ -116,60 +145,51 @@
 
 <main id="contenu">
 
-  <!-- =============================================================== hero produit
-       C'est le produit qui ouvre la page, pas le logo : la photo, le prix et le
-       bouton d'achat tiennent au-dessus de la ligne de flottaison, y compris sur
-       un téléphone (voir .hp-photo { order: -1 } dans style.css). -->
+  <!-- =============================================================== hero -->
   <section class="hero-produit">
     <div class="hero-glow" aria-hidden="true"></div>
-
     <div class="wrap hp-grid">
 
       <div class="hp-txt">
-        <p class="eyebrow">Lunettes VELA</p>
-        <h1 class="hp-titre">Des lunettes qui vous <em>écoutent</em>, sans jamais vous regarder.</h1>
+        <p class="eyebrow">Lunettes VELA · fabriquées au Québec</p>
+        <h1 class="hp-titre">Votre voix donne le cap. <em>IRIS</em> tient la barre.</h1>
         <p class="hp-lead">
-          Une monture noire, ordinaire à regarder. Elle porte le micro et les haut-parleurs, elle se
-          connecte à votre ordinateur en Bluetooth, et c’est IRIS qui vous répond dans l’oreille.
-          Aucune caméra, aucun écran, rien qui s’allume sur votre visage.
+          Une monture sobre qui porte le micro et le son. Vous parlez&nbsp;; IRIS répond dans
+          l’oreille et agit sur votre ordinateur. Aucune caméra, aucun écran.
         </p>
 
         <div class="prix-bloc">
-          <p class="pb-quoi">Lunettes VELA <span>· l’application IRIS est gratuite</span></p>
+          <p class="pb-quoi">Les lunettes <span>· l’application IRIS est gratuite</span></p>
           <p class="pb-prix">250&nbsp;$<span class="pb-dev">CAD</span></p>
-          <p class="pb-taxes">Taxes en sus. Un seul versement&nbsp;: aucun abonnement obligatoire, aucun
-            prélèvement automatique.</p>
+          <p class="pb-taxes">Taxes en sus. Un seul versement, jamais d’abonnement forcé.</p>
           <p class="pb-actions">
-            <a class="btn primary btn-xl" href="https://paypal.me/irisvela461/250.00CAD"
-               target="_blank" rel="noopener noreferrer">Acheter&nbsp;· 250&nbsp;$</a>
-            <a class="btn" href="lunettes.html">La fiche du produit</a>
+            <a class="btn primary btn-xl" href="https://buy.stripe.com/3cIbJ33UI78a91ZbsS0Ny04"
+               target="_blank" rel="noopener noreferrer">Précommander les lunettes — 250&nbsp;$</a>
+            <a class="btn" href="lunettes.html">Voir les lunettes</a>
           </p>
           <p class="pb-note">
-            <strong>Comment ça se passe&nbsp;:</strong> vous payez par PayPal, vous nous faites suivre le reçu,
-            et la livraison se convient par courriel, au cas par cas&nbsp;: il n’y a pas de tunnel de commande,
-            c’est une personne qui vous répond. IRIS s’installe gratuitement de votre côté&nbsp;;
-            <a href="plans.html">l’abonnement</a> est un choix à part.
+            Paiement par carte (Stripe) ou virement Interac à
+            <a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a>.
+            La livraison se convient ensuite par courriel, avec une vraie personne.
           </p>
         </div>
 
         <ul class="hp-faits">
-          <li><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg> Micro et haut-parleurs</li>
+          <li><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg> Micro et son</li>
           <li><svg class="ico" aria-hidden="true"><use href="#i-sans-camera"/></svg> Aucune caméra</li>
-          <li><svg class="ico" aria-hidden="true"><use href="#i-batterie"/></svg> Étui de charge USB-C</li>
+          <li><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg> Voix française locale</li>
         </ul>
       </div>
 
-      <!-- Première image du document : chargée sans délai, contrairement à toutes
-           les suivantes qui sont en loading="lazy". La plaque est noire (.est-sombre)
-           parce que cette photo est déjà prise sur fond noir. -->
+      <!-- Première image du document : chargée sans délai (eager). -->
       <figure class="hp-photo">
         <div class="pv-plaque est-sombre">
           <img src="assets/photos/lunettes-fond-sombre.jpg"
                srcset="assets/photos/lunettes-fond-sombre-450.jpg 450w,
                        assets/photos/lunettes-fond-sombre.jpg 900w"
-               sizes="(max-width: 900px) calc(100vw - 48px), 480px"
+               sizes="(max-width: 820px) calc(100vw - 48px), 460px"
                width="900" height="900" loading="eager" decoding="async" fetchpriority="high"
-               alt="Les lunettes VELA à verres teintés, de trois quarts sur fond noir : monture épaisse, branches larges, aucune caméra.">
+               alt="Les lunettes VELA à verres teintés, de trois quarts sur fond noir : monture épaisse, aucune caméra.">
         </div>
         <figcaption>Le modèle à verres teintés. Ni caméra, ni écran.</figcaption>
       </figure>
@@ -177,66 +197,54 @@
     </div>
   </section>
 
-  <!-- ================================================================= l'objet -->
-  <section class="band" id="objet">
+  <!-- ================================================= ce qui nous distingue -->
+  <section class="band" id="distinct">
     <div class="wrap">
       <div class="sec-head center">
-        <p class="section-label">L’objet</p>
-        <h2>Ce que vous portez sur le nez.</h2>
-        <p>Des lunettes qu’on peut mettre pour aller chercher son café. Toute l’intelligence est
-          ailleurs&nbsp;: dans le logiciel, sur votre ordinateur.</p>
+        <p class="section-label">Ce qui nous distingue</p>
+        <h2>Une techno qu’on porte, qui ne nous surveille pas.</h2>
+        <p>Pensée et écrite ici, au Québec, en français d’abord.</p>
       </div>
 
       <div class="grid grid-4">
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg></span>
-          <h3>Le micro et le son</h3>
-          <p>Vous parlez sans approcher la bouche d’un micro, et vous entendez IRIS sans rien mettre
-            dans les oreilles. Windows les reconnaît comme un casque Bluetooth ordinaire.</p>
-        </div>
-        <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-sans-camera"/></svg></span>
-          <h3>Pas de caméra</h3>
-          <p>Le modèle vendu aujourd’hui n’a ni caméra ni écran, et nous le disons plutôt que de le
-            laisser deviner. Personne autour de vous n’a à se demander s’il est filmé.</p>
+          <h3>Elles écoutent, sans filmer</h3>
+          <p>Le micro et le son, rien d’autre. Personne autour de vous n’a à se demander s’il est filmé.</p>
         </div>
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-batterie"/></svg></span>
-          <h3>Elles se reconnectent seules</h3>
-          <p>IRIS retient vos lunettes, affiche le niveau de leur batterie et rétablit la connexion
-            quand vous les remettez. Vous n’avez rien à réappairer chaque matin.</p>
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
+          <h3>IRIS tourne chez vous</h3>
+          <p>L’assistante vit sur votre PC. Vos données restent sur l’appareil, pas dans un nuage lointain.</p>
         </div>
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-lunettes"/></svg></span>
-          <h3>Deux montures</h3>
-          <p>Verres transparents ou verres teintés&nbsp;: les deux existent. Vous nous dites laquelle vous
-            voulez par courriel, avec le reçu, juste après le paiement&nbsp;; c’est une personne qui prépare
-            votre envoi.</p>
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg></span>
+          <h3>Une voix française, locale</h3>
+          <p>La voix de synthèse (Piper) fonctionne hors ligne et ne quitte jamais votre ordinateur.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
+          <h3>250 $, une seule fois</h3>
+          <p>Un versement pour les lunettes. Aucun prélèvement automatique, aucun abonnement obligatoire.</p>
         </div>
       </div>
-
-      <p class="actions" style="margin-top:26px;justify-content:center">
-        <a class="btn primary" href="lunettes.html">Photos, caractéristiques et contenu de l’envoi</a>
-      </p>
     </div>
   </section>
 
-  <!-- ================================================== IRIS, ce qui vient avec -->
+  <!-- ============================================================ ce qu'IRIS fait -->
   <section id="iris">
     <div class="wrap">
       <div class="sec-head center">
-        <p class="section-label">Ce qui vient avec</p>
+        <p class="section-label">Ce qu’IRIS fait</p>
         <h2>Sans le logiciel, ce ne sont que des lunettes.</h2>
-        <p>IRIS est l’application qui les rend utiles. Elle tourne sur votre PC Windows, elle écoute par
-          le micro des lunettes et elle répond dans leurs haut-parleurs. Elle se télécharge gratuitement et
-          le plan Gratuit suffit pour s’en servir tous les jours.</p>
+        <p>IRIS écoute par le micro, répond dans l’oreille et agit sur commande — jamais d’elle-même.</p>
       </div>
 
       <figure class="viz viz-voice">
         <div class="vs">
           <div class="vs-row vs-ask">
             <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
-            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i><i style="--b:8"></i><i style="--b:9"></i></span>
+            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
             <p class="vs-said"><span>«&nbsp;Dis-moi Iris, ouvre YouTube.&nbsp;»</span></p>
           </div>
           <div class="vs-row vs-do">
@@ -248,217 +256,45 @@
             <p>Inscrit au registre&nbsp;: <span class="mono">commande exécutée</span>.</p>
           </div>
         </div>
-        <figcaption>Ce qu’il se passe quand vous parlez&nbsp;: la demande, l’action, la trace.</figcaption>
+        <figcaption>La demande, l’action, la trace — sur votre appareil.</figcaption>
       </figure>
 
       <div class="grid grid-3" style="margin-top:22px">
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-voit"/></svg></span>
-          <h3>Elle voit votre écran</h3>
-          <p>Elle lit ce qui est affiché quand vous le lui demandez, puis clique sur ce qu’elle y a lu.
-            «&nbsp;Clique sur Envoyer&nbsp;» suffit.</p>
-          <span class="pill plan-note">À partir du plan Premium</span>
-        </div>
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
-          <h3>Elle retient</h3>
-          <p>Vos préférences, vos décisions et vos promesses restent dans une mémoire gardée sur votre
-            appareil, qu’elle relit pour vous répondre.</p>
-          <span class="pill plan-note">À partir du plan Premium</span>
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg></span>
+          <h3>Elle écoute</h3>
+          <p>«&nbsp;Dis-moi Iris&nbsp;», et le dialogue continue sans répéter le mot d’activation.</p>
+          <span class="pill ok plan-note">Dès le plan Gratuit</span>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-fais"/></svg></span>
-          <h3>Elle fait</h3>
-          <p>Ouvrir, lancer, chercher, taper, exécuter, rappeler&nbsp;: elle agit sur commande, jamais
-            d’elle-même.</p>
-          <span class="pill ok plan-note">Inclus dès le plan Gratuit</span>
+          <h3>Elle agit</h3>
+          <p>Ouvrir, chercher, écrire, lancer, rappeler&nbsp;: elle pilote l’ordinateur à la voix.</p>
+          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
+          <h3>Elle se souvient</h3>
+          <p>Vos préférences et vos décisions restent dans une mémoire gardée sur votre appareil.</p>
+          <span class="pill plan-note">À partir du plan Premium</span>
         </div>
       </div>
 
-      <p class="actions" style="margin-top:24px;justify-content:center">
+      <p class="actions" style="margin-top:26px;justify-content:center">
         <a class="btn" href="fonctionnalites.html">Tout ce qu’IRIS sait faire</a>
       </p>
     </div>
   </section>
 
-  <!-- ======================================================= registre chaîné -->
-  <section class="band" id="preuve">
-    <div class="wrap">
-      <div class="sec-head center">
-        <p class="section-label">Pourquoi vous pouvez lui faire confiance</p>
-        <h2>Un registre qui ne se réécrit pas en douce.</h2>
-        <p>Tout ce qu’IRIS capte et tout ce qu’elle envoie s’inscrit dans un carnet, sur votre appareil.
-          Chaque ligne est scellée par une empreinte qui contient celle de la ligne d’avant&nbsp;: touchez
-          à une seule, tout ce qui suit devient faux, immédiatement.</p>
-      </div>
-
-      <figure class="viz viz-chain">
-        <div class="chain-track" aria-hidden="true">
-          <div class="cb" data-hold>
-            <span class="cb-n">#1</span>
-            <span class="cb-t">Consentement accordé</span>
-            <span class="cb-h">a91f4c02…</span>
-          </div>
-          <span class="cl" style="--i:0"></span>
-          <div class="cb" style="--i:0">
-            <span class="cb-n">#2</span>
-            <span class="cb-t">Envoi à un agent</span>
-            <span class="cb-h">7d3b91ee…</span>
-            <span class="cb-flag">ligne réécrite</span>
-          </div>
-          <span class="cl" style="--i:1"></span>
-          <div class="cb" style="--i:1">
-            <span class="cb-n">#3</span>
-            <span class="cb-t">Capture d’écran</span>
-            <span class="cb-h">2c60af71…</span>
-          </div>
-          <span class="cl" style="--i:2"></span>
-          <div class="cb" style="--i:2">
-            <span class="cb-n">#4</span>
-            <span class="cb-t">Commande exécutée</span>
-            <span class="cb-h">be04d5a9…</span>
-          </div>
-          <span class="cl" style="--i:3"></span>
-          <div class="cb" style="--i:3">
-            <span class="cb-n">#5</span>
-            <span class="cb-t">Mode 100&nbsp;% local</span>
-            <span class="cb-h">f38e17bc…</span>
-          </div>
-        </div>
-
-        <p class="chain-status" aria-hidden="true">
-          <span class="cs-ok"><svg class="ico" style="width:18px;height:18px" aria-hidden="true"><use href="#i-check"/></svg> Chaîne intacte — 5 entrées vérifiées</span>
-          <span class="cs-bad">Altération détectée à l’entrée n°&nbsp;2 — tout ce qui suit est invalidé</span>
-        </p>
-
-        <figcaption>
-          Cinq entrées d’un registre d’exemple. La deuxième est réécrite après coup&nbsp;:
-          la cassure se propage jusqu’au bout de la chaîne.
-        </figcaption>
-      </figure>
-
-      <p class="actions" style="margin-top:26px;justify-content:center">
-        <a class="btn primary" href="confidentialite.html#demonstration">Essayer la vérification</a>
-      </p>
-
-      <details class="plus">
-        <summary>Comment ça tient techniquement</summary>
-        <div class="plus-body">
-          <p>L’empreinte est un SHA-256 de la ligne, calculé avec l’empreinte de la précédente. Personne
-            ne sait fabriquer deux textes différents qui donneraient la même empreinte&nbsp;: c’est ce qui
-            rend le carnet contrôlable plutôt que crédible.</p>
-          <p>Dans l’application, le bouton «&nbsp;Vérifier&nbsp;» recalcule toute la chaîne devant vous, hors ligne.
-            Le registre reste sur votre ordinateur et s’exporte en JSON ou en CSV&nbsp;: il est à vous.
-            <a href="confidentialite.html">Tout sur la confidentialité vérifiable</a>.</p>
-        </div>
-      </details>
-    </div>
-  </section>
-
-  <!-- ============================================================ les photos -->
-  <section id="photos">
-    <div class="wrap">
-      <div class="sec-head center">
-        <p class="section-label">En vrai</p>
-        <h2>La monture, l’étui, la recharge.</h2>
-        <p>Ce sont les photos du produit tel qu’il est aujourd’hui. Aucune vue d’artiste, aucun rendu.</p>
-      </div>
-
-      <figure class="viz pv">
-        <div class="pv-grappe">
-          <div class="pv-plaque pv-vedette">
-            <img src="assets/photos/lunettes-trois-quarts.jpg"
-                 srcset="assets/photos/lunettes-trois-quarts-450.jpg 450w,
-                         assets/photos/lunettes-trois-quarts.jpg 900w"
-                 sizes="(max-width: 720px) calc(100vw - 80px), 600px"
-                 width="900" height="900" loading="lazy" decoding="async"
-                 alt="Les lunettes VELA de trois quarts, branches ouvertes : monture noire épaisse, verres transparents, sans aucune caméra.">
-          </div>
-          <div class="pv-plaque pv-petite">
-            <img src="assets/photos/lunettes-et-etuis.jpg"
-                 srcset="assets/photos/lunettes-et-etuis-450.jpg 450w,
-                         assets/photos/lunettes-et-etuis.jpg 900w"
-                 sizes="(max-width: 720px) calc(100vw - 80px), 400px"
-                 width="900" height="900" loading="lazy" decoding="async"
-                 alt="Les lunettes VELA posées devant deux étuis rigides, l’un noir, l’autre brun clair.">
-          </div>
-          <div class="pv-plaque pv-petite">
-            <img src="assets/photos/lunettes-en-charge.jpg"
-                 srcset="assets/photos/lunettes-en-charge-450.jpg 450w,
-                         assets/photos/lunettes-en-charge.jpg 900w"
-                 sizes="(max-width: 720px) calc(100vw - 80px), 400px"
-                 width="900" height="900" loading="lazy" decoding="async"
-                 alt="Les lunettes VELA rangées dans leur étui de charge brun clair, relié à un câble USB-C.">
-          </div>
-        </div>
-        <figcaption>
-          La monture à verres transparents, les étuis, et l’étui qui recharge les lunettes.
-          Aucun de ces modèles ne porte de caméra&nbsp;: le micro et le son, rien d’autre.
-        </figcaption>
-      </figure>
-
-      <p class="actions" style="margin-top:26px;justify-content:center">
-        <a class="btn" href="lunettes.html">Voir toutes les photos et les caractéristiques</a>
-      </p>
-    </div>
-  </section>
-
-  <!-- ============================================================= garanties -->
-  <section class="band" id="garanties">
-    <div class="wrap">
-      <div class="sec-head center">
-        <p class="section-label">Ce que vous contrôlez</p>
-        <h2>Quatre décisions de conception, pas quatre options.</h2>
-      </div>
-      <div class="grid grid-4">
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-consent"/></svg></span>
-          <h3>Consentement par type</h3>
-          <p>Texte, audio, images, écran, mémoire&nbsp;: vous autorisez chaque type séparément, et vous
-            reprenez votre accord quand vous voulez.</p>
-        </div>
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-indicateur"/></svg></span>
-          <h3>Indicateur de capture</h3>
-          <p>Une pastille flottante apparaît dès que le micro ou l’écran servent. L’application ne permet
-            pas de la fermer.</p>
-        </div>
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
-          <h3>Mode 100&nbsp;% local</h3>
-          <p>Plus rien ne sort de l’ordinateur&nbsp;: seul un modèle installé chez vous peut répondre.</p>
-        </div>
-        <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chiffre"/></svg></span>
-          <h3>Chiffré au repos</h3>
-          <p>AES-256-GCM sur votre disque, et vos clés d’API dans le coffre du système, jamais dans
-            l’interface.</p>
-        </div>
-      </div>
-      <p class="actions" style="margin-top:24px;justify-content:center">
-        <a class="btn" href="confidentialite.html">La confidentialité en détail</a>
-      </p>
-    </div>
-  </section>
-
-  <!-- ================================================== pourquoi VELA existe -->
-  <section id="pourquoi">
+  <!-- ================================================================= le mot du fondateur -->
+  <section class="band" id="pourquoi">
     <div class="wrap">
       <div class="story">
-
         <div class="story-txt">
-          <p class="section-label">Pourquoi VELA existe</p>
-          <p class="story-quote">La confiance ne devrait pas arriver en dernier.</p>
-          <p>J’ai travaillé sur des lunettes intelligentes avant de lancer VELA. C’est là que j’ai compris
-            une chose&nbsp;: dans ce genre de produit, la confiance arrive toujours à la fin. On décide la
-            fiche technique, le prix, la date de sortie — puis on ajoute une page qui promet que vos données
-            sont bien traitées.</p>
-          <p>J’ai voulu construire l’inverse. Un produit où vous n’avez rien à croire sur parole&nbsp;: vous
-            ouvrez le registre, vous cliquez sur «&nbsp;Vérifier&nbsp;», et vous voyez vous-même ce qui a été
-            capté et ce qui est sorti de votre appareil.</p>
-          <p>C’est pour ça que le registre existe avant le reste. Il a été écrit avant la voix, avant les
-            commandes, avant les lunettes.</p>
-          <p class="story-sign">— <b>Miguel</b>, fondateur de VELA</p>
+          <p class="section-label">Pourquoi VELA</p>
+          <p class="story-quote">La technologie qu’on porte ne devrait ni nous filmer, ni nous exclure, ni dépendre de personne.</p>
+          <p>J’ai voulu l’inverse des lunettes à caméra&nbsp;: un objet qui écoute pour aider, jamais un œil braqué sur les autres. IRIS s’adapte à chacun — on peut tout faire à la voix — et elle tourne <b>chez vous</b>, jusqu’à sa voix française.</p>
+          <p class="story-sign">— <b>Miguel Goufack</b>, fondateur de VELA</p>
         </div>
 
         <figure class="viz pv">
@@ -466,99 +302,50 @@
             <img src="assets/photos/lunettes-solaires.jpg"
                  srcset="assets/photos/lunettes-solaires-450.jpg 450w,
                          assets/photos/lunettes-solaires.jpg 900w"
-                 sizes="(max-width: 900px) calc(100vw - 96px), 440px"
+                 sizes="(max-width: 780px) calc(100vw - 96px), 400px"
                  width="900" height="900" loading="lazy" decoding="async"
                  alt="Les lunettes VELA à verres teintés dégradés, vues de trois quarts, branches ouvertes.">
           </div>
-          <figcaption>
-            Les lunettes portent le micro et le son. Le modèle actuel n’a pas de caméra. IRIS n’en dépend
-            pas&nbsp;: elle lit l’écran de votre ordinateur, et elle fonctionne aussi très bien sans lunettes.
-          </figcaption>
+          <figcaption>Le modèle teinté. Le micro et le son&nbsp;; pas de caméra.</figcaption>
         </figure>
-
       </div>
     </div>
   </section>
 
   <!-- ================================================================= plans -->
-  <section class="band" id="plans">
-    <div class="wrap">
-      <div class="sec-head center">
-        <p class="section-label">L’abonnement</p>
-        <h2>Quatre plans, et l’accès à l’IA compris dans chacun.</h2>
-        <p>Vous ne créez de compte chez aucun fournisseur d’intelligence artificielle et vous ne collez aucune
-          clé&nbsp;: c’est le serveur de VELA qui détient l’accès et qui fait répondre les modèles. Monter de
-          plan, c’est débloquer un modèle plus capable et un quota plus large.</p>
-      </div>
-
-      <div class="grid grid-4">
-        <div class="card plan-mini">
-          <h3>Gratuit</h3>
-          <p class="pm-prix">0&nbsp;$</p>
-          <p class="pm-par">pour toujours</p>
-          <p class="pm-quoi">Voix, contrôle du PC, routines, rappels, registre. Modèles gratuits fournis par
-            VELA, voix Windows, reconnaissance hors ligne.</p>
-        </div>
-        <div class="card plan-mini">
-          <h3>Pro</h3>
-          <p class="pm-prix">19,99&nbsp;$</p>
-          <p class="pm-par">par mois</p>
-          <p class="pm-quoi">Ajoute la voix naturelle ElevenLabs, la navigation web avec vos comptes
-            enregistrés, Gemini 2.5 Flash et GPT-5 mini.</p>
-        </div>
-        <div class="card plan-mini">
-          <h3>Premium</h3>
-          <p class="pm-prix">29,99&nbsp;$</p>
-          <p class="pm-par">par mois</p>
-          <p class="pm-quoi">Ajoute Claude Sonnet 5, le contrôle complet de l’écran, les tâches en
-            arrière-plan, la mémoire partagée et le retour vocal développeur.</p>
-        </div>
-        <div class="card plan-mini">
-          <h3>Entreprise</h3>
-          <p class="pm-prix">99,99&nbsp;$</p>
-          <p class="pm-par">par mois</p>
-          <p class="pm-quoi">Ajoute Claude Opus 5. La gouvernance d’entreprise avec export d’audit et les
-            connecteurs d’outils PME sont <span class="pill warn">à venir</span></p>
-        </div>
-      </div>
-
-      <p class="actions" style="margin-top:24px;justify-content:center">
-        <a class="btn" href="plans.html">Comparer les plans</a>
-        <a class="btn" href="installer.html">Essayer IRIS sans lunettes, gratuitement</a>
+  <section id="plans">
+    <div class="wrap narrow center">
+      <p class="section-label">Les lunettes, puis IRIS</p>
+      <h2>Deux choses, à part l’une de l’autre.</h2>
+      <p class="lead" style="margin-inline:auto">
+        Les lunettes à <strong>250&nbsp;$</strong>, payées une fois. L’application IRIS est
+        <strong>gratuite</strong>. L’abonnement qui débloque les modèles d’IA en ligne arrive
+        <span class="pill warn">Bientôt</span>.
       </p>
-
-      <details class="plus">
-        <summary>Ce qui est compris, et pourquoi le paiement passe par courriel</summary>
-        <div class="plus-body">
-          <p>L’accès aux modèles d’IA est fourni avec le plan, quel qu’il soit&nbsp;: rien à installer, rien à
-            configurer, aucune facture séparée. VELA paie ce que vous consommez, et le quota mensuel du plan
-            est ce qui encadre cette dépense.</p>
-          <p>Le paiement PayPal est un versement unique&nbsp;: il ne crée pas d’abonnement récurrent et il
-            n’active rien tout seul. C’est une clé envoyée par courriel qui débloque votre plan, et c’est par
-            courriel que la livraison des lunettes se convient. <a href="plans.html#acheter">Le détail est ici</a>.</p>
-        </div>
-      </details>
+      <p class="actions" style="justify-content:center">
+        <a class="btn primary" href="plans.html">Comparer les plans</a>
+        <a class="btn" href="installer.html#telecharger">Essayer IRIS, gratuitement</a>
+      </p>
     </div>
   </section>
 
   <!-- ============================================================ appel final -->
-  <section>
+  <section class="band">
     <div class="wrap">
       <div class="rappel-achat">
         <div>
-          <h2>Les lunettes VELA, et IRIS qui va avec.</h2>
-          <p>Un seul versement de <span class="ra-prix">250&nbsp;$</span>, taxes en sus. Le reçu et les
-            modalités de livraison vous arrivent ensuite par courriel. L’application, elle, se télécharge
-            gratuitement.</p>
+          <h2>Prêt à mettre le cap&nbsp;?</h2>
+          <p>Un seul versement de <span class="ra-prix">250&nbsp;$</span>, taxes en sus. Le reçu et la
+            livraison suivent par courriel. L’application, elle, se télécharge gratuitement.</p>
           <p class="small muted" style="margin:10px 0 0">
-            Vous venez de payer&nbsp;? <a href="merci.html">Voici ce qui se passe maintenant</a>.
+            Vous venez de payer&nbsp;? <a href="merci.html">La suite est ici</a>.
             Déjà commandé&nbsp;? <a href="suivi.html">Suivre ma commande</a>.
           </p>
         </div>
         <p class="actions" style="margin:0">
-          <a class="btn primary btn-xl" href="https://paypal.me/irisvela461/250.00CAD"
-             target="_blank" rel="noopener noreferrer">Acheter&nbsp;· 250&nbsp;$</a>
-          <a class="btn" href="contact.html">Une question avant&nbsp;?</a>
+          <a class="btn primary btn-xl" href="https://buy.stripe.com/3cIbJ33UI78a91ZbsS0Ny04"
+             target="_blank" rel="noopener noreferrer">Précommander — 250&nbsp;$</a>
+          <a class="btn" href="contact.html">Une question&nbsp;?</a>
         </p>
       </div>
     </div>
@@ -577,20 +364,25 @@
           </svg>
           <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
         </a>
-        <p>Des lunettes qui vous écoutent,<br>sans jamais vous regarder.</p>
+        <p>Votre voix donne le cap.<br>IRIS tient la barre.</p>
+        <nav class="foot-social" aria-label="VELA sur les réseaux sociaux">
+          <a href="https://www.instagram.com/vela_iris2026/" target="_blank" rel="noopener noreferrer me">Instagram</a>
+          <a href="https://www.linkedin.com/in/vela-glass-427361431/" target="_blank" rel="noopener noreferrer me">LinkedIn</a>
+          <a href="https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw" target="_blank" rel="noopener noreferrer me">YouTube</a>
+        </nav>
       </div>
       <div>
-        <h4>Le produit</h4>
+        <h3>Le produit</h3>
         <ul>
           <li><a href="lunettes.html">Les lunettes VELA</a></li>
           <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
-          <li><a href="confidentialite.html">Confidentialité vérifiable</a></li>
+          <li><a href="confidentialite.html">Confidentialité</a></li>
           <li><a href="plans.html">Plans et prix</a></li>
           <li><a href="installer.html">Installer IRIS</a></li>
         </ul>
       </div>
       <div>
-        <h4>Nous joindre</h4>
+        <h3>Nous joindre</h3>
         <ul>
           <li><a href="suivi.html">Suivre ma commande</a></li>
           <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
@@ -609,6 +401,6 @@
   </div>
 </footer>
 
-<script src="assets/site.js?v=5"></script>
+<script src="assets/site.js?v=8"></script>
 </body>
 </html>
