@@ -76,12 +76,15 @@ Pour qu'IRIS s'y adresse, dans `settings.json` de l'application :
 
 | Variable | Indispensable | Rôle |
 |---|---|---|
-| `VELA_OPENROUTER_KEY` | **oui** | La clé OpenRouter de VELA. Sans elle, le service refuse toute demande. |
+| `VELA_OPENROUTER_KEY` | **oui** | La ou les clés OpenRouter de VELA. Sans elle, le service refuse toute demande. Plusieurs clés séparées par des virgules : le relais bascule sur la suivante dès qu'une répond 401/402/429. |
+| `VELA_ANTHROPIC_KEY` | non | Clé(s) Anthropic. Présente, les modèles Claude partent en direct chez Anthropic plutôt que par OpenRouter. Accepte aussi plusieurs clés séparées par des virgules. |
 | `VELA_SECRET` | oui en production | Signe les jetons d'appareil. Sans elle, une valeur par défaut connue est utilisée : n'importe qui pourrait fabriquer un jeton. |
 | `VELA_LICENCES_URL` | recommandée | L'adresse du serveur de licences. C'est lui qui sait qui est abonné. |
-| `VELA_ELEVENLABS_KEY` | si voix incluse | Sans elle, un abonné Pro paie une voix qu'il n'entendra pas. |
+| `VELA_ELEVENLABS_KEY` | si voix incluse | Sans elle, un abonné Pro paie une voix qu'il n'entendra pas. Plusieurs clés séparées par des virgules : pool de comptes ElevenLabs. |
 | `VELA_LICENCE_SECRET` | si repli utilisé | Doit être **identique** à `LICENSE_SECRET` dans `backend/iris/plans.py`, sinon IRIS rejette les clés émises. |
 | `VELA_DONNEES` | non | Où écrire compteurs et repli. Défaut : `serveur/donnees`. |
+| `VELA_TIMEOUT_FLUX_S` | non | Délai (s) sans le moindre octet toléré sur un flux amont avant de couper. Défaut : 120. |
+| `VELA_AMONT_COOLDOWN_S` | non | Durée (s) pendant laquelle une clé amont ayant répondu 401/402/429 est écartée avant réessai. Défaut : 300. |
 
 Générer un secret : `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
@@ -144,9 +147,12 @@ cd serveur
 ../backend/.venv/Scripts/python -m pytest -q
 ```
 
-19 tests. Ils portent sur ce qui coûterait cher si ça cédait : un plan Gratuit qui atteindrait un
-modèle payant, un jeton forgé, une clé d'abonnement qu'IRIS refuserait, la clé d'API qui fuirait
-dans une réponse.
+Ils portent sur ce qui coûterait cher si ça cédait : un plan Gratuit qui atteindrait un modèle
+payant, un jeton forgé, une clé d'abonnement qu'IRIS refuserait, la clé d'API qui fuirait dans une
+réponse. Depuis le durcissement de fiabilité, ils couvrent aussi : `/sante` qui échoue vraiment
+quand la clé manque ou que le disque est illisible, une réponse amont non-JSON ou injoignable qui
+ne finit pas en 500, le timeout de lecture borné du flux, et la bascule entre plusieurs clés amont
+quand l'une répond 401/402/429.
 
 ---
 
@@ -234,17 +240,23 @@ de 30 M jetons, c'est-à-dire le seul garde-fou entre un bogue et un compte Open
 pourquoi le service démarre avec `--workers 1` et pourquoi l'installation refuse de continuer si
 le port 8100 est déjà pris.
 
-### Quand `/sante` ment
+### `/sante` teste vraiment
 
-**`/sante` répond toujours `{"ok": true}`.** Il ne teste ni la clé ni le disque, et `_lire` avale
-toutes les exceptions : un disque plein ou illisible se lit donc « compteurs à zéro, tout va
-bien », pendant que chaque appel de `/v1/chat/completions` répond 500. Le seul champ qui dise
-quelque chose est **`amont`** : à `false`, la clé n'a pas été lue et IRIS reçoit un 503 à chaque
-demande. Le script d'installation vérifie `amont`, pas `ok`.
+**`/sante` ne renvoie plus `ok: true` en dur.** `ok` n'est vrai que si (1) une clé IA est
+configurée — `VELA_OPENROUTER_KEY` **ou** `VELA_ANTHROPIC_KEY` — et (2) le dossier de données est
+accessible en écriture : le point de santé y écrit puis relit un octet à chaque appel. Un disque
+plein, un volume démonté ou des droits cassés font désormais répondre `ok: false` avec un champ
+`detail` qui dit lequel des deux a lâché — au lieu de laisser croire le service vivant pendant que
+chaque appel de `/v1/chat/completions` échoue. Aucun appel réseau en amont n'est fait ici (trop
+cher à chaque sonde) : on vérifie la seule présence d'une clé, pas qu'elle fonctionne.
 
-Deux corrections restent à faire dans `relais.py` : protéger `_ecrire`, et faire échouer `/sante`
-quand le disque n'est pas accessible en écriture. Un service permanent surveillé par un point de
-santé qui ne teste pas le disque est un service qu'on croit vivant.
+Les champs historiques sont conservés (`amont`, `voix`, `plafond_global`, `consomme`,
+`plafond_caracteres`, `caracteres`), donc le script d'installation qui vérifie `amont` continue de
+marcher. `detail` n'apparaît que lorsque `ok` est faux, et ne contient jamais la clé.
+
+Reste volontairement inchangé : `_ecrire` lève toujours si l'écriture échoue — c'est une panne
+qu'on veut **bruyante** (la requête répond en erreur) plutôt que silencieusement avalée. `/sante`
+est là pour la détecter avant qu'un client ne la rencontre.
 
 ### Ce que ce script ne fait pas
 

@@ -1,0 +1,34 @@
+# Blueprint Render — héberge le relais IA de VELA gratuitement, 24/7, SANS carte.
+#
+# Utilisation : Render › New › Blueprint › choisir le dépôt « miguelflow2/iris ».
+# Render lit ce fichier, crée le service, et te DEMANDE de coller les clés marquées
+# « sync: false » (elles ne sont donc PAS écrites ici, jamais dans git).
+#
+# Ne déploie QUE le relais : c'est lui que l'app des clients appelle pour l'IA. Le relais
+# répond aussi à /api/licence en repli, donc les vérifications de licence marchent aussi.
+# Le serveur de licences séparé (webhooks paiement) n'est utile qu'une fois les paiements
+# ouverts, et un 2ᵉ service dépasserait les 750 h/mois gratuites — on le laisse pour plus tard.
+
+services:
+  - type: web
+    name: vela-relais
+    runtime: python
+    plan: free
+    rootDir: serveur
+    buildCommand: pip install -r requirements.txt
+    # Render fournit $PORT ; on écoute sur 0.0.0.0 (le proxy de Render s'y connecte).
+    startCommand: uvicorn relais:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: VELA_ANTHROPIC_KEY
+        sync: false
+      - key: VELA_OPENROUTER_KEY
+        sync: false
+      - key: VELA_SECRET
+        sync: false
+      - key: VELA_ELEVENLABS_KEY
+        sync: false
+      # Sur Render le disque est éphémère (remis à zéro à chaque redéploiement) : on range
+      # les données de quota dans /tmp pour éviter toute confusion. Non critique pour le pilote.
+      - key: VELA_DONNEES
+        value: /tmp/vela-donnees

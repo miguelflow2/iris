@@ -146,7 +146,10 @@ def test_le_relais_ne_divulgue_jamais_sa_cle(client, relais):
 # devrait fournir sa propre clé : il paierait une voix qu'il n'entendrait jamais.
 @pytest.fixture()
 def avec_voix(relais, monkeypatch):
+    monkeypatch.setattr(relais, "CLES_VOIX", ["cle-voix-factice"])
     monkeypatch.setattr(relais, "CLE_VOIX", "cle-voix-factice")
+    monkeypatch.setattr(relais, "_voix_cooldown", {})
+    monkeypatch.setattr(relais, "_voix_i", 0)
     return relais
 
 
@@ -211,6 +214,51 @@ def test_la_cle_de_voix_ne_fuit_jamais(client, avec_voix):
     jeton = client.post("/api/appareil", json={"machine": "m", "email": "pro@exemple.com"}).json()["jeton"]
     r = client.post("/v1/voix/abcdef", json={"text": ""}, headers={"Authorization": "Bearer " + jeton})
     assert r.status_code == 400 and avec_voix.CLE_VOIX not in r.text
+
+
+def test_la_voix_bascule_quand_une_cle_est_epuisee(client, relais, monkeypatch):
+    """Deux comptes ElevenLabs : quand le premier répond « quota atteint » (429), le relais bascule
+    sur le second sans que l'abonné entende un silence. C'est ce qui double la voix gratuite."""
+    monkeypatch.setattr(relais, "CLES_VOIX", ["cleA", "cleB"])
+    monkeypatch.setattr(relais, "_voix_cooldown", {})
+    monkeypatch.setattr(relais, "_voix_i", 0)
+    vues: list[str] = []
+    reponses = {"cleA": 429, "cleB": 200}
+
+    class _Flux:
+        def __init__(self, code):
+            self.status_code = code
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def aiter_bytes(self):
+            yield b"\x00\x01"
+
+    class _Client:
+        def __init__(self, **_):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        def stream(self, *_a, **k):
+            cle = k["headers"]["xi-api-key"]
+            vues.append(cle)
+            return _Flux(reponses[cle])
+
+    monkeypatch.setattr(relais.httpx, "AsyncClient", _Client)
+    jeton = client.post("/api/appareil", json={"machine": "m", "email": ""}).json()["jeton"]
+    r = client.post("/v1/voix/abcdef", json={"text": "bonjour"}, headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 200
+    assert r.content == b"\x00\x01", "les octets servis doivent venir de la 2e clé"
+    assert vues == ["cleA", "cleB"], "le relais doit avoir tenté cleA (429) puis basculé sur cleB"
 
 
 # --------------------------------------------------------------------------- une seule vérité
@@ -470,3 +518,299 @@ def test_une_cle_anthropic_suffit_a_faire_repondre_le_relais(relais, monkeypatch
     c = TestClient(relais.app)
     r = c.post("/api/appareil", json={"email": "x@y.com", "machine": "m"})
     assert r.status_code == 200, "avec une clé Anthropic seule, l'enregistrement doit marcher"
+
+
+# --------------------------------------------------------------------------- /sante teste vraiment
+# Avant, /sante renvoyait « ok: true » en dur : un disque plein ou une clé absente passaient pour
+# « tout va bien » pendant que chaque appel IA échouait. Un service surveillé par un point de santé
+# qui ne teste rien est un service qu'on croit vivant.
+def test_sante_est_vrai_quand_cle_et_disque_repondent(client, relais):
+    corps = client.get("/sante").json()
+    assert corps["ok"] is True
+    assert "detail" not in corps, "aucun détail quand tout va bien"
+    # Les champs historiques restent, le format ne change pas.
+    for champ in ("amont", "voix", "plafond_global", "consomme", "plafond_caracteres", "caracteres"):
+        assert champ in corps
+
+
+def test_sante_est_faux_sans_aucune_cle_ia(client, relais, monkeypatch):
+    monkeypatch.setattr(relais, "CLE_AMONT", "")
+    monkeypatch.setattr(relais, "CLE_ANTHROPIC", "")
+    corps = client.get("/sante").json()
+    assert corps["ok"] is False
+    assert "detail" in corps and "cle" in corps["detail"].lower()
+
+
+def test_sante_est_faux_si_le_disque_nest_pas_accessible(client, relais, tmp_path, monkeypatch):
+    """Le vrai test qui manquait : un disque non inscriptible doit faire échouer /sante, pas mentir."""
+    bloqueur = tmp_path / "fichier"
+    bloqueur.write_text("x")  # un FICHIER là où /sante voudra un dossier : mkdir échouera
+    monkeypatch.setattr(relais, "DONNEES", bloqueur / "sous")
+    corps = client.get("/sante").json()
+    assert corps["ok"] is False
+    assert "detail" in corps and "disque" in corps["detail"].lower()
+
+
+def test_sante_ne_divulgue_pas_la_cle_meme_en_echec(client, relais, monkeypatch, tmp_path):
+    bloqueur = tmp_path / "f"
+    bloqueur.write_text("x")
+    monkeypatch.setattr(relais, "DONNEES", bloqueur / "sous")
+    r = client.get("/sante")
+    assert relais.CLE_AMONT not in r.text
+
+
+def test_la_sonde_disque_isole_la_panne(relais, tmp_path, monkeypatch):
+    """_test_disque renvoie (True, '') quand ça marche, (False, détail) quand ça ne marche pas."""
+    monkeypatch.setattr(relais, "DONNEES", tmp_path)
+    ok, detail = relais._test_disque()
+    assert ok is True and detail == ""
+    bloqueur = tmp_path / "f"
+    bloqueur.write_text("x")
+    monkeypatch.setattr(relais, "DONNEES", bloqueur / "sous")
+    ok, detail = relais._test_disque()
+    assert ok is False and detail
+
+
+# --------------------------------------------------------------------------- l'amont qui déraille
+# Une réponse non-JSON (HTML d'un 502, maintenance), un amont injoignable : rien de tout cela ne
+# doit se transformer en 500 illisible côté IRIS ni faire sauter la comptabilisation des jetons.
+def test_une_reponse_amont_non_json_ne_leve_jamais(relais):
+    class R:
+        status_code = 502
+        text = "<html>Bad Gateway</html>"
+
+        def json(self):
+            raise ValueError("ce n'est pas du JSON")
+
+    rendu = relais._json_amont(R())
+    assert isinstance(rendu, dict) and "error" in rendu
+    assert relais.jetons_de(rendu) == 0, "une erreur ne coûte aucun jeton, mais le compte ne saute pas"
+
+
+def _faux_async_client(reponses):
+    """Un httpx.AsyncClient factice pour le chemin non-flux : chaque .post() rend (ou lève) l'élément
+    suivant de `reponses`. Aucun test ne doit sortir sur le réseau."""
+    class C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def post(self, *_a, **_k):
+            item = reponses.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+    return C
+
+
+def _jeton_anonyme(client):
+    return client.post("/api/appareil", json={"machine": "m", "email": ""}).json()["jeton"]
+
+
+def test_un_amont_non_json_devient_une_erreur_propre_pas_un_500(client, relais, monkeypatch):
+    class Rep:
+        status_code = 502
+        text = "<html>502</html>"
+
+        def json(self):
+            raise ValueError("non-json")
+
+    monkeypatch.setattr(relais.httpx, "AsyncClient", _faux_async_client([Rep()]))
+    jeton = _jeton_anonyme(client)
+    r = client.post("/v1/chat/completions",
+                    json={"model": "x", "messages": [{"role": "user", "content": "salut"}], "stream": False},
+                    headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 502, "le code amont est préservé, pas transformé en 500"
+    assert "error" in r.json(), "un corps JSON propre malgré l'amont non-JSON"
+    assert relais.CLE_AMONT not in r.text
+
+
+def test_un_amont_injoignable_rend_502_pas_500(client, relais, monkeypatch):
+    erreur = relais.httpx.ConnectError("connexion refusée")
+    monkeypatch.setattr(relais.httpx, "AsyncClient", _faux_async_client([erreur]))
+    jeton = _jeton_anonyme(client)
+    r = client.post("/v1/chat/completions",
+                    json={"model": "x", "messages": [{"role": "user", "content": "salut"}], "stream": False},
+                    headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 502
+
+
+def test_le_flux_amont_a_un_timeout_de_lecture_borne(relais):
+    """Avant : timeout=None, donc un fournisseur muet figeait le flux à l'infini. Désormais borné."""
+    t = relais._timeout_flux()
+    assert t.read is not None and t.read > 0, "le flux amont ne doit plus pouvoir pendre à l'infini"
+    assert t.connect is not None
+
+
+def test_le_timeout_de_flux_se_regle_par_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("VELA_DONNEES", str(tmp_path))
+    monkeypatch.setenv("VELA_OPENROUTER_KEY", "k")
+    monkeypatch.setenv("VELA_TIMEOUT_FLUX_S", "42")
+    for module in [m for m in list(sys.modules) if m == "relais"]:
+        del sys.modules[module]
+    import relais as recharge
+
+    assert recharge.TIMEOUT_LECTURE_FLUX == 42
+    assert recharge._timeout_flux().read == 42
+
+
+# --------------------------------------------------------------------------- rotation des clés amont
+# Une seule clé OpenRouter et une seule Anthropic ne laissaient aucune marge : un 429 ou une clé
+# révoquée coupait tout le monde. On accepte maintenant PLUSIEURS clés (comme le pool ElevenLabs)
+# et l'on bascule dès qu'une répond 401/402/429. Une seule clé : comportement d'avant.
+def test_plusieurs_cles_openrouter_forment_un_pool(monkeypatch, tmp_path):
+    monkeypatch.setenv("VELA_DONNEES", str(tmp_path))
+    monkeypatch.setenv("VELA_OPENROUTER_KEY", "k1, k2 ,k3")
+    monkeypatch.setenv("VELA_ANTHROPIC_KEY", "a1 a2")
+    for module in [m for m in list(sys.modules) if m == "relais"]:
+        del sys.modules[module]
+    import relais as recharge
+
+    assert recharge.CLES_AMONT == ["k1", "k2", "k3"]
+    assert recharge.CLE_AMONT == "k1", "la première reste la clé scalaire de compatibilité"
+    assert recharge.CLES_ANTHROPIC == ["a1", "a2"]
+    assert recharge.CLE_ANTHROPIC == "a1"
+
+
+def test_une_seule_cle_reste_le_comportement_davant(relais):
+    assert relais.CLES_AMONT == ["sk-or-factice"]
+    assert relais.CLE_AMONT == "sk-or-factice"
+
+
+def test_une_cle_penalisee_passe_en_dernier_puis_revient(relais):
+    cooldown: dict = {}
+    cles = ["k1", "k2"]
+    assert relais._cles_a_essayer(cles, cooldown) == ["k1", "k2"]
+    relais._amont_marquer_epuisee("k1", cooldown)
+    assert relais._cles_a_essayer(cles, cooldown) == ["k2", "k1"], "la pénalisée passe en dernier recours"
+
+
+def test_le_relais_bascule_de_cle_amont_sur_un_429(client, relais, monkeypatch):
+    """Deux clés OpenRouter : la première répond 429, le relais bascule sur la seconde, sans échec."""
+    monkeypatch.setattr(relais, "CLES_AMONT", ["kA", "kB"])
+    monkeypatch.setattr(relais, "CLE_AMONT", "kA")
+    monkeypatch.setattr(relais, "_amont_cooldown", {})
+    vues: list = []
+    codes = {"kA": 429, "kB": 200}
+
+    class Rep:
+        def __init__(self, code):
+            self.status_code = code
+            self.text = ""
+
+        def json(self):
+            return {"usage": {"total_tokens": 7}} if self.status_code == 200 else {"error": "quota"}
+
+    class Cli:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def post(self, *_a, **k):
+            cle = k["headers"]["Authorization"].split()[-1]
+            vues.append(cle)
+            return Rep(codes[cle])
+
+    monkeypatch.setattr(relais.httpx, "AsyncClient", Cli)
+    jeton = _jeton_anonyme(client)
+    r = client.post("/v1/chat/completions",
+                    json={"model": "x", "messages": [{"role": "user", "content": "hi"}], "stream": False},
+                    headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 200
+    assert vues == ["kA", "kB"], "kA (429) puis bascule sur kB"
+
+
+def test_le_flux_amont_bascule_de_cle_sur_un_429(client, relais, monkeypatch):
+    monkeypatch.setattr(relais, "CLES_AMONT", ["kA", "kB"])
+    monkeypatch.setattr(relais, "CLE_AMONT", "kA")
+    monkeypatch.setattr(relais, "_amont_cooldown", {})
+    vues: list = []
+    codes = {"kA": 429, "kB": 200}
+
+    class Flux:
+        def __init__(self, code):
+            self.status_code = code
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def aread(self):
+            return b"refuse"
+
+        async def aiter_bytes(self):
+            yield b'data: {"usage":{"total_tokens":3}}\n\n'
+
+    class Cli:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        def stream(self, *_a, **k):
+            cle = k["headers"]["Authorization"].split()[-1]
+            vues.append(cle)
+            return Flux(codes[cle])
+
+    monkeypatch.setattr(relais.httpx, "AsyncClient", Cli)
+    jeton = _jeton_anonyme(client)
+    r = client.post("/v1/chat/completions",
+                    json={"model": "x", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+                    headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 200
+    assert vues == ["kA", "kB"], "kA (429) puis bascule sur kB, sans silence"
+    assert b"total_tokens" in r.content
+
+
+def test_une_seule_cle_ne_boucle_pas_sur_un_429(client, relais, monkeypatch):
+    """Rétrocompatible : une seule clé fait UN appel, le 429 est rendu tel quel — pas de boucle."""
+    monkeypatch.setattr(relais, "CLES_AMONT", ["seule"])
+    monkeypatch.setattr(relais, "CLE_AMONT", "seule")
+    monkeypatch.setattr(relais, "_amont_cooldown", {})
+    appels: list = []
+
+    class Rep:
+        status_code = 429
+        text = ""
+
+        def json(self):
+            return {"error": "quota"}
+
+    class Cli:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def post(self, *_a, **_k):
+            appels.append(1)
+            return Rep()
+
+    monkeypatch.setattr(relais.httpx, "AsyncClient", Cli)
+    jeton = _jeton_anonyme(client)
+    r = client.post("/v1/chat/completions",
+                    json={"model": "x", "messages": [{"role": "user", "content": "hi"}], "stream": False},
+                    headers={"Authorization": "Bearer " + jeton})
+    assert r.status_code == 429
+    assert len(appels) == 1, "une seule clé : un seul appel amont"

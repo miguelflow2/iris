@@ -19,6 +19,7 @@ VELA_ELEVENLABS_KEY s'ajoute pour la voix, incluse dans tous les forfaits depuis
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -27,26 +28,48 @@ import logging
 import os
 import re
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from threading import Lock
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("vela.relais")
 
+def _cles(nom_env: str) -> list[str]:
+    """Lit une variable d'environnement qui peut porter PLUSIEURS clés, séparées par virgule,
+    point-virgule ou espaces — autant de comptes amont sur lesquels basculer quand l'un refuse
+    (401/402/429), exactement comme le pool ElevenLabs le fait déjà côté voix. Doublons retirés,
+    ordre conservé. Une seule clé : liste d'un seul élément, donc comportement identique à avant."""
+    vues: set[str] = set()
+    cles: list[str] = []
+    for morceau in re.split(r"[,;\s]+", os.environ.get(nom_env, "") or ""):
+        c = morceau.strip()
+        if c and c not in vues:
+            vues.add(c)
+            cles.append(c)
+    return cles
+
+
 AMONT = "https://openrouter.ai/api/v1"
-CLE_AMONT = os.environ.get("VELA_OPENROUTER_KEY", "").strip()
+# VELA_OPENROUTER_KEY peut désormais porter PLUSIEURS clés OpenRouter (séparées par virgule) : le
+# relais bascule de l'une à l'autre dès qu'une répond 401/402/429. CLE_AMONT reste la première, pour
+# tout ce qui ne teste que la PRÉSENCE d'une clé (/sante, gardes d'entrée, tests historiques).
+CLES_AMONT = _cles("VELA_OPENROUTER_KEY")
+CLE_AMONT = CLES_AMONT[0] if CLES_AMONT else ""
 # Point d'acces compatible OpenAI d'Anthropic. Quand cette cle est presente, les modeles Claude
 # partent DIRECTEMENT chez Anthropic plutot que par OpenRouter — utile en test (on ne paie que le
 # compte Anthropic deja recharge) et souvent moins cher qu'OpenRouter, qui prend une marge.
+# Comme OpenRouter, VELA_ANTHROPIC_KEY accepte plusieurs clés séparées par virgule.
 AMONT_ANTHROPIC = "https://api.anthropic.com/v1"
-CLE_ANTHROPIC = os.environ.get("VELA_ANTHROPIC_KEY", "").strip()
+CLES_ANTHROPIC = _cles("VELA_ANTHROPIC_KEY")
+CLE_ANTHROPIC = CLES_ANTHROPIC[0] if CLES_ANTHROPIC else ""
 SECRET_JETON = os.environ.get("VELA_SECRET", "").strip().encode() or b"VELA-relais-jeton-a-remplacer"
 # Doit rester identique à LICENSE_SECRET dans backend/iris/plans.py : sinon les clés émises ici
 # seront rejetées par IRIS.
@@ -384,6 +407,88 @@ def amont_pour(modele: str) -> tuple[str, dict, str]:
     return AMONT, entetes, modele
 
 
+# --------------------------------------------------------------------------- rotation des clés amont
+# Même principe que le pool de voix ElevenLabs : plusieurs clés OpenRouter (ou Anthropic) possibles,
+# et l'on bascule dès qu'une répond « refusée » ou « quota atteint ». Une clé écartée est réessayée
+# après un court délai — une limite de débit se lève vite, un quota se recharge, et ré-essayer une
+# clé rétablie évite qu'un incident passager la mette définitivement au rebut.
+CODES_BASCULE_AMONT = (401, 402, 429)  # 401 clé refusée · 402 crédit épuisé · 429 débit dépassé
+_AMONT_COOLDOWN_S = float(_plafond("VELA_AMONT_COOLDOWN_S", 300))
+_amont_cooldown: dict[str, float] = {}
+_anthropic_cooldown: dict[str, float] = {}
+
+# Un flux amont sans borne de LECTURE peut pendre indéfiniment si le fournisseur cesse d'émettre
+# sans fermer la connexion (avant, timeout=None). On borne le temps SANS nouvel octet ; la durée
+# TOTALE d'un flux reste libre, car une longue réponse est légitime.
+TIMEOUT_LECTURE_FLUX = float(_plafond("VELA_TIMEOUT_FLUX_S", 120))
+
+
+def _timeout_flux() -> httpx.Timeout:
+    return httpx.Timeout(connect=15.0, read=TIMEOUT_LECTURE_FLUX, write=30.0, pool=15.0)
+
+
+def _pool_pour(base: str) -> tuple[list[str], dict[str, float]]:
+    """Le pool de clés et son registre de pénalités, selon l'amont choisi. Si le pool est vide mais
+    qu'une clé scalaire existe (cas des tests qui fixent CLE_AMONT/CLE_ANTHROPIC à la main), on
+    retombe sur elle : comportement d'avant, une seule clé."""
+    if base == AMONT_ANTHROPIC:
+        return (CLES_ANTHROPIC or ([CLE_ANTHROPIC] if CLE_ANTHROPIC else [])), _anthropic_cooldown
+    return (CLES_AMONT or ([CLE_AMONT] if CLE_AMONT else [])), _amont_cooldown
+
+
+def _cles_a_essayer(cles: list[str], cooldown: dict[str, float]) -> list[str]:
+    """Les clés à tenter, dans l'ordre : d'abord celles hors pénalité (ordre du pool), puis, en
+    dernier recours, les pénalisées (la moins récemment pénalisée d'abord). Une seule clé : elle."""
+    maintenant = time.time()
+    libres = [c for c in cles if cooldown.get(c, 0.0) <= maintenant]
+    penalisees = sorted((c for c in cles if cooldown.get(c, 0.0) > maintenant),
+                        key=lambda c: cooldown[c])
+    return libres + penalisees
+
+
+def _amont_marquer_epuisee(cle: str, cooldown: dict[str, float]) -> None:
+    cooldown[cle] = time.time() + _AMONT_COOLDOWN_S
+
+
+def _json_amont(reponse) -> dict:
+    """Le corps JSON d'une réponse amont, ou une erreur PROPRE si l'amont a renvoyé autre chose que
+    du JSON — page HTML d'un 502, passerelle en maintenance, corps vide. Sans cette protection,
+    `reponse.json()` lève, la requête finit en 500 illisible côté IRIS, et les jetons ne sont pas
+    comptés. Ne lève jamais."""
+    code = getattr(reponse, "status_code", "?")
+    try:
+        donnees = reponse.json()
+    except Exception:
+        extrait = (getattr(reponse, "text", "") or "")[:200]
+        log.warning("amont %s : réponse non-JSON (%r)", code, extrait)
+        return {"error": {"message": "Réponse inattendue du service IA ({}).".format(code)}}
+    if not isinstance(donnees, dict):
+        log.warning("amont %s : JSON inattendu (type %s)", code, type(donnees).__name__)
+        return {"error": {"message": "Réponse inattendue du service IA ({}).".format(code)}}
+    return donnees
+
+
+def _sse_erreur(message: str) -> bytes:
+    """Une trame SSE d'erreur, au format que le client OpenAI-compatible d'IRIS sait lire."""
+    return ("data: " + json.dumps({"error": {"message": message}}) + "\n\n").encode()
+
+
+def _test_disque() -> tuple[bool, str]:
+    """Écrit puis relit un octet dans le dossier de données. C'est ce qui distingue un service vivant
+    d'un service qui répond encore mais ne peut plus rien écrire (disque plein, volume démonté, droits
+    cassés) — auquel cas chaque compteur de quota échoue en silence. Pas de réseau, quasi gratuit."""
+    sonde = DONNEES / ".sante"
+    try:
+        DONNEES.mkdir(parents=True, exist_ok=True)
+        sonde.write_bytes(b"1")
+        if sonde.read_bytes() != b"1":
+            return False, "relecture de la sonde disque incoherente"
+        sonde.unlink(missing_ok=True)
+        return True, ""
+    except Exception as exc:
+        return False, "disque non accessible en ecriture ({}: {})".format(type(exc).__name__, exc)
+
+
 def modele_autorise(demande: str, plan: str) -> str:
     """Le client propose, le relais dispose. Un plan Gratuit n'obtient jamais Claude, quoi qu'il envoie."""
     permis = MODELES_PAR_PLAN.get(plan, GRATUITS)
@@ -413,6 +518,19 @@ async def au_demarrage(_app: FastAPI):
 
 app = FastAPI(title="Relais VELA", docs_url=None, redoc_url=None, lifespan=au_demarrage)
 
+# L'app web du téléphone (autre origine) appelle /api/appareil depuis un navigateur : sans CORS, le
+# navigateur bloque. Les endpoints restent protégés par le jeton (et l'appairage pour la
+# télécommande) ; ouvrir CORS ne relâche donc aucun secret. Pas d'identifiants de session ici.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 class Appareil(BaseModel):
     machine: str = ""
@@ -421,17 +539,29 @@ class Appareil(BaseModel):
 
 @app.get("/sante")
 def sante():
+    """L'état du service, vraiment testé. Avant, ce point renvoyait « ok: true » en dur : un disque
+    plein ou une clé absente passaient pour « tout va bien » pendant que chaque appel IA échouait.
+    Désormais « ok » n'est vrai que si une clé IA est configurée ET que le dossier de données est
+    accessible en écriture. On ne fait AUCUN appel réseau en amont (trop cher à chaque sonde) : on
+    vérifie la seule PRÉSENCE d'une clé. Les champs historiques (amont, voix, plafonds…) restent."""
     compteurs = _lire("quotas.json")
-    return {
-        "ok": True,
+    cle_presente = bool(CLE_AMONT or CLE_ANTHROPIC)
+    disque_ok, detail_disque = _test_disque()
+    ok = cle_presente and disque_ok
+    reponse = {
+        "ok": ok,
         "amont": bool(CLE_AMONT),
-        "voix": bool(CLE_VOIX),
+        "voix": bool(CLES_VOIX),
         "plafond_global": PLAFOND_GLOBAL,
         "consomme": int(compteurs.get("tous|jetons", 0)) if compteurs.get("mois") == _mois() else 0,
         # La voix a sa propre monnaie : ElevenLabs facture au caractère, pas au jeton.
         "plafond_caracteres": PLAFOND_CARACTERES_GLOBAL,
         "caracteres": int(compteurs.get("tous|caracteres", 0)) if compteurs.get("mois") == _mois() else 0,
     }
+    if not ok:
+        reponse["detail"] = ("aucune cle IA configuree (VELA_OPENROUTER_KEY ou VELA_ANTHROPIC_KEY)"
+                             if not cle_presente else detail_disque)
+    return reponse
 
 
 @app.post("/api/appareil")
@@ -487,7 +617,47 @@ def _identifier(autorisation: str | None) -> tuple[str, str]:
 # modèle, elle n'est plus ce qui distingue un palier d'un autre. Ce qui la borne désormais, ce
 # n'est pas le nom du forfait, c'est PLAFONDS_CARACTERES.
 AMONT_VOIX = "https://api.elevenlabs.io/v1"
-CLE_VOIX = os.environ.get("VELA_ELEVENLABS_KEY", "").strip()
+
+
+def _cles_voix() -> list[str]:
+    """VELA_ELEVENLABS_KEY peut porter PLUSIEURS clés (séparées par virgule/point-virgule/espaces) :
+    autant de comptes ElevenLabs sur lesquels étaler la parole, souvent gratuits (10 000 caractères
+    par mois chacun). Une seule clé : comportement d'avant."""
+    return _cles("VELA_ELEVENLABS_KEY")
+
+
+CLES_VOIX = _cles_voix()
+CLE_VOIX = CLES_VOIX[0] if CLES_VOIX else ""  # compat : présence = au moins une clé configurée
+CODES_BASCULE_VOIX = (401, 402, 429)  # quota atteint ou clé refusée : basculer sur une autre
+_VOIX_COOLDOWN_S = 3600.0  # une clé qui a refusé est écartée une heure, puis réessayée
+_voix_cooldown: dict[str, float] = {}
+_voix_i = 0
+
+
+def _cle_voix_courante() -> str:
+    """À partir de l'index courant, la première clé hors pénalité (sinon la moins fraîchement pénalisée)."""
+    maintenant = time.time()
+    n = len(CLES_VOIX)
+    if n == 0:
+        return ""
+    for pas in range(n):
+        c = CLES_VOIX[(_voix_i + pas) % n]
+        if _voix_cooldown.get(c, 0.0) <= maintenant:
+            return c
+    return min(CLES_VOIX, key=lambda c: _voix_cooldown.get(c, 0.0))
+
+
+def _voix_marquer_epuisee(cle: str) -> None:
+    global _voix_i
+    if cle in CLES_VOIX:
+        _voix_cooldown[cle] = time.time() + _VOIX_COOLDOWN_S
+        _voix_i = (CLES_VOIX.index(cle) + 1) % len(CLES_VOIX)
+
+
+def _voix_apres_usage() -> None:
+    global _voix_i
+    if CLES_VOIX:
+        _voix_i = (_voix_i + 1) % len(CLES_VOIX)
 
 
 @app.post("/v1/voix/{voice_id}")
@@ -498,7 +668,7 @@ async def voix(voice_id: str, request: Request, authorization: str | None = Head
     c'est le nombre de caractères déjà prononcés ce mois-ci. Et un refus ici n'est jamais un
     silence — IRIS repasse à la voix de Windows (voir _handle_failure dans
     backend/iris/voice/elevenlabs.py), c'est pour cela que les messages le disent."""
-    if not CLE_VOIX:
+    if not CLES_VOIX:
         raise HTTPException(503, "Le relais n'a pas de clé de synthèse vocale configurée.")
     identite, plan = _identifier(authorization)
     if not re.fullmatch(r"[A-Za-z0-9]{1,40}", voice_id):
@@ -516,17 +686,31 @@ async def voix(voice_id: str, request: Request, authorization: str | None = Head
     consommer_voix(identite, plan, len(texte))
 
     parametres = str(request.url.query or "output_format=pcm_16000&optimize_streaming_latency=3")
-    entetes = {"xi-api-key": CLE_VOIX, "Content-Type": "application/json"}
 
     async def flux():
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", f"{AMONT_VOIX}/text-to-speech/{voice_id}/stream?{parametres}",
-                                     json=charge, headers=entetes) as amont:
-                if amont.status_code >= 400:
-                    log.warning("voix amont %s", amont.status_code)
+        # Rotation : on essaie les clés du pool tour à tour ; une clé « quota atteint » (401/402/429)
+        # est mise en pénalité et on bascule. Toutes épuisées : silence, et IRIS repasse à Windows.
+        # Timeout borné en lecture (avant : None, donc infini) : un ElevenLabs muet ne fige plus le flux.
+        async with httpx.AsyncClient(timeout=_timeout_flux()) as client:
+            for _ in range(max(1, len(CLES_VOIX))):
+                cle = _cle_voix_courante()
+                if not cle:
+                    log.warning("voix : aucune clé disponible")
                     return
-                async for morceau in amont.aiter_bytes():
-                    yield morceau
+                entetes = {"xi-api-key": cle, "Content-Type": "application/json"}
+                async with client.stream("POST", f"{AMONT_VOIX}/text-to-speech/{voice_id}/stream?{parametres}",
+                                         json=charge, headers=entetes) as amont:
+                    if amont.status_code in CODES_BASCULE_VOIX and len(CLES_VOIX) > 1:
+                        log.warning("voix amont %s (clé …%s) : bascule sur une autre clé", amont.status_code, cle[-4:])
+                        _voix_marquer_epuisee(cle)
+                        continue
+                    if amont.status_code >= 400:
+                        log.warning("voix amont %s", amont.status_code)
+                        return
+                    _voix_apres_usage()
+                    async for morceau in amont.aiter_bytes():
+                        yield morceau
+                    return
 
     return StreamingResponse(flux(), media_type="audio/basic")
 
@@ -563,27 +747,212 @@ async def completions(request: Request, authorization: str | None = Header(defau
     log.info("relais : plan=%s modele=%s amont=%s flux=%s", plan, charge["model"],
              "anthropic" if base == AMONT_ANTHROPIC else "openrouter", bool(charge.get("stream")))
 
+    pool, cooldown = _pool_pour(base)
+
     if not charge.get("stream"):
+        a_essayer = _cles_a_essayer(pool, cooldown) or [None]
+        reponse = None
         async with httpx.AsyncClient(timeout=180) as client:
-            reponse = await client.post(base + "/chat/completions", json=charge, headers=entetes)
-        rendu = reponse.json()
+            for i, cle in enumerate(a_essayer):
+                if cle is not None:
+                    entetes["Authorization"] = "Bearer " + cle
+                try:
+                    reponse = await client.post(base + "/chat/completions", json=charge, headers=entetes)
+                except httpx.HTTPError as exc:
+                    # Réseau : connexion refusée, DNS, délai dépassé. Ni 500 opaque, ni jetons perdus.
+                    log.warning("amont injoignable (%s)", exc)
+                    if cle is not None and i < len(a_essayer) - 1:
+                        _amont_marquer_epuisee(cle, cooldown)
+                        continue
+                    raise HTTPException(502, "Le service IA est injoignable. Réessayez dans un instant.")
+                if cle is not None and reponse.status_code in CODES_BASCULE_AMONT:
+                    _amont_marquer_epuisee(cle, cooldown)
+                    if i < len(a_essayer) - 1:
+                        log.warning("amont %s (clé …%s) : bascule sur une autre clé", reponse.status_code, cle[-4:])
+                        continue
+                break
+        # `reponse.json()` protégé : une réponse non-JSON (HTML d'un 502, maintenance) ne doit ni
+        # planter en 500, ni faire sauter la comptabilisation. jetons_de() lit 0 d'une erreur.
+        rendu = _json_amont(reponse)
         enregistrer_jetons(identite, jetons_de(rendu))
         return JSONResponse(rendu, status_code=reponse.status_code)
 
     async def flux():
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", base + "/chat/completions", json=charge, headers=entetes) as amont:
-                if amont.status_code >= 400:
-                    detail = (await amont.aread()).decode(errors="replace")[:400]
-                    log.warning("amont %s : %s", amont.status_code, detail)
-                    message = "Le service IA a refusé la demande ({}).".format(amont.status_code)
-                    yield ("data: " + json.dumps({"error": {"message": message}}) + "\n\n").encode()
+        a_essayer = _cles_a_essayer(pool, cooldown) or [None]
+        async with httpx.AsyncClient(timeout=_timeout_flux()) as client:
+            for i, cle in enumerate(a_essayer):
+                if cle is not None:
+                    entetes["Authorization"] = "Bearer " + cle
+                try:
+                    async with client.stream("POST", base + "/chat/completions", json=charge, headers=entetes) as amont:
+                        # Le code est connu avant le moindre octet : c'est le seul moment où basculer.
+                        if amont.status_code >= 400:
+                            if cle is not None and amont.status_code in CODES_BASCULE_AMONT:
+                                _amont_marquer_epuisee(cle, cooldown)
+                                if i < len(a_essayer) - 1:
+                                    log.warning("amont %s (clé …%s) : bascule sur une autre clé", amont.status_code, cle[-4:])
+                                    continue
+                            detail = (await amont.aread()).decode(errors="replace")[:400]
+                            log.warning("amont %s : %s", amont.status_code, detail)
+                            yield _sse_erreur("Le service IA a refusé la demande ({}).".format(amont.status_code))
+                            return
+                        # Engagé dans le flux : des octets partent, on ne bascule plus.
+                        jetons = 0
+                        try:
+                            async for morceau in amont.aiter_bytes():
+                                jetons = max(jetons, jetons_du_flux(morceau))
+                                yield morceau
+                        except httpx.HTTPError as exc:
+                            # Coupure/délai en cours de flux : on ne réémet pas la demande (le client
+                            # a déjà reçu des octets), on signale proprement et on compte ce qui a été lu.
+                            log.warning("amont : flux interrompu (%s)", exc)
+                            yield _sse_erreur("Le flux du service IA a été interrompu.")
+                        # Une fois le dernier octet parti : ce que la réponse a réellement coûté.
+                        enregistrer_jetons(identite, jetons)
+                        return
+                except httpx.HTTPError as exc:
+                    # Échec AVANT le moindre octet (connexion, lecture d'en-têtes) : bascule possible.
+                    log.warning("amont : connexion au flux impossible (%s)", exc)
+                    if cle is not None and i < len(a_essayer) - 1:
+                        _amont_marquer_epuisee(cle, cooldown)
+                        continue
+                    yield _sse_erreur("Le service IA est injoignable.")
                     return
-                jetons = 0
-                async for morceau in amont.aiter_bytes():
-                    jetons = max(jetons, jetons_du_flux(morceau))
-                    yield morceau
-                # Une fois le dernier octet parti : ce que la réponse a réellement coûté.
-                enregistrer_jetons(identite, jetons)
 
     return StreamingResponse(flux(), media_type="text/event-stream")
+
+
+# --------------------------------------------------------------------------- télécommande (canal inverse)
+# Le relais devient un COURTIER. L'ordinateur d'un abonné ouvre un WebSocket SORTANT et s'y annonce ;
+# le téléphone du MÊME courriel envoie des commandes, routées vers cet ordinateur, exécutées CHEZ LUI
+# (toute la boucle d'IRIS : périmètre + confirmation), et dont le résultat — et les demandes d'accord —
+# reviennent au téléphone. Aucun port ouvert, aucune machine jamais joignable de l'extérieur.
+# Cloisonné par courriel : un téléphone n'atteint QUE l'ordinateur de son propre compte.
+
+_pc_par_courriel: dict[str, dict] = {}   # courriel -> {"ws": WebSocket, "pairing": str}
+_req_en_cours: dict[str, dict] = {}       # req_id -> {"tel": WebSocket, "courriel": str}
+
+
+async def _hello(ws: WebSocket) -> tuple[str | None, str]:
+    """Attend {type:'hello', jeton, pairing}. Renvoie (courriel, pairing), ou (None, '') si refusé.
+
+    Le jeton d'appareil (émis sans mot de passe par /api/appareil) suffit pour l'IA, mais PAS pour
+    piloter un ordinateur : connaître un courriel ne doit pas donner la main sur une machine. Le
+    CODE D'APPAIRAGE — affiché par l'ordinateur, saisi dans le téléphone — est le second facteur."""
+    try:
+        premier = await asyncio.wait_for(ws.receive_json(), timeout=15)
+    except Exception:
+        return None, ""
+    if not isinstance(premier, dict) or premier.get("type") != "hello":
+        return None, ""
+    info = lire_jeton(str(premier.get("jeton") or ""))
+    if not info or not info.get("courriel"):
+        return None, ""
+    return normaliser(info["courriel"]), str(premier.get("pairing") or "")
+
+
+def _pc_pour(courriel: str, pairing: str) -> dict | None:
+    """L'ordinateur d'un courriel, SEULEMENT si le code d'appairage correspond (comparaison constante)."""
+    pc = _pc_par_courriel.get(courriel)
+    if not pc or not pairing:
+        return None
+    return pc if hmac.compare_digest(pc.get("pairing", ""), pairing) else None
+
+
+@app.websocket("/appareil/ws")
+async def appareil_ws(ws: WebSocket):
+    """L'ORDINATEUR d'un abonné se branche ici (connexion sortante) pour recevoir des commandes.
+
+    Il ne reçoit QUE les commandes des téléphones de son propre courriel, et ne renvoie un message
+    qu'au téléphone qui a lancé la requête concernée (routage par req_id vérifié côté courriel)."""
+    await ws.accept()
+    courriel, pairing = await _hello(ws)
+    if not courriel or not pairing:  # jeton invalide OU aucun code d'appairage : on refuse
+        await ws.close(code=4001)
+        return
+    ancien = _pc_par_courriel.get(courriel)
+    if ancien is not None and ancien.get("ws") is not ws:
+        try:
+            await ancien["ws"].close(code=4000)  # un seul ordinateur par courriel : le neuf remplace l'ancien
+        except Exception:
+            pass
+    _pc_par_courriel[courriel] = {"ws": ws, "pairing": pairing}
+    await ws.send_json({"type": "pret"})
+    log.info("telecommande : ordinateur connecte (%s)", courriel)
+    try:
+        while True:
+            msg = await ws.receive_json()
+            if not isinstance(msg, dict):
+                continue
+            req_id = str(msg.get("req_id") or "")
+            entree = _req_en_cours.get(req_id)
+            # ne router que vers le téléphone qui a lancé CETTE requête, et seulement s'il est du bon courriel
+            if entree and entree["courriel"] == courriel:
+                try:
+                    await entree["tel"].send_json(msg)
+                except Exception:
+                    pass
+                if msg.get("type") == "resultat":
+                    _req_en_cours.pop(req_id, None)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:  # pragma: no cover - défense
+        log.info("telecommande ordinateur %s : %s", courriel, exc)
+    finally:
+        if _pc_par_courriel.get(courriel, {}).get("ws") is ws:
+            _pc_par_courriel.pop(courriel, None)
+        log.info("telecommande : ordinateur deconnecte (%s)", courriel)
+
+
+@app.websocket("/telecommande/ws")
+async def telecommande_ws(ws: WebSocket):
+    """Le TÉLÉPHONE de l'abonné se branche ici pour piloter SON ordinateur, à distance."""
+    await ws.accept()
+    courriel, pairing = await _hello(ws)
+    if not courriel or not pairing:
+        await ws.close(code=4001)
+        return
+    await ws.send_json({"type": "pret", "ordinateur": _pc_pour(courriel, pairing) is not None})
+    mes_reqs: set[str] = set()
+    try:
+        while True:
+            msg = await ws.receive_json()
+            if not isinstance(msg, dict):
+                continue
+            t = msg.get("type")
+            pc = _pc_pour(courriel, pairing)  # None si l'ordi est absent OU si le code d'appairage ne correspond pas
+            if t == "commande":
+                req_id = str(msg.get("req_id") or uuid.uuid4().hex)
+                if pc is None:
+                    await ws.send_json({"type": "resultat", "req_id": req_id, "erreur": "ordinateur_absent",
+                                        "message": "Ton ordinateur n'est pas connecté, ou le code d'appairage ne correspond pas."})
+                    continue
+                if len(mes_reqs) >= 4:  # anti-abus : pas plus de 4 commandes en vol par téléphone
+                    await ws.send_json({"type": "resultat", "req_id": req_id, "erreur": "trop_de_commandes",
+                                        "message": "Trop de commandes en attente. Réessaie dans un instant."})
+                    continue
+                _req_en_cours[req_id] = {"tel": ws, "courriel": courriel}
+                mes_reqs.add(req_id)
+                try:
+                    await pc["ws"].send_json({"type": "commande", "req_id": req_id, "texte": str(msg.get("texte") or "")})
+                except Exception:
+                    _req_en_cours.pop(req_id, None)
+                    mes_reqs.discard(req_id)
+                    await ws.send_json({"type": "resultat", "req_id": req_id, "erreur": "ordinateur_injoignable",
+                                        "message": "Ton ordinateur ne répond pas."})
+            elif t == "confirm_reponse":
+                req_id = str(msg.get("req_id") or "")
+                entree = _req_en_cours.get(req_id)
+                if entree and entree["tel"] is ws and pc is not None:
+                    try:
+                        await pc["ws"].send_json(msg)  # l'accord (oui/non) redescend vers l'ordinateur
+                    except Exception:
+                        pass
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:  # pragma: no cover - défense
+        log.info("telecommande telephone %s : %s", courriel, exc)
+    finally:
+        for r in list(mes_reqs):
+            if _req_en_cours.get(r, {}).get("tel") is ws:
+                _req_en_cours.pop(r, None)
