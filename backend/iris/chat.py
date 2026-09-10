@@ -69,12 +69,29 @@ STRICT_BUILD = [
     "fais-moi", "fais moi", "fait-moi", "génère", "genere", "construis", "build me", "create ", "make me", "write me",
     "un jeu", "un site", "une app", "une application", "un script", "un programme", "une page web", "un bot",
 ]
+# Lecture d'écran pour malvoyants : « lis-moi l'écran », « décris l'écran », « qu'y a-t-il à l'écran ? ».
+# C'est souvent la PREMIÈRE phrase d'un utilisateur qui ne voit pas. Avant, aucun de ces mots n'était
+# un déclencheur d'écran : tool_specs(screen=False) retirait take_screenshot, et IRIS « décrivait »
+# de mémoire un écran qu'elle n'avait jamais regardé — un échec silencieux, impossible à vérifier par
+# quelqu'un qui ne voit pas. On évite « lis » nu (présent dans « utilise », « réalise ») : seules les
+# formes qui ne peuvent dire QUE la lecture d'écran.
+SCREEN_READ_KEYWORDS = [
+    "lis-moi", "lis moi", "lis-le-moi", "lis le moi", "lis-les", "lis tout", "lis ce qui", "lis ce qu'",
+    "lis l'écran", "lis l'ecran", "lis la page", "lis cette", "lis mon écran", "lis mon ecran",
+    "lire l'écran", "lire l'ecran", "lire mon écran", "lire mon ecran", "lire ce qui", "lire la page",
+    "lecture d'écran", "lecture d'ecran", "lecture de l'écran", "lecture de l'ecran",
+    "décris", "decris", "décris-moi", "decris-moi", "décris moi", "decris moi", "décrire", "decrire", "décrit",
+    "qu'est-ce qu'il y a à l'écran", "qu'est-ce qu'il y a a l'ecran", "qu'y a-t-il à l'écran", "qu'y a-t-il a l'ecran",
+    "qu'est-ce qui est affiché", "qu'est-ce qui est affiche", "que dit l'écran", "que dit l'ecran",
+    "que vois-tu à l'écran", "que vois-tu a l'ecran", "contenu de l'écran", "contenu de l'ecran",
+    "qu'est-ce qu'il y a d'écrit", "qu'est-ce qu'il y a d'ecrit", "qu'est-ce qui est écrit", "qu'est-ce qui est ecrit",
+]
 # demandes qui exigent de voir l'écran / la souris
 SCREEN_KEYWORDS = [
     "clique", "click", "double-clique", "à l'écran", "a l'ecran", "sur l'écran", "sur l'ecran", "dans le jeu", "dans la fenêtre",
     "dans la fenetre", "bouton", "souris", "glisse", "fais défiler", "fais defiler", "scroll", "regarde l'écran", "regarde mon écran",
     "que vois-tu", "qu'est-ce que tu vois", "sélectionne", "selectionne", "menu", "onglet", "coche", "case",
-]
+] + SCREEN_READ_KEYWORDS
 # Applications que l'on pilote en regardant l'écran : ouvrir ne suffit pas, il faut ensuite cliquer.
 APPLICATIONS_PILOTABLES = (
     "spotify", "deezer", "apple music", "soundcloud", "tidal", "amazon music", "youtube music",
@@ -223,6 +240,9 @@ class ChatService:
         # écouter la réponse. Trou trouvé le 5 septembre 2026 — un accord vocal était impossible,
         # ce qui rendait courriel, SMS et import d'identifiants inutilisables sans écran.
         self._sink_confirm_vocal = None
+        # Même besoin pour une commande venue du téléphone (canal inverse, source="distant") : la
+        # question d'accord doit remonter jusqu'au téléphone. La télécommande s'enregistre ici.
+        self._sink_confirm_distant = None
         # injecté par TaskService : (titre, instructions, agent) -> dict tâche
         self.create_task_fn: Callable[[str, str, str], Awaitable[dict]] | None = None
         self.routines = None  # RoutineService (injecté)
@@ -266,7 +286,7 @@ class ChatService:
                 routines=self.routines, reminders=self.reminders, watches=self.watches,
                 glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
                 traduction=self.traduction, voice=self.voice, web=self.web,
-                opencode=self.opencode, source=source,
+                opencode=self.opencode, source=source, hub=self.hub,
             )
             runner = make_tool_runner(ctx)
             try:
@@ -304,7 +324,7 @@ class ChatService:
             routines=None, reminders=self.reminders, watches=self.watches,
             glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
             traduction=self.traduction, voice=self.voice, web=self.web,
-            opencode=self.opencode, source=source,
+            opencode=self.opencode, source=source, hub=self.hub,
         )
         runner = make_tool_runner(ctx)
         events: list[dict] = []
@@ -757,6 +777,11 @@ class ChatService:
         """Le fil vocal s'enregistre ici pour pouvoir demander l'accord à voix haute."""
         self._sink_confirm_vocal = cb
 
+    def set_sink_confirm_distant(self, cb) -> None:
+        """La télécommande s'enregistre ici : (conv_id, confirm_id, title, detail) -> renvoie la
+        demande d'accord au téléphone qui a lancé la commande distante."""
+        self._sink_confirm_distant = cb
+
     async def _confirm(self, conv_id: str, title: str, detail: str, source: str = "text") -> bool:
         loop = asyncio.get_running_loop()
         confirm_id = uuid.uuid4().hex
@@ -771,6 +796,13 @@ class ChatService:
                 self._sink_confirm_vocal(confirm_id, title, detail)
             except Exception as exc:  # pragma: no cover
                 log.warning("demande d'accord vocal impossible : %s", exc)
+        # Commande distante : l'accord doit remonter au téléphone. Le futur est résolu par le même
+        # resolve_confirm, quand le téléphone répond (via la télécommande).
+        if source == "distant" and self._sink_confirm_distant is not None:
+            try:
+                self._sink_confirm_distant(conv_id, confirm_id, title, detail)
+            except Exception as exc:  # pragma: no cover
+                log.warning("demande d'accord distante impossible : %s", exc)
         try:
             return bool(await asyncio.wait_for(fut, timeout=180))
         except asyncio.TimeoutError:
@@ -838,6 +870,52 @@ class ChatService:
                      if a in dispo and a != echoue and not self.settings.user.agents[a].local]
         return candidats[0] if candidats else None
 
+    # ------------------------------------------------------------------ verrou des lunettes
+    def _verrou_lunettes_chat(self, source: str) -> str | None:
+        """Porte des lunettes pour le CHAT ÉCRIT (et toute demande qui finit dans `_run`).
+
+        Symétrique du verrou vocal (VoiceListener.lunettes_requises), mais posée ici parce que la
+        voix, le texte, les commandes courantes et les routines aboutissent toutes dans `_run` :
+        un seul point d'étranglement. Décision de Miguel du 7 septembre 2026 : IRIS est INUTILISABLE
+        sans les lunettes VELA — voix ET chat écrit — avec une échappatoire « mode démonstration ».
+
+        Ne verrouille QUE les usages humains ({voice, text, quick, routine}). Les sources de fond
+        (task, daily_summary, veille/analyse, résumé) doivent continuer même sans lunettes : elles
+        n'ont ni écran ni lunettes et font vivre les tâches, les résumés et la surveillance.
+
+        Présence : une SEULE règle, celle du fil vocal (`lunettes_presentes` : lien basse énergie ou
+        micro) ; à défaut, le service BLE. Fail-open volontaire quand la présence est indéterminable :
+        aucun service de présence branché, OU aucune paire de lunettes jamais configurée sur cet
+        appareil. Sans ce fail-open, `require_glasses` (True par défaut) couperait une application
+        fraîchement installée qui n'a encore jamais vu de lunettes — et les tests, qui tournent sans
+        lunettes. On ne bloque donc que ce qu'on SAIT absent : des lunettes connues de l'appareil
+        (déjà appairées ou mémorisées) mais hors de portée."""
+        if source not in ("voice", "text", "quick", "routine"):
+            return None
+        u = self.settings.user
+        if not u.require_glasses or u.demo_sans_lunettes:
+            return None
+        presentes: bool | None = None
+        if self.voice is not None and hasattr(self.voice, "lunettes_presentes"):
+            try:
+                presentes = bool(self.voice.lunettes_presentes())
+            except Exception:  # pragma: no cover - la présence ne doit jamais faire échouer une demande
+                presentes = None
+        elif self.glasses is not None:
+            presentes = bool(getattr(self.glasses, "connected", False))
+        if presentes is None:
+            return None  # aucun service de présence : indéterminable → on laisse passer
+        if presentes:
+            return None
+        # Lunettes connues absentes. On ne verrouille que si cet appareil connaît des lunettes VELA :
+        # sans nom ni adresse mémorisés, on ne peut pas distinguer « lunettes retirées » de « appareil
+        # qui n'en a jamais eu », et l'application téléchargée doit pouvoir se montrer.
+        g = u.glasses
+        if not ((g.name or "").strip() or (g.address or "").strip()):
+            return None
+        return ("J'ai besoin de tes lunettes VELA connectées pour répondre. "
+                "Active le mode démonstration dans les réglages si tu en as besoin sans elles.")
+
     async def _run(
         self,
         conv_id: str,
@@ -866,6 +944,22 @@ class ChatService:
 
         user_msg = self._add_message(conv_id, "user", text, images=images, meta={"source": source})
         self.hub.publish("chat.user_message", conversation_id=conv_id, message=user_msg)
+
+        # Verrou des lunettes VELA (voix + chat écrit), au plus tôt : avant tout appel au modèle,
+        # tout quota, toute commande locale. Les sources de fond passent (voir _verrou_lunettes_chat).
+        verrou = self._verrou_lunettes_chat(source)
+        if verrou:
+            refus_id = uuid.uuid4().hex
+            self.hub.publish("chat.started", conversation_id=conv_id, message_id=refus_id,
+                             agent="local", model="", reason="lunettes VELA requises")
+            self.hub.publish("chat.delta", conversation_id=conv_id, message_id=refus_id, text=verrou)
+            msg = self._add_message(conv_id, "assistant", verrou, agent="local", model="",
+                                    meta={"agent": "local", "source": source, "glasses_required": True},
+                                    message_id=refus_id)
+            self.hub.publish("chat.done", conversation_id=conv_id, message=msg)
+            if speak:
+                speak(verrou)
+            return {"message": msg, "glasses_required": True}
 
         assistant_id = uuid.uuid4().hex
         text_parts: list[str] = []
@@ -1009,6 +1103,7 @@ class ChatService:
                     watches=self.watches,
                     web=self.web,
                     glasses=self.glasses,
+                    hub=self.hub,
                     courriel=self.courriel,
                     telephonie=self.telephonie,
                     traduction=self.traduction,

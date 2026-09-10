@@ -32,6 +32,7 @@ class ToolContext:
     reminders: Any = None
     web: Any = None
     glasses: Any = None  # GlassesService : les lunettes VELA
+    hub: Any = None  # EventHub : pour publier des événements (ex. glasses.photo -> rafraîchit la galerie)
     courriel: Any = None  # Postier : envoi de courriels, jamais sans accord
     telephonie: Any = None  # Telephoniste : SMS et appels, jamais sans accord
     traduction: Any = None  # ServiceTraduction : traduire une conversation, tour par tour
@@ -185,6 +186,15 @@ TOOL_SPECS: list[ToolSpec] = [
         _obj({"text": {"type": "string"}, "button": {"type": "string", "enum": ["left", "right"]}, "clicks": {"type": "integer", "minimum": 1, "maximum": 2}, "occurrence": {"type": "integer", "minimum": 1}}, ["text"]),
     ),
     ToolSpec(
+        "read_screen_text",
+        "Lit TOUT le texte affiché à l'écran, VERBATIM et dans l'ordre de lecture (de haut en bas, de "
+        "gauche à droite), par OCR hors-ligne. Aucun modèle de vision : le texte est restitué exactement, "
+        "sans résumé ni omission ni invention, et l'outil fonctionne en mode 100 % local. À utiliser dès "
+        "qu'un utilisateur (en particulier malvoyant) demande « lis-moi l'écran », « décris l'écran » ou "
+        "« qu'est-ce qu'il y a à l'écran » : donne-lui les mots exacts plutôt que de les deviner.",
+        _obj({}),
+    ),
+    ToolSpec(
         "list_applications",
         "Cherche dans les applications et jeux installés (menu Démarrer, Microsoft Store, Steam) par nom approximatif. Utilise ensuite open_application avec le nom exact.",
         _obj({"query": {"type": "string"}}, ["query"]),
@@ -251,8 +261,13 @@ TOOL_SPECS: list[ToolSpec] = [
     ),
     ToolSpec(
         "passer_un_appel",
-        "Lance un appel téléphonique vers un numéro. L'utilisateur doit l'approuver avant que ça sonne.",
-        _obj({"numero": {"type": "string"}}, ["numero"]),
+        "Lance un appel téléphonique vers un numéro. L'utilisateur doit l'approuver avant que ça sonne. "
+        "Si IRIS a sa propre ligne téléphonique, l'appel part de cette ligne et IRIS dit le texte de "
+        "« message » au décroché ; sans ligne, c'est le composeur du téléphone de l'utilisateur qui s'ouvre.",
+        _obj({
+            "numero": {"type": "string"},
+            "message": {"type": "string", "description": "Ce qu'IRIS dit au décroché quand elle appelle depuis sa propre ligne. Facultatif."},
+        }, ["numero"]),
     ),
     ToolSpec(
         "lunettes_etat",
@@ -270,6 +285,17 @@ TOOL_SPECS: list[ToolSpec] = [
             "commande": {"type": "integer", "description": "Octet de commande, 0-255. Seule 0x73 (115) est connue."},
             "contenu": {"type": "string", "description": "Contenu en hexadécimal, ex. '050000'. Vide si aucun."},
         }, ["commande"]),
+    ),
+    ToolSpec(
+        "lunettes_photo",
+        "Prend une photo avec la CAMÉRA des lunettes VELA et rapatrie l'image EN LOCAL sur "
+        "l'ordinateur — elle ne part jamais chez un tiers. À utiliser dès qu'on demande « prends "
+        "une photo », « capture ce que je vois », « qu'est-ce que je regarde », « photographie ça ». "
+        "Sur la paire AUDIO (sans caméra), l'outil le dit franchement au lieu d'inventer une image ; "
+        "tant que le format de trame caméra n'est pas confirmé sur le vrai matériel, il refuse aussi "
+        "d'écrire des octets non prouvés (protège la puce) — relaie alors son explication telle quelle. "
+        "reconnaissance=true prépare l'image pour une analyse, qui reste elle aussi locale.",
+        _obj({"reconnaissance": {"type": "boolean", "description": "Préparer l'image pour analyse (défaut : non)"}}),
     ),
     ToolSpec(
         "traduire_conversation",
@@ -404,7 +430,11 @@ TOOL_SPECS: list[ToolSpec] = [
 
 # Groupes d'outils : tout exposer à chaque demande poussait le modèle vers la souris et les captures d'écran
 # pour des tâches qui n'en ont aucun besoin (trace réelle : une simple demande YouTube a fini en clics à l'aveugle).
-SCREEN_TOOLS = {"take_screenshot", "screen_info", "mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text"}
+SCREEN_TOOLS = {"take_screenshot", "read_screen_text", "screen_info", "mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text"}
+# Filet de sécurité d'accessibilité : dès que le contrôle d'écran est autorisé (computer_use), ces
+# deux outils de LECTURE restent offerts même quand la demande n'a pas été classée « écran ». Sans
+# cela, « lis-moi l'écran » mal détecté laissait IRIS répondre sans jamais regarder l'écran.
+SCREEN_READ_TOOLS = {"take_screenshot", "read_screen_text"}
 KEYBOARD_TOOLS = {"type_text", "press_keys"}
 # Tous les outils du navigateur. « web_back » et « web_press » y manquaient : en mode 100 % local,
 # le modèle se voyait encore offrir deux outils web, alors que la promesse est que rien ne sort.
@@ -535,6 +565,11 @@ def tool_specs(ctx: ToolContext, *, screen: bool = True, keyboard: bool = True, 
     exclus: set[str] = set()
     if not screen:
         exclus |= SCREEN_TOOLS
+        # Le contrôle d'écran est activé dans les réglages : on garde toujours les outils de lecture
+        # (capture + OCR verbatim), pour qu'un « lis-moi l'écran » non détecté ne soit jamais muet.
+        computer_use = bool(getattr(getattr(getattr(ctx, "settings", None), "user", None), "computer_use", False))
+        if computer_use:
+            exclus -= SCREEN_READ_TOOLS
     if not keyboard:
         exclus |= KEYBOARD_TOOLS
     if not web:
@@ -573,14 +608,14 @@ def make_tool_runner(ctx: ToolContext) -> Callable[[str, dict], Awaitable[Any]]:
 
 async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
 
-    if name in ("find_on_screen", "click_text"):
+    if name in ("find_on_screen", "click_text", "read_screen_text"):
         from .pc import actions as _a
 
         if not await asyncio.to_thread(_a.ocr_available):
             return _err(OCR_INDISPO)
     if True:
         policy = ctx.settings.user.confirm_commands
-        if name in ("mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text", "screen_info") and not ctx.settings.user.computer_use:
+        if name in ("mouse_move", "mouse_click", "mouse_drag", "scroll", "find_on_screen", "click_text", "screen_info", "read_screen_text") and not ctx.settings.user.computer_use:
             return _err("Le contrôle d'écran est désactivé dans Paramètres › Contrôle de l'ordinateur.")
         # Courriel, SMS, appel : trois actions qu'on ne rattrape pas. Le module refuse
         # structurellement d'agir sans un accord obtenu juste avant — ce n'est pas un drapeau qu'on
@@ -679,7 +714,8 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                     resultat = await ctx.telephonie.envoyer_sms_apres_accord(
                         args.get("numero", ""), args.get("message", ""), ctx.confirm)
                 else:
-                    resultat = await ctx.telephonie.appeler_apres_accord(args.get("numero", ""), ctx.confirm)
+                    resultat = await ctx.telephonie.appeler_apres_accord(
+                        args.get("numero", ""), ctx.confirm, message=args.get("message", ""))
             except Exception as exc:
                 return _err(str(exc))
             return json.dumps(resultat, ensure_ascii=False)
@@ -735,6 +771,32 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                 except Exception as exc:
                     return _err("Envoi impossible : {}".format(exc))
                 return json.dumps(resultat, ensure_ascii=False)
+            if name == "lunettes_photo":
+                # La caméra réutilise la connexion BLE existante (elle n'en rouvre pas). Le module
+                # est honnête par construction : il lève CameraIndisponible sur la paire audio, et
+                # ProtocoleNonConfirme tant que l'en-tête de trame n'est pas prouvé (sauf mode
+                # exploration). On relaie ces messages tels quels — jamais une image inventée.
+                from .lunettes_camera import (
+                    CameraLunettes, CameraIndisponible, ProtocoleNonConfirme,
+                )
+
+                cam = CameraLunettes(ctx.glasses)
+                try:
+                    res = await cam.prendre_photo(reconnaissance=bool(args.get("reconnaissance")))
+                except (CameraIndisponible, ProtocoleNonConfirme) as exc:
+                    return _err(str(exc))
+                except Exception as exc:
+                    return _err("Photo impossible : {}".format(exc))
+                if res.ok and res.chemin:
+                    ctx.consent.log("lunettes_photo", agent=ctx.agent, detail=res.chemin)
+                    # Comme la route HTTP du bouton : prévenir l'UI pour qu'elle rafraîchisse la
+                    # galerie même quand la photo a été demandée à la voix. Gardé sur hub présent.
+                    if getattr(ctx, "hub", None) is not None:
+                        ctx.hub.publish("glasses.photo", chemin=res.chemin, octets=res.octets)
+                    return "{} Fichier : {}".format(res.constat, res.chemin)
+                # Pas d'image reconstituée : on rend le constat honnête (paquets reçus, format à
+                # confirmer), pas un faux succès.
+                return res.constat
         if name == "retrouver_site":
             from . import historique_web
 
@@ -796,6 +858,10 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                     return _err(f"Connexion à {r['site']} non confirmée (page : {r['url']}). {'Un contrôle de sécurité a été affiché : demande à l’utilisateur de le résoudre dans la fenêtre du navigateur puis réessaie.' if r.get('captcha') else 'Vérifie les identifiants dans Paramètres › Comptes web.'}")
                 if name == "web_read":
                     r = await asyncio.to_thread(ctx.web.read)
+                    # Mur de vérification humaine : IRIS ne le résout JAMAIS. Elle le dit et propose
+                    # que l'utilisateur fasse la vérification lui-même (aucun contournement de CAPTCHA).
+                    if r.get("verification_humaine"):
+                        return _err(f"{r['verification_humaine']} (page : {r['url']})")
                     return json.dumps(r, ensure_ascii=False)
                 if name == "web_click":
                     r = await asyncio.to_thread(ctx.web.click, args.get("target", ""))
@@ -839,6 +905,11 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
             return json.dumps(hits, ensure_ascii=False)
         if name == "click_text":
             return await asyncio.to_thread(actions.click_text, args.get("text", ""), args.get("button") or "left", int(args.get("clicks") or 1), int(args.get("occurrence") or 1))
+        if name == "read_screen_text":
+            # Comme find_on_screen : OCR local, aucune image ne sort de la machine. On rend le texte
+            # tel quel, sans le faire relire par un modèle qui pourrait le résumer ou l'inventer.
+            texte = await asyncio.to_thread(actions.read_screen_text)
+            return texte or "L'écran ne contient aucun texte lisible pour l'instant."
         if name == "list_applications":
             from .pc.apps import index
 

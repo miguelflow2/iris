@@ -5,20 +5,60 @@ import { useStore } from '../lib/store'
 
 export function AgentsView(): JSX.Element {
   const { agents, settings, refreshAgents, refreshStatus, updateSettings, toast, status } = useStore()
+  // Masque de marque : par défaut, on ne montre que le cerveau VELA inclus et l'IA locale/perso.
+  // Les moteurs tiers (qui exigent une clé personnelle et portent un nom de fournisseur) ne
+  // s'affichent que si l'utilisateur active délibérément le mode avancé « clé personnelle ».
+  const [avance, setAvance] = useState(false)
+  const BASE = ['vela', 'custom']
+  const visibles = avance ? agents : agents.filter((a) => BASE.includes(a.name))
+  // Le menu « moteur par défaut » ne doit jamais être vide ni cacher la sélection courante.
+  const optionsDefaut = visibles.some((a) => a.name === settings?.default_agent)
+    ? visibles
+    : [...visibles, ...agents.filter((a) => a.name === settings?.default_agent)]
   return (
     <div className="page">
       <h1>Moteurs IA</h1>
       <p className="lead">
-        IRIS choisit le moteur IA adapté à chaque demande. Connectez vos propres comptes si vous en avez : les clés sont stockées dans le coffre du système
+        Par défaut, IRIS utilise le <strong>cerveau VELA inclus</strong> dans votre abonnement — rien à configurer. Vous pouvez aussi brancher une IA
+        qui tourne sur votre propre ordinateur. Les clés éventuelles sont stockées dans le coffre du système
         ({status?.secrets_backend === 'keyring' ? 'Gestionnaire d’identifiants' : 'fichier chiffré AES-256'}) et ne quittent jamais votre ordinateur.
       </p>
+      <div className="card row between">
+        <div>
+          <div>Moteurs avancés (clé personnelle)</div>
+          <div className="small muted">Réservé à un usage développeur : brancher un accès IA tiers avec votre propre clé. Laissez éteint pour l’usage normal — le cerveau VELA suffit.</div>
+        </div>
+        <Toggle on={avance} onChange={setAvance} />
+      </div>
+      {avance ? (
+        <div className="card row between" style={{ borderColor: 'var(--accent-2)' }}>
+          <div>
+            <div>🧪 Cerveau (démonstration)</div>
+            <div className="small muted">Bascule rapide pendant les essais ; force le moteur choisi pour toutes les demandes. Usage développeur.</div>
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <button
+              className={'btn sm' + (settings?.routing_mode === 'auto' ? ' primary' : '')}
+              onClick={() => updateSettings({ routing_mode: 'auto' })}
+            >Auto</button>
+            <button
+              className={'btn sm' + (settings?.routing_mode !== 'auto' && settings?.default_agent === 'claude' ? ' primary' : '')}
+              onClick={() => updateSettings({ routing_mode: 'manual', default_agent: 'claude' })}
+            >Avancé A</button>
+            <button
+              className={'btn sm' + (settings?.routing_mode !== 'auto' && settings?.default_agent === 'openrouter' ? ' primary' : '')}
+              onClick={() => updateSettings({ routing_mode: 'manual', default_agent: 'openrouter' })}
+            >Avancé B</button>
+          </div>
+        </div>
+      ) : null}
       <div className="card row between">
         <div>
           <div>Moteur IA par défaut</div>
           <div className="small muted">Utilisé quand aucune règle de routage ne s’applique.</div>
         </div>
         <select className="select" style={{ width: 200 }} value={settings?.default_agent} onChange={(e) => updateSettings({ default_agent: e.target.value })}>
-          {agents.map((a) => (
+          {optionsDefaut.map((a) => (
             <option key={a.name} value={a.name}>{a.label}</option>
           ))}
         </select>
@@ -26,14 +66,14 @@ export function AgentsView(): JSX.Element {
       <div className="card row between">
         <div>
           <div>Routage</div>
-          <div className="small muted">Automatique : OpenRouter en priorité (actions PC, code, images, recherche) ; sinon Claude, GPT ou Gemini selon la demande.</div>
+          <div className="small muted">Automatique : IRIS choisit le moteur adapté à chaque demande (actions PC, code, images, recherche).</div>
         </div>
         <select className="select" style={{ width: 200 }} value={settings?.routing_mode} onChange={(e) => updateSettings({ routing_mode: e.target.value })}>
           <option value="auto">Automatique</option>
           <option value="manual">Toujours le moteur par défaut</option>
         </select>
       </div>
-      {agents.map((a) => (
+      {visibles.map((a) => (
         <AgentCard key={a.name} agent={a} onChanged={async () => { await refreshAgents(); await refreshStatus() }} toast={toast} />
       ))}
     </div>
@@ -103,7 +143,7 @@ function AgentCard({ agent, onChanged, toast }: { agent: any; onChanged: () => P
         {agent.name === 'custom' ? (
           <>
             <Field label="Nom affiché"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} /></Field>
-            <Field label="URL du serveur (OpenAI-compatible)" hint="Ollama : http://127.0.0.1:11434/v1 · LM Studio : http://127.0.0.1:1234/v1">
+            <Field label="URL du serveur (API compatible)" hint="Ollama : http://127.0.0.1:11434/v1 · LM Studio : http://127.0.0.1:1234/v1">
               <input className="input mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
             </Field>
           </>

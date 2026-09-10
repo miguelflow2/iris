@@ -28,6 +28,7 @@ from .courriel import Postier
 from .traduction import ServiceTraduction
 from .db import Database
 from .telephonie import Telephoniste
+from .telecommande import Telecommande
 from .events import EventHub
 from .glasses import GlassesService
 from .memory import MemoryService
@@ -195,6 +196,11 @@ class AppContext:
             analyse=self.chat.analyse_veille, announce=self._announce,
         )
         self.chat.watches = self.watch
+        # Télécommande : le téléphone pilote CET ordinateur à distance, via le relais (opt-in, coupé
+        # par défaut). Réutilise le jeton d'appareil déjà obtenu pour le cerveau VELA.
+        self.telecommande = Telecommande(
+            self.chat, self.settings, obtenir_jeton=lambda: self.secrets.get_api_key("vela") or "",
+        )
         self._summary_done_for: str | None = None
         self._voice_conv_id: str | None = None
         self._purge_task: asyncio.Task | None = None
@@ -256,7 +262,16 @@ class AppContext:
                     await asyncio.to_thread(self.licence.sync)
             except Exception as exc:  # pragma: no cover
                 log.debug("vérification d'abonnement : %s", exc)
-            await asyncio.sleep(24 * 3600)
+            # Cadence : une fois par jour en régime normal. MAIS tant que l'accès IA VELA n'est pas
+            # encore obtenu (relais en réveil à froid ou momentanément lent au tout premier lancement),
+            # on réessaie toutes les 2 minutes : sinon une install neuve resterait SANS aucune IA
+            # jusqu'au prochain démarrage. Dès que le jeton est là, on repasse à la cadence quotidienne.
+            besoin_acces = (
+                not self.settings.user.local_only
+                and bool((self.settings.user.relay_server or "").strip())
+                and not self.secrets.get_api_key("vela")
+            )
+            await asyncio.sleep(120 if besoin_acces else 24 * 3600)
 
     async def _presence_heartbeat(self) -> None:
         """Marque régulièrement qu'IRIS est vivante : au prochain démarrage, elle saura depuis quand elle
@@ -295,8 +310,17 @@ class AppContext:
         au courriel. Un échec ne casse rien : IRIS retombe sur les moteurs déjà configurés."""
         if not session_reelle():
             return
-        base = (self.settings.user.relay_server or "").strip().rstrip("/")
-        if not base or self.settings.user.local_only:
+        if self.settings.user.local_only or not (self.settings.user.relay_server or "").strip():
+            return
+        # Résoudre la base réellement joignable AVANT tout le reste : sur un réseau filtré, le
+        # domaine principal peut être détourné par DNS (constaté sur le wifi d'un cégep), et c'est
+        # le repli — la même infrastructure VELA par une autre entrée — qui répond. On le fait même
+        # quand le jeton est déjà en cache, car c'est cette base que le connecteur utilisera ensuite.
+        from .connectors import base_relais_effective, resoudre_relais
+
+        resoudre_relais(self.settings)
+        base = base_relais_effective(self.settings)
+        if not base:
             return
         courriel = (self.settings.user.licence_email or "").strip().lower()
         actuel = self.secrets.get_api_key("vela")
@@ -554,6 +578,12 @@ class GlassesPrefsIn(BaseModel):
     audio_output_device: str | None = None
 
 
+class GlassesPhotoIn(BaseModel):
+    # reconnaissance : charge utile 01 07 00 (image « à analyser ») plutôt que 01 04 00. L'analyse
+    # reste locale dans les deux cas ; ce drapeau ne change que la charge utile envoyée aux lunettes.
+    reconnaissance: bool = False
+
+
 # ---------------------------------------------------------------------- application
 def create_app(
     data_dir: Path | None = None, token: str | None = None, use_keyring: bool = True, enable_tts: bool = True
@@ -573,6 +603,7 @@ def create_app(
         watchdog_task = loop.create_task(ctx._voice_watchdog())
         reminders_task = loop.create_task(ctx.reminders.loop())
         summary_task = loop.create_task(ctx._daily_summary_loop())
+        telecommande_task = loop.create_task(ctx.telecommande.run())
         threading.Thread(target=ctx.tts.eleven.prewarm, name="iris-eleven-prewarm", daemon=True).start()
         # Et le canal Windows : ouvrir le profil mains libres coute jusqu'a huit secondes la
         # premiere fois. Sans ce prechauffage, ces huit secondes tombent sur le tout premier
@@ -593,6 +624,8 @@ def create_app(
             summary_task.cancel()
             watchdog_task.cancel()
             glasses_task.cancel()
+            ctx.telecommande.arreter()
+            telecommande_task.cancel()
             if ctx._purge_task:
                 ctx._purge_task.cancel()
             try:
@@ -1395,6 +1428,67 @@ def create_app(
     async def glasses_battery():
         return {"battery": await ctx.glasses.refresh_battery()}
 
+    @app.post("/api/glasses/photo", dependencies=auth)
+    async def glasses_photo(body: GlassesPhotoIn):
+        # Caméra des lunettes VELA : déclenche une prise de vue et rapatrie le JPEG EN LOCAL.
+        # Le module est honnête par construction — il lève CameraIndisponible sur la paire audio
+        # (pas de service ae00) et ProtocoleNonConfirme tant que l'en-tête de trame n'est pas prouvé
+        # (sauf mode « lunettes_exploration »). On renvoie 409 avec le message tel quel dans ces cas :
+        # ce n'est pas une panne, c'est une limite assumée qu'on affiche honnêtement à l'utilisateur.
+        from .lunettes_camera import (
+            CameraLunettes, CameraIndisponible, ProtocoleNonConfirme,
+        )
+
+        cam = CameraLunettes(ctx.glasses)
+        try:
+            res = await cam.prendre_photo(reconnaissance=bool(body.reconnaissance))
+        except (CameraIndisponible, ProtocoleNonConfirme) as exc:
+            raise HTTPException(409, str(exc))
+        except Exception:
+            # Détail (chemins locaux, erreur BLE) au journal, pas dans la réponse HTTP.
+            log.exception("échec de la prise de photo des lunettes")
+            raise HTTPException(500, "La prise de photo a échoué.")
+        if res.ok and res.chemin:
+            ctx.consent.log("lunettes_photo", detail=res.chemin)
+            ctx.hub.publish("glasses.photo", chemin=res.chemin, octets=res.octets)
+        return {
+            "ok": res.ok,
+            "chemin": res.chemin,
+            "octets": res.octets,
+            "constat": res.constat,
+            "paquets": len(res.paquets_recus),
+        }
+
+    @app.get("/api/glasses/captures", dependencies=auth)
+    def glasses_captures():
+        # Liste les photos déjà rapatriées localement (dossier data_dir/captures). Tri du plus récent
+        # au plus ancien. Rien ici ne quitte l'ordinateur : ce sont des fichiers locaux.
+        from datetime import datetime, timezone
+
+        dossier = ctx.settings.data_dir / "captures"
+        items: list[dict] = []
+        if dossier.is_dir():
+            for f in sorted(dossier.glob("*.jpg"), key=lambda p: p.stat().st_mtime, reverse=True):
+                st = f.stat()
+                items.append({
+                    "nom": f.name,
+                    "octets": st.st_size,
+                    "modifie": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(timespec="seconds"),
+                })
+        return {"captures": items}
+
+    @app.get("/api/glasses/captures/{nom}", dependencies=auth)
+    def glasses_capture_fichier(nom: str):
+        # Sert une photo locale. On refuse tout nom qui tenterait de sortir du dossier des captures
+        # (pas de séparateur, pas de « .. ») : un chemin ne doit jamais permettre de lire ailleurs.
+        if "/" in nom or "\\" in nom or ".." in nom or not nom.lower().endswith(".jpg"):
+            raise HTTPException(400, "nom de fichier invalide")
+        chemin = (ctx.settings.data_dir / "captures" / nom).resolve()
+        base = (ctx.settings.data_dir / "captures").resolve()
+        if base not in chemin.parents or not chemin.is_file():
+            raise HTTPException(404, "capture introuvable")
+        return Response(chemin.read_bytes(), media_type="image/jpeg")
+
     @app.patch("/api/glasses/prefs", dependencies=auth)
     def glasses_prefs(body: GlassesPrefsIn):
         patch: dict = {}
@@ -1508,5 +1602,19 @@ def create_app(
             app.include_router(creer_routeur(ctx), dependencies=auth)
         except Exception as exc:
             log.warning("routeur de communication non branché : %s", exc)
+
+    # Webhooks ENTRANTS de la ligne Twilio d'IRIS (SMS et appels reçus). SANS `auth` à dessein :
+    # Twilio ne présente pas de jeton de session, c'est un tiers qui appelle de l'extérieur. Chaque
+    # route exige à la place une signature Twilio valide (routes_twilio.py) et échoue fermé sans
+    # elle. Il faut une URL publique (tunnel Cloudflare) déclarée à Twilio et à TWILIO_PUBLIC_BASE.
+    try:
+        from .routes_twilio import creer_routeur_twilio
+    except Exception as exc:
+        log.info("routes Twilio entrantes indisponibles (module absent) : %s", exc)
+    else:
+        try:
+            app.include_router(creer_routeur_twilio(ctx))
+        except Exception as exc:
+            log.warning("routeur Twilio entrant non branché : %s", exc)
 
     return app

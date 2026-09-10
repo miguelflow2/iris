@@ -68,20 +68,23 @@ def _map_error(exc: Exception) -> ConnectorError:
         return ConnectorError("Le cerveau d'IRIS n'a pas accès à ce modèle : je bascule sur mon accès de secours.", fatal_key=True)
     if isinstance(exc, anthropic.NotFoundError):
         return ConnectorError("Le modèle demandé est introuvable : je bascule sur mon accès de secours.", fatal_key=True)
+    # Masque de marque : aucun nom de fournisseur ne doit atteindre l'utilisateur. Ces messages
+    # remontent au chat (toast + bulle, lus à voix haute) ; on parle du « cerveau d'IRIS » et on
+    # journalise le détail réel côté serveur pour le diagnostic.
     if isinstance(exc, anthropic.RateLimitError):
-        return ConnectorError("Limite de débit Claude atteinte. Réessayez dans un instant.", retryable=True)
+        return ConnectorError("Limite de débit atteinte. Réessayez dans un instant.", retryable=True)
     if isinstance(exc, anthropic.BadRequestError):
         if "credit balance" in (exc.message or "").lower():
-            return ConnectorError(
-                "Votre compte Anthropic n'a plus de crédits API : la clé est valide mais le solde est épuisé. "
-                "Ajoutez des crédits sur console.anthropic.com › Plans & Billing, puis réessayez."
-            )
-        return ConnectorError(f"Requête refusée par l'API Claude : {exc.message}")
+            log.warning("cerveau d'IRIS : solde de crédits épuisé (%s)", exc.message)
+            return ConnectorError("L'accès IA est temporairement épuisé. Réessayez un peu plus tard.")
+        log.warning("cerveau d'IRIS : requête refusée (%s)", exc.message)
+        return ConnectorError("Requête refusée par le cerveau d'IRIS.")
     if isinstance(exc, anthropic.APIStatusError):
-        return ConnectorError(f"Erreur de l'API Claude ({exc.status_code}).", retryable=exc.status_code >= 500)
+        return ConnectorError(f"Erreur du cerveau d'IRIS ({exc.status_code}).", retryable=exc.status_code >= 500)
     if isinstance(exc, anthropic.APIConnectionError):
-        return ConnectorError("Impossible de joindre l'API Claude. Vérifiez la connexion réseau.", retryable=True)
-    return ConnectorError(f"Erreur Claude : {exc}")
+        return ConnectorError("Impossible de joindre le cerveau d'IRIS. Vérifiez la connexion réseau.", retryable=True)
+    log.warning("cerveau d'IRIS : erreur inattendue (%s)", exc)
+    return ConnectorError("Erreur du cerveau d'IRIS.")
 
 
 class ClaudeConnector(BaseConnector):
@@ -190,11 +193,11 @@ class ClaudeConnector(BaseConnector):
                 details = getattr(final, "stop_details", None)
                 category = getattr(details, "category", None) if details else None
                 explanation = getattr(details, "explanation", None) if details else None
-                msg = "Claude a décliné cette demande pour des raisons de sécurité."
-                if category:
-                    msg += f" (catégorie : {category})"
-                if explanation:
-                    msg += f" {explanation}"
+                # Masque de marque : message neutre pour l'utilisateur ; le détail du fournisseur
+                # (catégorie, explication) va au journal, pas dans le chat.
+                if category or explanation:
+                    log.info("refus de sécurité du cerveau (catégorie=%s) %s", category, explanation or "")
+                msg = "La demande a été déclinée pour des raisons de sécurité."
                 yield Chunk("error", text=msg, data={"refusal": True})
                 return
 
@@ -258,9 +261,11 @@ class ClaudeConnector(BaseConnector):
                     cb = event.content_block
                     cb_type = getattr(cb, "type", "")
                     if cb_type == "fallback":
+                        # Masque de marque : ne pas exposer les identifiants de modèle dans le chat.
                         src = getattr(getattr(cb, "from_", None), "model", "?")
                         dst = getattr(getattr(cb, "to", None), "model", "?")
-                        yield Chunk("info", text=f"{src} a décliné ; {dst} prend le relais.")
+                        log.info("repli du cerveau : %s -> %s", src, dst)
+                        yield Chunk("info", text="Je bascule vers un moteur de secours pour terminer cette réponse.")
                     elif cb_type == "server_tool_use":
                         yield Chunk("info", text="Recherche web en cours…", data={"server_tool": getattr(cb, "name", "")})
                     elif cb_type == "web_search_tool_result":

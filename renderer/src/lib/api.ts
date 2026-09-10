@@ -112,6 +112,18 @@ class Api {
     return payload as T
   }
 
+  /** Récupère un binaire (image, etc.) en portant le jeton de session : un <img src> nu ne
+   *  transporte pas l'en-tête Authorization, donc les fichiers servis sous /api passent par ici,
+   *  puis par URL.createObjectURL côté vue. Rien ne quitte la machine : tout est local. */
+  async blob(path: string): Promise<Blob> {
+    if (!this.info) throw new ApiError('Backend IRIS non démarré', 0, true)
+    const res = await fetch(`${this.info.baseUrl}${path}`, {
+      headers: { Authorization: `Bearer ${this.info.token}` }
+    })
+    if (!res.ok) throw new ApiError(res.statusText, res.status)
+    return res.blob()
+  }
+
   get<T = any>(path: string): Promise<T> {
     return this.request<T>('GET', path)
   }

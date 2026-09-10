@@ -24,12 +24,12 @@ export function PlanView(): JSX.Element {
     <div className="page">
       <h1>Abonnement</h1>
       <p className="lead">Plan actuel : <strong>{info.label}</strong>{info.demo ? ' (mode démonstration)' : ''}{info.expires ? ` · valable jusqu’au ${info.expires}` : ''}. Le quota se renouvelle chaque mois ; IRIS vous prévient à 80 % et 95 %.</p>
-      {(info.byok?.models || info.byok?.tts) && <p className="muted">Clés personnelles détectées ({[info.byok?.models && 'OpenRouter', info.byok?.tts && 'ElevenLabs'].filter(Boolean).join(' + ')}) : ce que vos clés paient n’est pas bridé par le plan (voix ElevenLabs, écran, mémoire, tâches, web, quota). Le plan s’applique aux ressources fournies par VELA.</p>}
+      {(info.byok?.models || info.byok?.tts) && <p className="muted">Clés personnelles détectées ({[info.byok?.models && 'modèles', info.byok?.tts && 'voix'].filter(Boolean).join(' + ')}) : ce que vos clés paient n’est pas bridé par le plan (voix, écran, mémoire, tâches, web, quota). Le plan s’applique aux ressources fournies par VELA.</p>}
 
       <div className="card col">
         <div className="row between"><strong>Utilisation ce mois-ci ({u.month})</strong><span className="small muted">{u.requests} / {u.requests_limit} requêtes</span></div>
         <div className="progress"><div style={{ width: `${pct}%`, background: pct >= 95 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--accent-2)' }} /></div>
-        {u.tts_chars_limit ? <div className="small muted">Voix ElevenLabs : {u.tts_chars} / {u.tts_chars_limit} caractères</div> : <div className="small muted">Voix Windows incluse (ElevenLabs à partir du plan Essentiel).</div>}
+        {u.tts_chars_limit ? <div className="small muted">Voix naturelle : {u.tts_chars} / {u.tts_chars_limit} caractères</div> : <div className="small muted">Voix Windows incluse (voix naturelle à partir d’un plan payant).</div>}
       </div>
 
       <div className="grid-2" style={{ marginTop: 16 }}>
@@ -128,7 +128,7 @@ export function PlanView(): JSX.Element {
         <div className="row between wrap">
           <div>
             <strong>{info.lunettes.label}</strong>
-            <div className="small muted">Les lunettes VELA avec douze mois du plan Pro inclus.</div>
+            <div className="small muted">Paiement unique. Aucun abonnement forcé : elles fonctionnent dès le plan gratuit d’IRIS.</div>
           </div>
           <div className="row">
             <strong style={{ fontSize: 17 }}>{info.lunettes.price.toFixed(2)} $</strong>
@@ -140,6 +140,24 @@ export function PlanView(): JSX.Element {
           </div>
         </div>
       </div>
+      {info.lunettes_forfait ? (
+        <div className="card col" style={{ marginTop: 12, borderColor: 'var(--accent-2)' }}>
+          <div className="row between wrap">
+            <div>
+              <strong>{info.lunettes_forfait.label}</strong>
+              <div className="small muted">{info.lunettes_forfait.note} Offre supplémentaire.</div>
+            </div>
+            <div className="row">
+              <strong style={{ fontSize: 17 }}>{info.lunettes_forfait.price.toFixed(2)} $</strong>
+              {info.lunettes_forfait.pay_url ? (
+                <button className="btn" onClick={() => window.iris.openExternal(info.lunettes_forfait.pay_url)}>
+                  Choisir le forfait
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

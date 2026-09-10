@@ -237,11 +237,13 @@ def test_le_serveur_de_licences_accepte_les_deux_formes():
     assert '@app.get("/api/licence")' in source
 
 
-# --------------------------------------------------------------------------- aucune camera promise
-# Sept pages du site vendent l'absence de camera — « des lunettes qui vous ecoutent, sans jamais
-# vous regarder ». Le plan Entreprise promettait pourtant « creation de contenu POV + montage IA
-# (a venir, camera des lunettes VELA) », affiche dans l'ecran Abonnement. Vendre l'un et promettre
-# l'autre etait intenable.
+# --------------------------------------------------------------------------- aucune camera vendue en forfait
+# Les lunettes VELA ONT une camera : c'est une fonction MATERIELLE, livree avec le boitier, quel
+# que soit l'abonnement. Elle n'appartient donc a aucun palier logiciel. Et surtout, le
+# declenchement de la photo par IRIS (trame BLE camera) N'EST PAS ENCORE PROUVE sur le vrai
+# materiel — cf. lunettes_camera.py, qui refuse d'ecrire une trame non confirmee. Un forfait qui
+# promettrait une fonction camera vendrait donc soit une chose deja incluse ailleurs, soit une
+# capacite non demontree. Dans les deux cas c'est a proscrire : aucun palier ne mentionne la camera.
 def test_aucun_forfait_ne_promet_de_camera():
     from iris.plans import PLANS
 

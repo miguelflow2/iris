@@ -36,7 +36,15 @@ interface Message {
   infos?: string[]
 }
 
-const AGENT_LABEL: Record<string, string> = { openrouter: 'OpenRouter', claude: 'Claude', gpt: 'GPT', gemini: 'Gemini', custom: 'IA perso', auto: 'Auto', system: 'IRIS' }
+/** Libellé PUBLIC d'un moteur — masque de marque : l'utilisateur ne voit JAMAIS le nom d'un
+ *  fournisseur (Claude/GPT/Gemini/OpenRouter) ni un identifiant de modèle sur les surfaces
+ *  courantes (chat, liste des conversations, barre du composeur). Les vrais noms restent réservés
+ *  à l'écran avancé « Moteurs IA ». Tout moteur nommé, comme l'IA incluse, s'affiche « VELA ». */
+function labelMoteurPublic(agent?: string | null): string {
+  if (agent === 'custom') return 'IA perso'
+  if (agent === 'auto') return 'Auto'
+  return 'VELA'
+}
 
 /** Exemples proposés sur un fil vide : ce que l'on peut demander à IRIS, en une phrase exacte.
  *  `local: true` = commande exécutée par le backend sans réseau ni clé d'API (voir quick_commands.py) :
@@ -599,7 +607,7 @@ export function ChatView(): JSX.Element {
                   >
                     <div className="t">{c.title}</div>
                     <div className="m">
-                      {c.agent && c.agent !== 'auto' ? <span>{AGENT_LABEL[c.agent] || c.agent}</span> : null}
+                      {c.agent && c.agent !== 'auto' ? <span>{labelMoteurPublic(c.agent)}</span> : null}
                       <span>{formatQuand(c.updated_at)}</span>
                       {c.busy ? <span style={{ color: 'var(--accent-2)' }}>…</span> : null}
                       <span className="row-actions" style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
@@ -784,7 +792,7 @@ export function ChatView(): JSX.Element {
               )}
             </div>
             <div className="bar">
-              <span>{agentChoice === 'auto' ? 'IRIS choisit l’IA la mieux placée' : `IA : ${AGENT_LABEL[agentChoice] || agentChoice}`}</span>
+              <span>{agentChoice === 'auto' ? 'IRIS choisit l’IA la mieux placée' : `IA : ${labelMoteurPublic(agentChoice)}`}</span>
               {settings?.local_only ? <span className="pill ok">100 % local</span> : null}
               {consentBloque ? (
                 <button
@@ -817,8 +825,7 @@ function MessageBubble({ m }: { m: Message }): JSX.Element {
   return (
     <div className={`msg ${isUser ? 'user' : ''}`}>
       <div className="who">
-        <span>{isUser ? 'Vous' : AGENT_LABEL[m.agent || ''] || m.agent || 'IRIS'}</span>
-        {m.model ? <span className="mono">{m.model}</span> : null}
+        <span>{isUser ? 'Vous' : 'IRIS'}</span>
         <span>{formatTime(m.created_at)}</span>
         {m.meta?.source === 'voice' ? <span className="pill">voix</span> : null}
         {reason && !isUser ? <span title="Pourquoi cette IA">· {reason}</span> : null}

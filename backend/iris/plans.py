@@ -55,7 +55,7 @@ PLANS: dict[str, dict] = {
         "models": {"fast": "", "reasoning": "", "vision": ""},  # modèles gratuits, fournis par le relais VELA
         "contents": [
             "Interface vocale continue : contrôle du PC, routines, rappels, mémoire",
-            "Voix ElevenLabs incluse (français naturel), 40 000 caractères par mois",
+            "Voix naturelle incluse (français), 40 000 caractères par mois",
             "Modèles gratuits fournis par VELA, reconnaissance vocale hors-ligne",
             "Gouvernance et confidentialité complètes (consentements, registre, mode confidentiel)",
         ],
@@ -72,8 +72,8 @@ PLANS: dict[str, dict] = {
         "contents": [
             "Tout Gratuit",
             # La voix n'est plus un avantage payant : ce qui change ici, c'est la quantité, pas le droit.
-            "Voix ElevenLabs élargie : 60 000 caractères par mois au lieu de 40 000",
-            "Gemini 2.5 Flash + GPT-5 mini",
+            "Voix naturelle élargie : 60 000 caractères par mois au lieu de 40 000",
+            "Modèles rapides pour les échanges du quotidien",
             "Navigation web et comptes enregistrés (Omnivox, portails, outils métier)",
         ],
         "api_cost": 13.0,
@@ -88,7 +88,7 @@ PLANS: dict[str, dict] = {
         "models": {"fast": "google/gemini-2.5-flash", "reasoning": "anthropic/claude-sonnet-5", "vision": "anthropic/claude-sonnet-5"},
         "contents": [
             "Tout Pro",
-            "Claude Sonnet 5 pour le raisonnement et le code",
+            "Modèle avancé de raisonnement et de code",
             "Contrôle complet de l'écran (vision, OCR, souris)",
             "Tâches asynchrones avec rapport vocal (build, tests, recherches)",
             "Résumé quotidien et mémoire partagée entre agents",
@@ -106,7 +106,7 @@ PLANS: dict[str, dict] = {
         "models": {"fast": "anthropic/claude-sonnet-5", "reasoning": "anthropic/claude-opus-5", "vision": "anthropic/claude-opus-5"},
         "contents": [
             "Tout Premium",
-            "Claude Opus 5",
+            "Modèle le plus puissant pour les dossiers complexes",
             "Connecteurs d'agents de code et outils PME (à venir)",
             "Politique de gouvernance d'entreprise et export d'audit (à venir)",
         ],
@@ -114,9 +114,17 @@ PLANS: dict[str, dict] = {
     },
 }
 PLAN_ORDER = ["gratuit", "pro", "premium", "entreprise"]
-# Le matériel. L'offre groupée « lunettes + 12 mois » a été retirée : avec un prix affiché
-# pour les lunettes, son montant ne correspondait plus à une addition défendable.
+# Le matériel. Deux offres (décision de Miguel, 2026-09-10) :
+#  - les lunettes SEULES à 250 $ (paiement unique, aucun abonnement forcé) ;
+#  - un forfait SUPPLÉMENTAIRE « lunettes + 12 mois de Pro ». Le prix par défaut est la SOMME
+#    TRANSPARENTE des deux (250 $ + 12 × prix Pro), sans rabais inventé : changer ce seul calcul
+#    (ou fixer un nombre) suffit pour appliquer un prix promotionnel.
 LUNETTES = {"label": "Lunettes VELA", "price": 250.0}
+LUNETTES_FORFAIT = {
+    "label": "Lunettes + 12 mois Pro",
+    "price": round(250.0 + 12 * 19.99, 2),  # 489,88 $ — somme transparente, à ajuster si promo
+    "note": "Les lunettes VELA avec 12 mois du plan Pro inclus.",
+}
 
 
 class QuotaExceeded(Exception):
@@ -225,6 +233,7 @@ class PlanService:
                 for n in PLAN_ORDER
             ],
             "lunettes": {**LUNETTES, "pay_url": payment_link(LUNETTES["price"])},
+            "lunettes_forfait": {**LUNETTES_FORFAIT, "pay_url": payment_link(LUNETTES_FORFAIT["price"])},
         }
 
     BYOK_MODEL_FEATURES = {"web", "screen", "memory", "tasks", "dev"}
@@ -319,7 +328,7 @@ class PlanService:
             try:
                 self.hub.publish(
                     "plan.tts_quota", used=used, limit=limit, plan=self.plan, level="warn",
-                    message=f"Voix ElevenLabs : {limit} caractères utilisés ce mois-ci (plan {PLANS[self.plan]['label']}). IRIS continue avec la voix de Windows jusqu'au mois prochain.",
+                    message=f"Voix naturelle : {limit} caractères utilisés ce mois-ci (plan {PLANS[self.plan]['label']}). IRIS continue avec la voix de Windows jusqu'au mois prochain.",
                 )
             except Exception:
                 pass

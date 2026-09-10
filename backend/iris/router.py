@@ -71,6 +71,14 @@ class AgentRouter:
                 "Mode 100 % local activé : configurez une IA locale (Ollama, LM Studio…) ou désactivez ce mode."
             )
         if not available:
+            vela_cfg = user.agents.get("vela")
+            if vela_cfg and vela_cfg.active:
+                # L'IA incluse est active mais son accès (jeton d'appareil) n'est pas encore obtenu
+                # — relais momentanément injoignable/lent au tout premier lancement. La promesse
+                # VELA est « aucune clé à coller » : on dit la vraie cause, pas « ajoutez une clé ».
+                raise NoAgentAvailable(
+                    "IRIS n'a pas encore obtenu son accès VELA. Vérifiez la connexion Internet, puis réessayez dans un instant."
+                )
             raise NoAgentAvailable("Aucune IA n'est prête. Activez-en une et ajoutez sa clé API dans Réglages › Moteurs IA.")
         if requested not in ("auto", "", None):
             if requested in available:

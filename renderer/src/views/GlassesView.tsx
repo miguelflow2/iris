@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { SettingRow, Toggle } from '../components/ui'
-import { api, formatDate, formatTime, type IrisEvent } from '../lib/api'
+import { api, ApiError, formatDate, formatTime, type IrisEvent } from '../lib/api'
 import { useStore } from '../lib/store'
 
 interface Device {
@@ -144,7 +144,7 @@ function CarteChoix({ titre, detail, actif, disabled, onClick }: { titre: string
 }
 
 export function GlassesView(): JSX.Element {
-  const { toast, settings, voice } = useStore()
+  const { toast, settings, voice, updateSettings } = useStore()
   const [status, setStatus] = useState<any>(null)
   const [devices, setDevices] = useState<Device[]>([])
   const [scanning, setScanning] = useState(false)
@@ -154,6 +154,10 @@ export function GlassesView(): JSX.Element {
   const [showServices, setShowServices] = useState(false)
   const [manuel, setManuel] = useState(false)
   const [applique, setApplique] = useState(false)
+  // Caméra des lunettes VELA : captures locales déjà rapatriées + prise en cours + aperçus (URLs blob).
+  const [captures, setCaptures] = useState<{ nom: string; octets: number; modifie: string }[]>([])
+  const [prise, setPrise] = useState(false)
+  const [apercus, setApercus] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     const s = await api.get('/api/glasses/status')
@@ -171,9 +175,40 @@ export function GlassesView(): JSX.Element {
     }
   }, [])
 
+  const chargerCaptures = useCallback(async () => {
+    try {
+      const r = await api.get('/api/glasses/captures')
+      setCaptures(r.captures || [])
+    } catch {
+      /* dossier absent ou vide : la galerie affiche « aucune photo » */
+    }
+  }, [])
+
+  const prendrePhoto = async () => {
+    setPrise(true)
+    try {
+      const r = await api.post('/api/glasses/photo', { reconnaissance: false })
+      if (r.ok) {
+        toast(r.constat || 'Photo enregistrée sur votre ordinateur.', 'success')
+        chargerCaptures()
+      } else {
+        // Trame envoyée mais image non reconstituée : constat honnête, pas un faux succès.
+        toast(r.constat || 'Aucune image reçue.', 'info')
+      }
+    } catch (err) {
+      // 409 = limite assumée (paire sans caméra, ou format de trame non confirmé) : note « info »,
+      // ce n'est pas une panne. Tout autre code (500 = vraie panne interne) = erreur rouge.
+      const statut = err instanceof ApiError ? err.status : 0
+      toast(String((err as Error).message), statut === 409 ? 'info' : 'error')
+    } finally {
+      setPrise(false)
+    }
+  }
+
   useEffect(() => {
     load()
     chargerPeripheriques()
+    chargerCaptures()
     return api.on((e: IrisEvent) => {
       if (e.type === 'glasses.state') setStatus(e)
       if (e.type === 'glasses.connected') {
@@ -185,10 +220,38 @@ export function GlassesView(): JSX.Element {
         toast('Lunettes déconnectées', 'info')
         chargerPeripheriques()
       }
+      // Photo prise depuis la voix (« Dis-moi Iris, prends une photo ») : rafraîchir la galerie.
+      if (e.type === 'glasses.photo') chargerCaptures()
       if (e.type === 'glasses.connecting') toast(`Connexion aux lunettes… tentative ${e.attempt}/${e.attempts} (jusqu’à 30 s)`, 'info')
       if (e.type === 'glasses.packet') setStatus((s: any) => (s ? { ...s, packets: [...(s.packets || []).slice(-19), e], packet_count: (s.packet_count || 0) + 1 } : s))
     })
-  }, [load, chargerPeripheriques, toast])
+  }, [load, chargerPeripheriques, chargerCaptures, toast])
+
+  // Charge l'aperçu de chaque capture via le client authentifié (un <img src> nu ne porterait pas
+  // le jeton), puis en fait une URL objet. On révoque tout à la fin pour ne pas fuir de mémoire.
+  useEffect(() => {
+    let annule = false
+    const crees: string[] = []
+    ;(async () => {
+      const map: Record<string, string> = {}
+      for (const c of captures) {
+        try {
+          const b = await api.blob(`/api/glasses/captures/${encodeURIComponent(c.nom)}`)
+          if (annule) return
+          const url = URL.createObjectURL(b)
+          crees.push(url)
+          map[c.nom] = url
+        } catch {
+          /* aperçu indisponible : la vignette affichera un repli */
+        }
+      }
+      if (!annule) setApercus(map)
+    })()
+    return () => {
+      annule = true
+      for (const url of crees) URL.revokeObjectURL(url)
+    }
+  }, [captures])
 
   const scan = async () => {
     setScanning(true)
@@ -323,6 +386,39 @@ export function GlassesView(): JSX.Element {
         </SettingRow>
       </div>
 
+      {/* Le verrou commercial : IRIS est ce qu’il y a DANS les lunettes. Sans elles, ni la voix ni le
+          chat écrit ne répondent — sauf en mode démonstration, l’échappatoire d’un clic pour une
+          présentation où les lunettes lâcheraient. */}
+      <h2>Verrou des lunettes</h2>
+      <div className="card">
+        <p className="small muted" style={{ margin: '0 0 4px' }}>
+          IRIS est ce qu’il y a dans les lunettes VELA : par défaut, elle ne répond — ni à la voix, ni au chat écrit — que
+          lorsqu’elles sont connectées. Le mode démonstration lève ce verrou d’un seul clic, le temps d’une présentation.
+        </p>
+        <SettingRow
+          title="Exiger les lunettes VELA"
+          desc="IRIS ne fonctionne que lunettes connectées, à la voix comme au chat écrit. Laissez activé pour l’usage normal."
+        >
+          <Toggle
+            on={settings?.require_glasses !== false}
+            onChange={(v) => updateSettings({ require_glasses: v })
+              .then(() => toast(v ? 'Lunettes VELA requises pour utiliser IRIS.' : 'Verrou des lunettes désactivé.', 'info'))
+              .catch((e: any) => toast(String(e.message), 'error'))}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Mode démonstration — fonctionner sans les lunettes"
+          desc="Pour une présentation : si les lunettes se déconnectent, IRIS continue de répondre à la voix et au chat écrit. À laisser désactivé le reste du temps."
+        >
+          <Toggle
+            on={Boolean(settings?.demo_sans_lunettes)}
+            onChange={(v) => updateSettings({ demo_sans_lunettes: v })
+              .then(() => toast(v ? 'Mode démonstration activé : IRIS fonctionne sans les lunettes.' : 'Mode démonstration désactivé.', v ? 'success' : 'info'))
+              .catch((e: any) => toast(String(e.message), 'error'))}
+          />
+        </SettingRow>
+      </div>
+
       <h2>Le son</h2>
       <div className="card">
         <div style={{ marginBottom: 14 }}>
@@ -443,6 +539,64 @@ export function GlassesView(): JSX.Element {
             IRIS parlera dans vos lunettes dès que Windows les aura reconnectées ; si elles sont éteintes, sa voix repartira dans l’ordinateur.
           </div>
         ) : null}
+      </div>
+
+      {/* La caméra : fonction phare des lunettes VELA. L'UI est prête ; le déclenchement reste
+          honnête — sur une paire sans caméra ou tant que le format de trame n'est pas confirmé sur
+          le vrai matériel, le backend renvoie un message clair au lieu d'inventer une image. */}
+      <h2>Caméra</h2>
+      <div className="card">
+        <p className="small muted" style={{ margin: '0 0 10px', lineHeight: 1.5 }}>
+          La caméra de vos lunettes VELA prend des photos mains libres — à la voix («&nbsp;Dis-moi Iris,
+          prends une photo&nbsp;») ou avec le bouton ci-dessous. L’image est rapatriée{' '}
+          <strong>sur votre ordinateur</strong> et n’est envoyée à personne&nbsp;: la capture comme l’analyse
+          restent locales.
+        </p>
+        <div className="row" style={{ gap: 10 }}>
+          <button className="btn primary sm" disabled={prise || !connected} onClick={prendrePhoto}>
+            {prise ? 'Prise en cours…' : 'Prendre une photo'}
+          </button>
+          <button className="btn ghost sm" onClick={chargerCaptures}>Actualiser</button>
+        </div>
+        {!connected ? (
+          <div className="small muted" style={{ marginTop: 8 }}>Connectez vos lunettes pour déclencher la caméra.</div>
+        ) : null}
+        <div className="small muted" style={{ marginTop: 10, lineHeight: 1.5 }}>
+          En toute transparence&nbsp;: le déclenchement de la caméra n’a pas encore été validé sur le
+          matériel final. Sur une paire sans caméra, ou tant que le format de trame n’est pas confirmé,
+          IRIS vous le dira franchement plutôt que d’inventer une image.
+        </div>
+        {captures.length ? (
+          <div className="row wrap" style={{ gap: 12, marginTop: 14, alignItems: 'flex-start' }}>
+            {captures.map((c) => (
+              <div key={c.nom} style={{ width: 150 }}>
+                <div
+                  style={{
+                    width: 150,
+                    height: 100,
+                    borderRadius: 'var(--radius-sm)',
+                    overflow: 'hidden',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
+                    display: 'grid',
+                    placeItems: 'center'
+                  }}
+                >
+                  {apercus[c.nom] ? (
+                    <img src={apercus[c.nom]} alt={c.nom} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span className="small muted">…</span>
+                  )}
+                </div>
+                <div className="small muted" style={{ marginTop: 4 }}>
+                  {formatTime(c.modifie)} · {Math.max(1, Math.round(c.octets / 1024))} Ko
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty" style={{ marginTop: 12 }}>Aucune photo pour l’instant.</div>
+        )}
       </div>
 
       <h2>Appareils détectés</h2>

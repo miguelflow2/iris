@@ -191,26 +191,26 @@ export function SettingsView(): JSX.Element {
             <option value="high">Approfondi</option>
           </select>
         </SettingRow>
-        <SettingRow title="Modèle dédié à la voix" desc="Vide = même modèle que l’agent. Indiquez un identifiant du fournisseur choisi (ex. minimax/minimax-m3:free sur OpenRouter, claude-sonnet-5 chez Anthropic).">
-          <input className="input mono" style={{ width: 220 }} placeholder="ex. minimax/minimax-m3:free" value={draft.voice_model} onChange={(e) => setDraft({ ...draft, voice_model: e.target.value })} onBlur={() => commit('voice_model')} />
+        <SettingRow title="Modèle dédié à la voix" desc="Vide = même modèle que l’assistante. Usage avancé : indiquez un identifiant de modèle.">
+          <input className="input mono" style={{ width: 220 }} placeholder="identifiant de modèle" value={draft.voice_model} onChange={(e) => setDraft({ ...draft, voice_model: e.target.value })} onBlur={() => commit('voice_model')} />
         </SettingRow>
         <SettingRow title="Lecture vocale des réponses" desc="Les réponses sont lues phrase par phrase pendant qu’elles arrivent (streaming).">
           <Toggle on={draft.tts_enabled} onChange={(v) => set({ tts_enabled: v })} />
         </SettingRow>
-        <SettingRow title="Moteur de voix" desc={eleven ? `En cours : ${eleven.engine_in_use === 'elevenlabs' ? 'ElevenLabs (voix française naturelle)' : 'voix Windows'}${eleven.error ? ' · ' + eleven.error : ''}` : ''}>
+        <SettingRow title="Moteur de voix" desc={eleven ? `En cours : ${eleven.engine_in_use === 'elevenlabs' ? 'voix naturelle (français)' : 'voix Windows'}${eleven.error ? ' · ' + eleven.error : ''}` : ''}>
           <select className="select" style={{ width: 260 }} value={draft.tts_engine} onChange={(e) => set({ tts_engine: e.target.value })}>
-            <option value="auto">Automatique (ElevenLabs si configuré)</option>
-            <option value="elevenlabs">ElevenLabs</option>
+            <option value="auto">Automatique (voix naturelle si disponible)</option>
+            <option value="elevenlabs">Voix naturelle</option>
             <option value="windows">Voix Windows (hors-ligne)</option>
           </select>
         </SettingRow>
-        <SettingRow title="Clé API ElevenLabs" desc={eleven?.configured ? `Clé chargée depuis le fichier .env (${eleven.env_file}).${eleven.subscription?.limit ? ` Quota : ${eleven.subscription.used} / ${eleven.subscription.limit} caractères ce mois-ci (palier ${eleven.subscription.tier}).` : ''}` : 'Aucune clé : ajoutez-la ici, elle sera écrite dans le fichier .env du dossier de données, jamais dans le code.'}>
-          <input className="input mono" type="password" style={{ width: 220 }} placeholder={eleven?.configured ? '•••••• (remplacer)' : 'sk_…'} value={elevenKey} onChange={(e) => setElevenKey(e.target.value)} />
-          <button className="btn sm" disabled={!elevenKey.trim()} onClick={() => api.post('/api/voice/elevenlabs/key', { api_key: elevenKey.trim() }).then(() => { setElevenKey(''); return api.get('/api/voice/elevenlabs?refresh=true') }).then(setEleven).then(() => toast('Clé ElevenLabs enregistrée dans .env', 'success')).catch((e) => toast(e.message, 'error'))}>Enregistrer</button>
+        <SettingRow title="Clé de voix personnelle (avancé)" desc={eleven?.configured ? `Clé chargée depuis le fichier .env (${eleven.env_file}).${eleven.subscription?.limit ? ` Quota : ${eleven.subscription.used} / ${eleven.subscription.limit} caractères ce mois-ci (palier ${eleven.subscription.tier}).` : ''}` : 'Usage avancé : une clé de voix personnelle, écrite dans le fichier .env du dossier de données, jamais dans le code. Non nécessaire — la voix naturelle est fournie par VELA.'}>
+          <input className="input mono" type="password" style={{ width: 220 }} placeholder={eleven?.configured ? '•••••• (remplacer)' : 'clé de voix'} value={elevenKey} onChange={(e) => setElevenKey(e.target.value)} />
+          <button className="btn sm" disabled={!elevenKey.trim()} onClick={() => api.post('/api/voice/elevenlabs/key', { api_key: elevenKey.trim() }).then(() => { setElevenKey(''); return api.get('/api/voice/elevenlabs?refresh=true') }).then(setEleven).then(() => toast('Clé de voix enregistrée.', 'success')).catch((e) => toast(e.message, 'error'))}>Enregistrer</button>
         </SettingRow>
         {eleven?.configured ? (
           <>
-            <SettingRow title="Voix ElevenLabs" desc="Les voix marquées « fr » parlent nativement français. Au palier gratuit, seules les voix de base sont utilisables : Sarah (fr) est recommandée ; les voix de bibliothèque comme Mélanie exigent un abonnement.">
+            <SettingRow title="Voix naturelle" desc="Les voix marquées « fr » parlent nativement français. Au palier gratuit, seules les voix de base sont utilisables : Sarah (fr) est recommandée ; les voix de bibliothèque comme Mélanie exigent un abonnement.">
               <select className="select" style={{ width: 300 }} value={draft.elevenlabs_voice_id} onChange={(e) => set({ elevenlabs_voice_id: e.target.value })}>
                 {(eleven.voices || []).map((v: any) => (
                   <option key={v.voice_id} value={v.voice_id}>{v.name}{v.french ? ' · fr' : ''}{v.accent ? ` (${v.accent})` : ''}{v.paid_only ? ' — abonnement payant requis' : ''}</option>
@@ -218,13 +218,13 @@ export function SettingsView(): JSX.Element {
                 {!(eleven.voices || []).some((v: any) => v.voice_id === draft.elevenlabs_voice_id) && draft.elevenlabs_voice_id ? <option value={draft.elevenlabs_voice_id}>{draft.elevenlabs_voice_id}</option> : null}
               </select>
             </SettingRow>
-            <SettingRow title="Modèle ElevenLabs" desc="Flash v2.5 donne la réponse la plus rapide.">
+            <SettingRow title="Modèle de voix" desc="Flash v2.5 donne la réponse la plus rapide.">
               <select className="select" style={{ width: 300 }} value={draft.elevenlabs_model} onChange={(e) => set({ elevenlabs_model: e.target.value })}>
                 {(eleven.models || []).map((m: any) => (
                   <option key={m.id} value={m.id}>{m.label}</option>
                 ))}
               </select>
-              <button className="btn sm" onClick={() => api.post('/api/voice/elevenlabs/test').then((r) => { if (r.error) toast(r.error, 'error') }).catch((e) => toast(e.message, 'error'))} title="Lit une phrase avec la voix et le modèle ElevenLabs choisis.">Écouter la voix ElevenLabs</button>
+              <button className="btn sm" onClick={() => api.post('/api/voice/elevenlabs/test').then((r) => { if (r.error) toast(r.error, 'error') }).catch((e) => toast(e.message, 'error'))} title="Lit une phrase avec la voix et le modèle choisis.">Écouter la voix</button>
             </SettingRow>
           </>
         ) : null}
@@ -258,13 +258,13 @@ export function SettingsView(): JSX.Element {
         <SettingRow title="Contrôle complet de l’écran" desc="Souris, capture d’écran et lecture du texte à l’écran (OCR hors-ligne) : IRIS peut agir dans n’importe quelle application ou jeu. Dites par exemple « clique sur Jouer » ou « dans le jeu, appuie sur Entrée ».">
           <Toggle on={Boolean(draft.computer_use)} onChange={(v) => set({ computer_use: v })} />
         </SettingRow>
-        <SettingRow title="Modèle de raisonnement" desc="Pour la création (jeux, sites, apps) et les tâches longues. Vide = modèle de l’agent. Un modèle payant (ex. anthropic/claude-sonnet-5 via OpenRouter) améliore nettement la qualité des plans.">
-          <input className="input mono" style={{ width: 260 }} placeholder="ex. anthropic/claude-sonnet-5" value={draft.reasoning_model || ''} onChange={(e) => setDraft({ ...draft, reasoning_model: e.target.value })} onBlur={() => commit('reasoning_model')} />
+        <SettingRow title="Modèle de raisonnement" desc="Pour la création (jeux, sites, apps) et les tâches longues. Vide = modèle de l’assistante. Un modèle avancé améliore nettement la qualité des plans.">
+          <input className="input mono" style={{ width: 260 }} placeholder="identifiant de modèle" value={draft.reasoning_model || ''} onChange={(e) => setDraft({ ...draft, reasoning_model: e.target.value })} onBlur={() => commit('reasoning_model')} />
         </SettingRow>
-        <SettingRow title="Modèle vision (écran)" desc="Doit accepter les images. Gratuits : minimax/minimax-m3:free, google/gemma-4-31b-it:free. Vide = modèle de l’agent.">
-          <input className="input mono" style={{ width: 260 }} placeholder="ex. google/gemma-4-31b-it:free" value={draft.vision_model || ''} onChange={(e) => setDraft({ ...draft, vision_model: e.target.value })} onBlur={() => commit('vision_model')} />
+        <SettingRow title="Modèle vision (écran)" desc="Doit accepter les images. Vide = modèle de l’assistante.">
+          <input className="input mono" style={{ width: 260 }} placeholder="identifiant de modèle" value={draft.vision_model || ''} onChange={(e) => setDraft({ ...draft, vision_model: e.target.value })} onBlur={() => commit('vision_model')} />
         </SettingRow>
-        <SettingRow title="Recherche web par Claude" desc="Claude peut consulter le web côté serveur Anthropic pour répondre à jour (les requêtes de recherche transitent par Anthropic).">
+        <SettingRow title="Recherche web à jour" desc="Le cerveau d’IRIS peut consulter le web pour répondre à jour ; les requêtes de recherche transitent alors par le fournisseur d’intelligence artificielle tiers.">
           <Toggle on={draft.claude_web_search} onChange={(v) => set({ claude_web_search: v })} />
         </SettingRow>
         <SettingRow title="Effort de raisonnement (texte)" desc="Pour les conversations écrites.">
@@ -274,7 +274,7 @@ export function SettingsView(): JSX.Element {
             <option value="high">Approfondi</option>
           </select>
         </SettingRow>
-        <SettingRow title="Afficher le raisonnement de Claude" desc="Résumé de la réflexion, déroulable sous chaque réponse écrite.">
+        <SettingRow title="Afficher le raisonnement" desc="Résumé de la réflexion, déroulable sous chaque réponse écrite.">
           <Toggle on={draft.claude_thinking_display} onChange={(v) => set({ claude_thinking_display: v })} />
         </SettingRow>
         <SettingRow title="Messages renvoyés à l’IA" desc="Fenêtre d’historique par conversation.">

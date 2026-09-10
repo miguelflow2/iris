@@ -67,8 +67,14 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
   }
 
   const finish = async () => {
-    await updateSettings({ onboarded: true, user_name: name, wake_word: wake })
-    toast(`IRIS est prête. Dites « ${wake} » pour commencer.`, 'success')
+    try {
+      await updateSettings({ onboarded: true, user_name: name, wake_word: wake })
+      toast(`IRIS est prête. Dites « ${wake} » pour commencer.`, 'success')
+    } catch (err) {
+      // Sans ce filet, un backend momentanément indisponible laissait l'accueil ouvert, sans
+      // message : l'utilisateur recliquait sans comprendre. onboarded reste false -> re-clic possible.
+      toast((err as Error).message, 'error')
+    }
   }
 
   if (seulementCompte && (comptePose || compte === null || compte.configure)) return null

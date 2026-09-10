@@ -13,8 +13,9 @@ Deux promesses tiennent ensemble dans ces tests, et l'une sans l'autre serait un
    le frein, ce serait signer un chèque dont le montant est décidé par les utilisateurs.
 
 Et une troisième, qui prime sur les deux : quoi qu'il arrive — clé absente, quota épuisé, réseau
-coupé — IRIS parle avec la voix de Windows. Une assistante qui se tait a l'air cassée ; une
-assistante qui change de voix a seulement l'air moins jolie.
+coupé — IRIS parle. Elle bascule d'abord sur Piper (vraie voix française, locale, gratuite) si le
+modèle est présent, et sinon sur la voix de Windows, plancher absolu. Une assistante qui se tait a
+l'air cassée ; une assistante qui change de voix a seulement l'air moins jolie.
 
 Aucun test ici n'ouvre le micro, ne joue de son ni ne touche au réseau.
 """
@@ -65,13 +66,19 @@ def test_aucun_forfait_ne_reste_a_la_voix_de_windows(service):
 def test_les_contenus_de_forfait_ne_vendent_plus_la_voix(service):
     """Le client lit ces lignes dans l'écran « Abonnement ». Laisser « voix Windows » au Gratuit ou
     « voix ElevenLabs » comme nouveauté du Pro, ce serait lui faire payer ce qu'il a déjà."""
+    # Masque de marque (décision de Miguel) : le forfait ne NOMME PLUS le fournisseur de voix
+    # (« ElevenLabs ») côté client. Le marqueur honnête devient « voix naturelle » : le Gratuit
+    # doit toujours annoncer qu'il reçoit vraiment cette voix, et les payants ne doivent en parler
+    # que pour la QUANTITÉ (caractères), jamais comme un droit qu'on ferait payer.
     gratuit = " ".join(PLANS["gratuit"]["contents"]).lower()
-    assert "elevenlabs" in gratuit, "le forfait gratuit doit annoncer la voix qu'il reçoit vraiment"
+    assert "voix naturelle" in gratuit, "le forfait gratuit doit annoncer la voix qu'il reçoit vraiment"
     assert "voix windows" not in gratuit
+    assert "elevenlabs" not in gratuit, "aucun nom de fournisseur de voix côté client (masque de marque)"
     for nom in ("pro", "premium", "entreprise"):
         for ligne in PLANS[nom]["contents"]:
             bas = ligne.lower()
-            if "elevenlabs" in bas:
+            assert "elevenlabs" not in bas, f"{nom} : aucun nom de fournisseur côté client ({ligne!r})"
+            if "voix naturelle" in bas:
                 assert "caractères" in bas, f"{nom} : la voix ne se vend plus, seule sa quantité change ({ligne!r})"
 
 
@@ -157,23 +164,47 @@ def voix(monkeypatch, data_dir: Path):
     return tts, journal
 
 
-def test_sans_cle_iris_parle_avec_la_voix_de_windows(voix):
+def test_sans_cle_ni_piper_iris_parle_avec_la_voix_de_windows(voix):
+    """Le PLANCHER absolu : ni clé ElevenLabs, ni modèle Piper → la voix de Windows parle quand
+    même. Une assistante muette a l'air cassée. On désactive Piper pour isoler ce plancher."""
     tts, journal = voix
+    tts.piper._disabled = True  # aucun modèle local disponible sur cette machine
     assert tts.engine == "windows"
     assert tts.speak("Bonjour Miguel.", force=True) is True
     assert journal.phrases == ["Bonjour Miguel."], "la phrase doit sortir malgré tout"
 
 
+def test_sans_cle_mais_piper_present_iris_parle_en_francais_local(voix):
+    """Sans clé ElevenLabs mais avec le modèle Piper (le cas d'une install fraîche VELA), IRIS ne
+    retombe PAS sur l'accent anglais de Windows : elle parle avec la vraie voix française locale.
+
+    C'est exactement le défaut que Miguel a demandé de supprimer (« accent anglais... Londres qui
+    vient d'apprendre le français »). On fausse la synthèse Piper — on ne charge pas l'ONNX ici —
+    pour vérifier le SEUL routage : la phrase part vers Piper, pas vers Windows."""
+    tts, journal = voix
+    if not tts.piper.available:
+        pytest.skip("modèle Piper absent sur cette machine")
+    tts._audio_enabled = True  # le fixture crée la TTS désactivée (sans audio) ; on l'active pour tester le routage
+    dites_piper: list[str] = []
+    tts.piper.speak = lambda texte: (dites_piper.append(texte) or True)  # type: ignore[method-assign]
+    assert tts.engine == "piper"
+    assert tts.speak("Bonjour Miguel.", force=True) is True
+    assert dites_piper == ["Bonjour Miguel."], "la voix française locale prend la phrase"
+    assert journal.phrases == [], "la voix Windows ne parle pas quand Piper est disponible"
+
+
 def test_quota_elevenlabs_epuise_la_phrase_nest_pas_perdue(voix):
     """Le cas qui arrivera vraiment : le quota du compte ElevenLabs se tarit en pleine
-    démonstration. La phrase en cours doit être rejouée par Windows, pas jetée."""
+    démonstration. La phrase EN COURS est rejouée tout de suite par Windows (repli instantané, pas
+    d'attente), et pour les phrases SUIVANTES le moteur bascule sur Piper (français local) si le
+    modèle est là, sinon Windows. Jamais jetée, jamais muette."""
     tts, journal = voix
     erreur = RuntimeError("HTTP 429 quota_exceeded")
     erreur.response = type("R", (), {"status_code": 429, "text": "quota_exceeded"})()  # type: ignore[attr-defined]
     tts.eleven._handle_failure(erreur, "Il reste deux minutes.")
-    assert journal.phrases == ["Il reste deux minutes."]
+    assert journal.phrases == ["Il reste deux minutes."], "repli instantané par Windows pour la phrase en cours"
     assert not tts.eleven.available, "ElevenLabs est mis de côté : la phrase suivante n'attend pas un aller-retour perdu"
-    assert tts.engine == "windows"
+    assert tts.engine == ("piper" if tts.piper.available else "windows")
 
 
 def test_reseau_coupe_iris_parle_quand_meme(voix):

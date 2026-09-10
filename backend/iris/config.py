@@ -157,9 +157,26 @@ class GlassesConfig(BaseModel):
     auto_connect: bool = False
 
 
+class TelephonieConfig(BaseModel):
+    """SMS et appels. Les identifiants ne sont PAS ici : selon la voie, ils vivent dans le coffre
+    (ancienne voie « twilio ») ou dans l'environnement / backend/.env (« twilio_ligne »). Voir
+    telephonie.py et twilio_ligne.py."""
+
+    # Voies possibles :
+    #   "iphone"       — défaut : IRIS prépare le message, Miguel touche Envoyer. Rien ne part seul.
+    #   "twilio_ligne" — la vraie ligne d'IRIS (décision du 7 septembre 2026) : clé d'API dans
+    #                    l'environnement, SMS et appels sortants ET entrants, toujours après accord.
+    #   "twilio"       — ancienne voie dormante (Auth Token dans le coffre, SMS seulement).
+    #   "aucun"        — téléphonie désactivée.
+    fournisseur: str = "iphone"
+    numero_par_defaut: str = ""
+    indicatif_pays: str = "+1"
+
+
 class UserSettings(BaseModel):
     assistant_name: str = "IRIS"
     glasses: GlassesConfig = Field(default_factory=GlassesConfig)
+    telephonie: TelephonieConfig = Field(default_factory=TelephonieConfig)  # voie SMS/appels ; identifiants hors settings.json
     sites: dict[str, SiteConfig] = Field(default_factory=dict)  # comptes web : mots de passe dans le coffre système
     audio_input_device: str = ""  # "" = micro par défaut ; sinon (partie du) nom du périphérique, ex. lunettes appairées
     audio_output_device: str = ""  # "" = sortie par défaut ; sinon (partie du) nom, ex. sortie Hands-Free des lunettes
@@ -179,7 +196,11 @@ class UserSettings(BaseModel):
     routing_mode: Literal["auto", "manual"] = "auto"
     retention_days: int = 0  # 0 = illimité ; sinon 1 (24h), 7, 30...
     tts_enabled: bool = True
-    tts_engine: Literal["auto", "elevenlabs", "windows"] = "auto"  # auto = ElevenLabs si configuré, sinon Windows
+    # "auto" = la meilleure voix disponible sans dépendre du nuage : ElevenLabs si une clé est
+    #   configurée ET le quota dispo, sinon Piper (français local) s'il est présent, sinon Windows.
+    # "piper" = voix française hors-ligne imposée (mode indépendant : rien ne quitte la machine).
+    tts_engine: Literal["auto", "elevenlabs", "piper", "windows"] = "auto"
+    piper_voice: str = "fr_FR-siwis-medium"  # modèle Piper (fichier .onnx dans piper_voices/)
     elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"  # Sarah — premade, français vérifié, palier gratuit
     elevenlabs_model: str = "eleven_turbo_v2_5"
     tts_rate: int = 185
@@ -195,6 +216,10 @@ class UserSettings(BaseModel):
     # commandes sur l'ordinateur, l'ouvrir au réseau est une décision qui se prend sciemment.
     # Le jeton de session reste exigé dans tous les cas.
     remote_access: bool = False
+    # Télécommande (canal inverse) : autorise le téléphone à piloter cet ordinateur À DISTANCE via le
+    # relais. DÉSACTIVÉ par défaut — une install fraîche n'est jamais pilotable en silence. Les actes
+    # irréversibles demandent toujours l'accord (relayé au téléphone), et le périmètre de fichiers tient.
+    telecommande: bool = False
     # IRIS démarre avec la session Windows : elle est présente en continu, pas seulement quand on y pense.
     start_with_windows: bool = True
     # Commandes courantes exécutées sans modèle (heure, ouvrir une application ou un site, lancer une vidéo).
@@ -235,10 +260,13 @@ class UserSettings(BaseModel):
     license_key: str = ""
     # Activation automatique : IRIS demande sa clé au serveur de licences VELA avec le courriel d'achat,
     # puis revérifie chaque jour (renouvellement, expiration, annulation). Vide = activation manuelle.
-    licence_server: str = "https://licences.vela.app"
+    # Domaine réel de VELA : velaglass.ca (acheté chez OVH, 2026-09-08). Le relais sert aussi
+    # /api/licence en repli, donc un seul serveur (relais.velaglass.ca) couvre cerveau ET licence
+    # tant que le serveur de licences dédié n'existe pas.
+    licence_server: str = "https://relais.velaglass.ca"
     # Relais IA de VELA : c'est lui qui détient la clé et choisit le modèle selon l'abonnement.
     # Voir serveur/relais.py. Vider ce champ revient à exiger que le client apporte sa propre clé.
-    relay_server: str = "https://relais.vela.app"
+    relay_server: str = "https://relais.velaglass.ca"
     licence_email: str = ""
     licence_auto: bool = True
     agents: dict[str, AgentConfig] = Field(default_factory=_default_agents)
@@ -360,6 +388,11 @@ class Settings:
         # Ce qui s'est passé au chargement, pour que l'interface puisse le dire à l'utilisateur.
         self.restaure_depuis_sauvegarde = False
         self.champs_remis_au_defaut: list[str] = []
+        # Base de relais RÉELLEMENT joignable, résolue au démarrage. NON persistée (dépend du
+        # réseau du moment) : vide = on utilise `user.relay_server` tel quel. Sert de repli quand
+        # un réseau filtré détourne le domaine principal par DNS (constaté sur le wifi d'un cégep,
+        # qui renvoyait relais.velaglass.ca vers une impasse 10.1.255.32). Voir connectors.resoudre_relais.
+        self.relay_base_override: str = ""
         self.user: UserSettings = self._load()
 
     def _load(self) -> UserSettings:
