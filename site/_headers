@@ -1,13 +1,14 @@
 # En-têtes de sécurité (format Netlify : chemin, puis en-têtes indentés de deux espaces).
 # Le site est entièrement statique et ne charge aucune ressource externe : la politique de
-# sécurité du contenu peut donc être stricte. Seuls des liens sortants existent (PayPal, mailto).
+# sécurité du contenu peut donc être stricte. Seuls des liens sortants existent (Stripe, mailto).
 #
 # script-src 'self' : aucun script en ligne dans les pages, tout est dans assets/site.js.
 # style-src autorise 'unsafe-inline' parce que les pages utilisent des attributs style= pour
 #   quelques ajustements de mise en page. Sans script en ligne, le risque est marginal.
-# form-action 'none' : aucun formulaire ne soumet quoi que ce soit ; celui de contact ouvre le
-#   logiciel de courriel du visiteur en JavaScript, et celui de suivi.html est traité en JavaScript
-#   lui aussi (submit annulé). Les deux restent donc compatibles avec form-action 'none'.
+# form-action 'self' : le formulaire de contact ouvre le logiciel de courriel du visiteur en
+#   JavaScript, et celui de suivi.html est traité en JavaScript (submit annulé) — ni l'un ni l'autre
+#   ne POSTe. En revanche, le formulaire « Prévenez-moi » (capture d'email, Netlify Forms) POSTe vers
+#   la même origine : 'self' l'autorise sans ouvrir la porte à une soumission vers un tiers.
 #
 # ⚠ connect-src 'self' — à modifier le jour où le suivi de commande est branché.
 #   suivi.html appellera un service (POST JSON) dont l'adresse est la constante ADRESSE_SUIVI en
@@ -17,13 +18,16 @@
 #   l'appel sans message visible pour le visiteur. Voir docs/SUIVI-COMMANDES.md.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Cross-Origin-Opener-Policy: same-origin
+  # Lire le site : autorisé. Entraîner un modèle d'IA avec son contenu : réservé.
+  Content-Usage: ai-train=no
+  X-Robots-Tag: all, noai, noimageai
 
 # L'installeur : téléchargement forcé plutôt qu'ouverture dans l'onglet, et mise en cache longue
 # puisque le nom du fichier porte le numéro de version.

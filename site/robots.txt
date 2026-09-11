@@ -1,11 +1,30 @@
-# Site public de VELA — https://vela-iris.netlify.app
-# Tout est indexable : il n'y a ni espace privé, ni compte, ni contenu payant.
+# Site public de VELA — https://velaglass.ca
+# Tout est LISIBLE : il n'y a ni espace privé, ni compte, ni contenu payant.
+# Les robots d'IA (citation, recherche, réponses) sont les bienvenus pour LIRE le site.
+#
+# En revanche, l'usage du contenu pour ENTRAÎNER des modèles d'IA est réservé : il est
+# signalé par l'en-tête « Content-Usage: ai-train=no » envoyé avec chaque page (fichier
+# _headers). Lire, oui ; entraîner, non.
 
 User-agent: *
 Allow: /
-
-# Le fichier d'installation n'a aucun intérêt pour un moteur de recherche,
-# et son exploration consommerait 246 Mo de bande passante à chaque passage.
+# Le fichier d'installation n'a aucun intérêt pour un moteur de recherche, et son
+# exploration consommerait des centaines de Mo de bande passante à chaque passage.
 Disallow: /telechargement/
 
-Sitemap: https://vela-iris.netlify.app/sitemap.xml
+# Lecture explicitement autorisée pour les principaux robots d'IA et de recherche.
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: anthropic-ai
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: PerplexityBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: CCBot
+User-agent: Bytespider
+Allow: /
+Disallow: /telechargement/
+
+Sitemap: https://velaglass.ca/sitemap.xml

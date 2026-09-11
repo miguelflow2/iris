@@ -18,10 +18,28 @@
     });
   }
 
+  /* ------------------------------------------------ barre d'achat collante
+     Accueil et fiche produit : une barre discrète (prix + rassurance +
+     « Précommander ») apparaît une fois le premier écran dépassé, jamais
+     avant. On l'affiche par une classe (pas l'attribut hidden) pour garder la
+     transition ; « mouvement réduit » la neutralise via la CSS. */
+  var achat = document.querySelector('[data-sticky-buy]');
+  if (achat) {
+    achat.hidden = false;
+    var seuil = function () { return Math.max(320, window.innerHeight * 0.6); };
+    var majAchat = function () {
+      if (window.pageYOffset > seuil()) achat.classList.add('show');
+      else achat.classList.remove('show');
+    };
+    window.addEventListener('scroll', majAchat, { passive: true });
+    window.addEventListener('resize', majAchat, { passive: true });
+    majAchat();
+  }
+
   /* ------------------------------------------------- formulaire de contact
      Site statique, aucun service tiers : à la soumission on construit un lien
      mailto: pré-rempli et on ouvre le logiciel de courriel du visiteur. */
-  var COURRIEL = 'miguelfreddy65@gmail.com';
+  var COURRIEL = 'contact@velaglass.ca';
   var form = document.getElementById('form-contact');
   if (form) {
     var reponse = document.getElementById('reponse');
@@ -380,7 +398,7 @@
             afficher('erreur', [
               paragraphe('Aucune commande ne correspond à ce numéro et à ce courriel. '
                 + 'Vérifiez que l’adresse est bien celle utilisée pour payer — c’est souvent celle '
-                + 'indiquée au paiement Square, qui n’est pas toujours celle qu’on utilise tous les jours.'),
+                + 'indiquée au paiement Stripe, qui n’est pas toujours celle qu’on utilise tous les jours.'),
               lienSecours(numero)
             ]);
             return;

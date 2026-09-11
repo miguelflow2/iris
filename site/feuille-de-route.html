@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feuille de route — ce qui est fait, en cours, à venir — VELA</title>
+<meta name="description" content="La feuille de route publique d’IRIS et le journal des versions. Version actuelle 0.1.0. Ce qui est fait, ce qui est en cours, ce qui est prévu — sans aucune date qu’on n’est pas sûrs de tenir.">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
+
+<link rel="canonical" href="https://velaglass.ca/feuille-de-route.html">
+<link rel="stylesheet" href="assets/style.css?v=9">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VELA">
+<meta property="og:locale" content="fr_CA">
+<meta property="og:title" content="Feuille de route — ce qui est fait, en cours, à venir — VELA">
+<meta property="og:description" content="La feuille de route publique d’IRIS et le journal des versions. Version actuelle 0.1.0. Ce qui est fait, en cours, prévu — sans dates incertaines.">
+<meta property="og:url" content="https://velaglass.ca/feuille-de-route.html">
+<meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+<meta property="og:image:width" content="900">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="Lunettes VELA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Feuille de route — ce qui est fait, en cours, à venir — VELA">
+<meta name="twitter:description" content="La feuille de route publique d’IRIS et le journal des versions. Version actuelle 0.1.0.">
+<meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+
+<!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Accueil", "item": "https://velaglass.ca/" },
+    { "@type": "ListItem", "position": 2, "name": "Feuille de route", "item": "https://velaglass.ca/feuille-de-route.html" }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-micro" viewBox="0 0 24 24">
+    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
+    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
+  </symbol>
+  <symbol id="i-son" viewBox="0 0 24 24">
+    <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
+    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
+  </symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24">
+    <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
+    <path d="M8.4 7 10 4.2h4L15.6 7"/><circle cx="12" cy="13.3" r="3.5"/>
+  </symbol>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M3 10.6 12 3.6l9 7"/><path d="M5 9.4V20h14V9.4"/><path d="M9.6 20v-5.4h4.8V20"/>
+  </symbol>
+  <symbol id="i-fais" viewBox="0 0 24 24">
+    <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
+    <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
+  </symbol>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
+  <symbol id="i-chaine" viewBox="0 0 24 24">
+    <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
+    <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
+  </symbol>
+  <symbol id="i-quebec" viewBox="0 0 24 24">
+    <path d="M12 21.4C7 17.7 4.2 14 4.2 9.6a7.8 7.8 0 0 1 15.6 0c0 4.4-2.8 8.1-7.8 11.8Z"/>
+    <circle cx="12" cy="9.6" r="2.6"/>
+  </symbol>
+  <symbol id="i-access" viewBox="0 0 24 24">
+    <circle cx="12" cy="4.2" r="2"/>
+    <path d="M4.5 8.2h15"/><path d="M12 7.4v6.2"/><path d="M12 13.6 8.4 21"/><path d="M12 13.6 15.6 21"/>
+  </symbol>
+  <symbol id="i-oeil" viewBox="0 0 24 24">
+    <path d="M2.5 12S6 5.6 12 5.6 21.5 12 21.5 12 18 18.4 12 18.4 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3.2"/>
+  </symbol>
+</svg>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="index.html">
+      <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Le logo de VELA : une voile">
+        <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+        <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <nav class="site-lang" aria-label="Langue / Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
+  <a href="/index.html" hreflang="fr" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">FR</a>
+  <a href="/en/index.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
+  <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+  <a href="/it/index.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
+</nav>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigation principale">
+      <a href="lunettes.html">Les lunettes</a>
+      <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="accessibilite.html">Accessibilité</a>
+      <a href="plans.html">Plans</a>
+      <a href="confidentialite.html">Confidentialité</a>
+      <a href="contact.html" class="nav-cta">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <!-- =============================================================== hero -->
+  <section class="hero">
+    <svg class="hero-voile-bg" viewBox="0 0 120 158" aria-hidden="true" focusable="false">
+      <path class="hv-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+      <path class="hv-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+    </svg>
+    <div class="wrap">
+      <p class="eyebrow">Feuille de route</p>
+      <h1>Où on en est, <em>vraiment</em>.</h1>
+      <p class="lead">
+        IRIS en est à la version <strong>0.1.0</strong>. Voici ce qui fonctionne déjà, ce qu’on
+        construit en ce moment, et ce qui est prévu ensuite. Notre règle est simple&nbsp;:
+        <strong>aucune date qu’on n’est pas sûrs de tenir</strong>. Là où le calendrier n’est pas
+        fixé, c’est écrit «&nbsp;à confirmer&nbsp;».
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================= version actuelle + légende -->
+  <section class="tight">
+    <div class="wrap narrow">
+      <div class="proof">
+        <span class="proof-label">Version actuelle</span>
+        <span class="proof-main">IRIS 0.1.0</span>
+        <span class="proof-hint">Windows 10 et 11 (64&nbsp;bits) · plan Gratuit, sur votre ordinateur</span>
+      </div>
+
+      <div class="beta-note" style="margin-top:18px">
+        <b>Comment lire cette page</b>
+        <p>Trois états, et rien d’autre&nbsp;:</p>
+        <ul class="etats" style="margin-top:12px">
+          <li><span class="pill ok">Fait</span> — ce qui tourne aujourd’hui</li>
+          <li><span class="pill warn">En cours</span> — ce sur quoi on travaille</li>
+          <li><span class="pill">Prévu</span> — ce qui viendra ensuite</li>
+        </ul>
+        <p class="small muted" style="margin:12px 0 0">Pour tout ce qui est «&nbsp;Prévu&nbsp;», le
+          trimestre cible reste à confirmer&nbsp;: on ne l’annoncera qu’une fois sûrs de le tenir.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================= fait -->
+  <section>
+    <div class="wrap narrow">
+      <p class="section-label">Fait <span class="pill ok">Disponible</span></p>
+      <h2>Ce qui tourne aujourd’hui.</h2>
+      <p class="lead">La version 0.1.0 d’IRIS, sur votre ordinateur, avec le plan Gratuit. Rien de tout
+        ceci n’est une promesse&nbsp;: c’est ce que l’application fait déjà.</p>
+      <ul class="check">
+        <li>Le contrôle de l’ordinateur à la voix&nbsp;: ouvrir, chercher, écrire, lancer, rappeler.</li>
+        <li>Le mot d’éveil «&nbsp;Dis-moi Iris&nbsp;» et le dialogue de suivi, sans avoir à le répéter.</li>
+        <li>Les routines et les rappels.</li>
+        <li>La mémoire gardée sur l’appareil&nbsp;: vos préférences et vos décisions.</li>
+        <li>La voix française locale (Piper), qui fonctionne hors ligne.</li>
+        <li>La reconnaissance vocale locale (Vosk), sur votre ordinateur.</li>
+        <li>La confidentialité&nbsp;: conversations, mémoire et registre restent chez vous, avec un
+          consentement par type de donnée et un indicateur de capture.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================================================= en cours -->
+  <section class="band">
+    <div class="wrap narrow">
+      <p class="section-label">En cours <span class="pill warn">Au travail</span></p>
+      <h2>Ce qu’on construit en ce moment.</h2>
+      <div class="detours">
+        <div class="detour">
+          <h3>L’installateur Windows, avec la voix embarquée</h3>
+          <p>Empaqueter l’application pour qu’elle s’installe d’un seul clic, voix française locale
+            comprise, sans aucune étape technique. <span class="pill warn">En cours</span></p>
+        </div>
+        <div class="detour">
+          <h3>Le service d’IA en ligne</h3>
+          <p>Le service qui distingue les paliers payants (Pro, Premium, Entreprise) et élargit le quota
+            mensuel. C’est lui qui se déploie derrière la mention «&nbsp;Bientôt&nbsp;» des plans.
+            <span class="pill warn">En cours</span></p>
+        </div>
+        <div class="detour">
+          <h3>La première série de lunettes</h3>
+          <p>La préparation des toutes premières unités et de leur livraison, convenue par courriel avec
+            chaque personne. <span class="pill warn">En cours</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================= prévu -->
+  <section>
+    <div class="wrap narrow">
+      <p class="section-label">Prévu <span class="pill">Ensuite</span></p>
+      <h2>Ce qui viendra.</h2>
+      <p class="small muted" style="margin-bottom:4px">Aucune de ces dates n’est arrêtée. Le trimestre
+        cible est marqué «&nbsp;à confirmer&nbsp;» tant qu’on n’en est pas certains&nbsp;: on préfère le
+        dire franchement plutôt que d’annoncer une date qu’on ne tiendrait pas.</p>
+      <div class="detours">
+        <div class="detour">
+          <h3>L’ouverture publique des paliers payants</h3>
+          <p>Pro, Premium et Entreprise accessibles à tous, une fois le service en ligne éprouvé.
+            <span class="pill">Prévu</span> — trimestre cible à confirmer</p>
+        </div>
+        <div class="detour">
+          <h3>Le mode 100&nbsp;% local et autonome</h3>
+          <p>Répondre et chercher sans dépendre d’un service en ligne&nbsp;: tout sur votre machine,
+            même coupé d’Internet. <span class="pill">Prévu</span> — trimestre cible à confirmer</p>
+        </div>
+        <div class="detour">
+          <h3>La gouvernance d’équipe (plan Entreprise)</h3>
+          <p>La gestion de plusieurs postes, la facturation groupée et le déploiement pour les
+            organisations. <span class="pill">Prévu</span> — trimestre cible à confirmer</p>
+        </div>
+        <div class="detour">
+          <h3>macOS et Linux</h3>
+          <p>Porter IRIS au-delà de Windows. Une bonne partie du code s’y prête déjà&nbsp;; il reste
+            l’empaquetage et les essais sur chaque système. <span class="pill">Prévu</span> —
+            trimestre cible à confirmer</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================= journal des versions -->
+  <section class="band">
+    <div class="wrap narrow">
+      <p class="section-label">Journal des versions</p>
+      <h2>Ce que chaque version a apporté.</h2>
+
+      <div class="entry" style="margin-top:16px">
+        <span class="idx">0.1.0</span>
+        <div class="body">
+          <div class="line">
+            <span class="what">Première version d’IRIS</span>
+            <span class="when">Date de publication à confirmer</span>
+            <span class="pill ok">Disponible</span>
+          </div>
+          <p class="small muted" style="margin:0">Le plan Gratuit, sur Windows 10 et 11&nbsp;: contrôle du PC
+            à la voix, mot d’éveil «&nbsp;Dis-moi Iris&nbsp;» et dialogue de suivi, routines et rappels,
+            mémoire locale, voix française locale (Piper), reconnaissance vocale locale (Vosk), et la
+            confidentialité de bout en bout sur l’appareil.</p>
+        </div>
+      </div>
+
+      <p class="small muted" style="margin-top:18px">Les versions suivantes s’ajouteront ici, au fur et à
+        mesure. On n’inscrit une ligne que lorsqu’elle est vraiment publiée.</p>
+
+      <p class="actions" style="margin-top:22px">
+        <a class="btn primary" href="installer.html#telecharger">Installer IRIS</a>
+        <a class="btn" href="plans.html">Voir les plans</a>
+        <a class="btn" href="contact.html">Une question&nbsp;?</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Le logo de VELA : une voile">
+            <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+            <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>Votre voix donne le cap.<br>IRIS tient la barre.</p>
+        <nav class="foot-social" aria-label="VELA sur les réseaux sociaux">
+          <a href="https://www.instagram.com/vela_iris2026/" target="_blank" rel="noopener noreferrer me">Instagram</a>
+          <a href="https://www.linkedin.com/in/vela-glass-427361431/" target="_blank" rel="noopener noreferrer me">LinkedIn</a>
+          <a href="https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw" target="_blank" rel="noopener noreferrer me">YouTube</a>
+        </nav>
+      </div>
+      <div>
+        <h3>Le produit</h3>
+        <ul>
+          <li><a href="lunettes.html">Les lunettes VELA</a></li>
+          <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
+          <li><a href="confidentialite.html">Confidentialité</a></li>
+          <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="entreprises.html">Pour les entreprises</a></li>
+          <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>En savoir plus</h3>
+        <ul>
+          <li><a href="a-propos.html">À propos</a></li>
+          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="presse.html">Presse</a></li>
+          <li><a href="faq.html">Questions fréquentes</a></li>
+          <li><a href="accessibilite.html">Accessibilité</a></li>
+          <li><a href="garantie-retour.html">Garantie et retours</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Nous joindre</h3>
+        <ul>
+          <li><a href="suivi.html">Suivre ma commande</a></li>
+          <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="contact.html">Formulaire de contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
+      <p class="foot-legal">
+        <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="conditions-vente.html">Conditions de vente</a>
+        <a href="garantie-retour.html">Garantie et retours</a>
+        <a href="mentions-legales.html">Mentions légales</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js?v=9"></script>
+</body>
+</html>

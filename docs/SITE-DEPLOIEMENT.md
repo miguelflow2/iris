@@ -53,7 +53,7 @@ L'adresse `scintillant-praline-a1b2c3` est tirée au hasard. Pour la remplacer p
 présentable :
 
 *Site configuration › General › Site details › Change site name* → tapez `vela-iris`.
-L'adresse devient `https://vela-iris.netlify.app`.
+L'adresse devient `https://velaglasse.netlify.app`.
 
 C'est déjà une adresse tout à fait honorable pour une démonstration ou une entrevue.
 

@@ -9,13 +9,15 @@ dépendance, aucun outil de compilation, aucun appel réseau. Il s'ouvre tel que
 `assets/style.css` et `assets/site.js` sont appelés avec un **numéro de version** :
 
 ```html
-<link rel="stylesheet" href="assets/style.css?v=5">
-<script src="assets/site.js?v=5"></script>
+<link rel="stylesheet" href="assets/style.css?v=6">
+<script src="assets/site.js?v=6"></script>
 ```
 
-*(Numéro en vigueur : **v=5**, depuis la relecture du 4 septembre 2026 : ajout de
-`color-scheme: dark` et plafonnement de la longueur de ligne dans `.callout`, `.demo-note` et
-`.steps-list`.)*
+*(Numéro en vigueur : **v=6**, depuis le passage « beta / testeurs » du 7 septembre 2026 : ajout
+des classes `.beta-banner` (bandeau beta en tête de chaque page) et `.soon` (état « Bientôt » qui
+remplace les boutons d'abonnement le temps du déploiement du service d'IA en ligne). Avant :
+**v=5**, relecture du 4 septembre 2026, ajout de `color-scheme: dark` et plafonnement de la
+longueur de ligne dans `.callout`, `.demo-note` et `.steps-list`.)*
 
 **Chaque fois que vous modifiez la CSS ou le JavaScript, incrémentez ce numéro dans les onze
 pages.** Sinon, le navigateur d'un visiteur déjà venu continue de servir l'ancienne feuille depuis
@@ -450,7 +452,7 @@ attendant.
 2. **Héberger l'installeur** — voir la section `telechargement/` ci-dessus, et `DEPLOIEMENT.md`.
 3. **Remplir l'encadré des mentions légales** puis le supprimer, et faire relire les deux pages
    légales par un juriste avant la première vente.
-4. **Adresse du site** — `robots.txt` et `sitemap.xml` contiennent `https://vela-iris.netlify.app` :
+4. **Adresse du site** — `robots.txt` et `sitemap.xml` contiennent `https://velaglasse.netlify.app` :
    à remplacer par l'adresse retenue.
 5. **Taxes** — `plans.html` indique « Prix en dollars canadiens, taxes en sus ». Confirmer le régime de
    taxes applicable (TPS/TVQ) avant d'encaisser un premier paiement, et le cas échéant afficher les

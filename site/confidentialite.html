@@ -3,35 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Confidentialité — VELA</title>
-<meta name="description" content="IRIS tourne chez vous : consentement par type de donnée, aucune caméra, mode 100 % local, et un registre que vous vérifiez vous-même, d’un clic.">
+<title>Confidentialité — la preuve, pas la promesse — VELA</title>
+<meta name="description" content="Le pilier transparence de VELA : chaque capture et chaque envoi s’inscrit dans un registre que vous vérifiez vous-même, d’un clic. Traitement local par défaut, témoin quand la caméra filme, consentement par type de donnée, mode confidentiel.">
+
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
+
 <link rel="canonical" href="https://velaglass.ca/confidentialite.html">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Mulish:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=8">
+<link rel="stylesheet" href="assets/style.css?v=9">
+
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="fr_CA">
-<meta property="og:title" content="Confidentialité — VELA">
-<meta property="og:description" content="IRIS tourne chez vous : consentement par type de donnée, aucune caméra, mode 100 % local, et un registre que vous vérifiez vous-même, d’un clic.">
+<meta property="og:title" content="Confidentialité — la preuve, pas la promesse — VELA">
+<meta property="og:description" content="Chaque capture et chaque envoi s’inscrit dans un registre que vous vérifiez vous-même, d’un clic. Traitement local par défaut, un témoin quand la caméra filme, consentement par type de donnée.">
 <meta property="og:url" content="https://velaglass.ca/confidentialite.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
 <meta property="og:image:height" content="900">
 <meta property="og:image:alt" content="Lunettes VELA">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Confidentialité — VELA">
-<meta name="twitter:description" content="IRIS tourne chez vous : consentement par type de donnée, aucune caméra, mode 100 % local, et un registre que vous vérifiez vous-même, d’un clic.">
+<meta name="twitter:title" content="Confidentialité — la preuve, pas la promesse — VELA">
+<meta name="twitter:description" content="Un registre que vous vérifiez vous-même, d’un clic. Vos données restent sur votre ordinateur — rien dans un nuage par défaut.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+
+<!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Accueil", "item": "https://velaglass.ca/" },
+    { "@type": "ListItem", "position": 2, "name": "Confidentialité", "item": "https://velaglass.ca/confidentialite.html" }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip" href="#contenu">Aller au contenu</a>
 
-<div class="beta-banner">
-  <div class="wrap"><b>Beta</b> — le service d’IA en ligne se déploie&nbsp;; certaines réponses ne sont pas encore disponibles.</div>
-</div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-micro" viewBox="0 0 24 24">
+    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
+    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
+  </symbol>
+  <symbol id="i-son" viewBox="0 0 24 24">
+    <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
+    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
+  </symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24">
+    <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
+    <path d="M8.4 7 10 4.2h4L15.6 7"/><circle cx="12" cy="13.3" r="3.5"/>
+  </symbol>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M3 10.6 12 3.6l9 7"/><path d="M5 9.4V20h14V9.4"/><path d="M9.6 20v-5.4h4.8V20"/>
+  </symbol>
+  <symbol id="i-fais" viewBox="0 0 24 24">
+    <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
+    <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
+  </symbol>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
+  <symbol id="i-chaine" viewBox="0 0 24 24">
+    <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
+    <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
+  </symbol>
+  <symbol id="i-quebec" viewBox="0 0 24 24">
+    <path d="M12 21.4C7 17.7 4.2 14 4.2 9.6a7.8 7.8 0 0 1 15.6 0c0 4.4-2.8 8.1-7.8 11.8Z"/>
+    <circle cx="12" cy="9.6" r="2.6"/>
+  </symbol>
+  <symbol id="i-access" viewBox="0 0 24 24">
+    <circle cx="12" cy="4.2" r="2"/>
+    <path d="M4.5 8.2h15"/><path d="M12 7.4v6.2"/><path d="M12 13.6 8.4 21"/><path d="M12 13.6 15.6 21"/>
+  </symbol>
+  <symbol id="i-oeil" viewBox="0 0 24 24">
+    <path d="M2.5 12S6 5.6 12 5.6 21.5 12 21.5 12 18 18.4 12 18.4 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3.2"/>
+  </symbol>
+</svg>
 
 <header class="site-head">
   <div class="wrap head-inner">
@@ -42,14 +92,19 @@
       </svg>
       <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
     </a>
+    <nav class="site-lang" aria-label="Langue / Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
+  <a href="/index.html" hreflang="fr" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">FR</a>
+  <a href="/en/index.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
+  <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+  <a href="/it/index.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
+</nav>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
-      <a href="index.html">Accueil</a>
       <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
-      <a href="confidentialite.html" aria-current="page">Confidentialité</a>
+      <a href="accessibilite.html">Accessibilité</a>
       <a href="plans.html">Plans</a>
-      <a href="installer.html">Installer</a>
+      <a href="confidentialite.html" aria-current="page">Confidentialité</a>
       <a href="contact.html" class="nav-cta">Contact</a>
     </nav>
   </div>
@@ -64,56 +119,61 @@
       <path class="hv-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
     </svg>
     <div class="wrap">
-      <p class="eyebrow">Confidentialité</p>
+      <p class="eyebrow">Confidentialité · pilier transparence</p>
       <h1>Une confidentialité <em>qui se vérifie</em>.</h1>
       <p class="lead">
-        Promettre, c’est facile. IRIS fait l’inverse&nbsp;: vos données restent sur votre ordinateur,
-        et un registre vous laisse le prouver vous-même.
+        Promettre, c’est facile. IRIS fait l’inverse&nbsp;: vos données restent sur votre ordinateur, et un
+        registre d’activité vous laisse le prouver vous-même, d’un clic. La preuve, pas la promesse.
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="#preuve">Voir la vérification</a>
+        <a class="btn" href="politique-confidentialite.html">Lire la politique de confidentialité</a>
       </p>
     </div>
   </section>
 
-  <!-- =========================================================== les principes -->
+  <!-- ==================================================== les quatre piliers -->
   <section class="tight">
     <div class="wrap">
       <div class="sec-head">
-        <p class="section-label">Quatre garde-fous</p>
-        <h2>Ce que vous gardez la main dessus.</h2>
-        <p>Aucun réglage caché. Chacun est visible, réversible, et inscrit quand il change.</p>
+        <p class="section-label">Ce qui nous tient</p>
+        <h2>Quatre engagements, ici aussi.</h2>
+        <p>Cette page est celle de la transparence — mais les quatre tiennent ensemble.</p>
       </div>
       <div class="grid grid-4">
-        <div class="card">
-          <h3>Le consentement, par type</h3>
-          <p>Texte, audio, images, captures, mémoire&nbsp;: rien ne sort sans votre accord pour ce type précis.
-            Chaque interrupteur se retire d’un geste.</p>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
+          <h3>Local</h3>
+          <p>Vos conversations, vos photos, votre mémoire restent sur votre ordinateur. Rien ne part dans un nuage par défaut.</p>
         </div>
-        <div class="card">
-          <h3>L’indicateur de capture</h3>
-          <p>Dès que le micro ou l’écran servent, une pastille s’affiche par-dessus tout. On ne peut ni la
-            fermer ni l’éteindre. Les lunettes, elles, n’ont pas de caméra.</p>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-quebec"/></svg></span>
+          <h3>Canada et français</h3>
+          <p>Pensé et écrit ici, en français d’abord. Une vraie personne répond à vos courriels.</p>
         </div>
-        <div class="card">
-          <h3>Le mode 100&nbsp;% local</h3>
-          <p>Un modèle installé chez vous, une voix française hors ligne&nbsp;: plus rien ne part. Le mode
-            confidentiel coupe le micro instantanément.</p>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-access"/></svg></span>
+          <h3>Accessibilité</h3>
+          <p>Piloter l’ordinateur à la voix, ou se faire lire l’écran à voix haute. Un moyen d’y arriver seul.</p>
         </div>
-        <div class="card">
-          <h3>Chiffré, sur votre disque</h3>
-          <p>Souvenirs, messages et journaux chiffrés en AES-256-GCM. Vous fixez la durée de conservation et
-            vous purgez quand bon vous semble.</p>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
+          <h3>Transparence</h3>
+          <p>Un registre d’activité que vous vérifiez vous-même. Chaque capture, chaque envoi y est inscrit.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ========================================================= démonstration -->
-  <section class="band" id="demonstration">
+  <!-- =========================================================== la preuve -->
+  <section class="band" id="preuve">
     <div class="wrap">
       <div class="sec-head">
-        <p class="section-label">Démonstration</p>
-        <h2>Essayez de falsifier le registre.</h2>
-        <p>Cinq lignes d’un registre d’exemple. Réécrivez-en une pour cacher un envoi, puis vérifiez&nbsp;:
-          le calcul se fait ici, dans votre navigateur, sans rien envoyer nulle part.</p>
+        <p class="section-label">La preuve, pas la promesse</p>
+        <h2>Un registre que vous vérifiez vous-même.</h2>
+        <p>Chaque capture et chaque envoi s’inscrit dans un registre, sur votre appareil. Vous en contrôlez
+          l’intégrité d’un clic&nbsp;: si une ligne avait été modifiée ou retirée, la vérification échouerait.
+          Ce n’est pas une promesse de conception — c’est une preuve d’exécution.</p>
       </div>
 
       <div class="proof" style="margin-bottom:20px">
@@ -141,19 +201,51 @@
       </div>
       <p class="demo-note">
         Registre d’exemple, pour l’illustration&nbsp;: ces entrées ne proviennent d’aucun utilisateur. Le
-        calcul des empreintes, lui, est le vrai — SHA-256, exécuté dans cette page.
+        calcul des empreintes, lui, est le vrai — SHA-256, exécuté dans cette page, sans rien envoyer nulle part.
       </p>
     </div>
   </section>
 
-  <!-- ==================================================== vos données sont à vous -->
-  <section>
+  <!-- ===================================================== traitement local -->
+  <section id="local">
     <div class="wrap">
       <div class="sec-head">
-        <p class="section-label">Vos données sont à vous</p>
-        <h2>Elles restent à quai, sur votre appareil.</h2>
+        <p class="section-label">Traitement local par défaut</p>
+        <h2>Rien ne part dans un nuage par défaut.</h2>
+        <p>IRIS tourne sur votre PC. Les lunettes s’y relient en Bluetooth. Tout se passe sur votre
+          ordinateur&nbsp;: c’est la contrepartie assumée du «&nbsp;tout reste chez vous&nbsp;».</p>
       </div>
-      <div class="grid grid-2">
+
+      <figure class="viz" style="margin-top:8px">
+        <svg class="arch-svg" viewBox="0 0 820 230" role="img"
+             aria-label="Schéma : les lunettes VELA se relient à votre ordinateur par Bluetooth. IRIS tourne sur cet ordinateur. Rien ne part vers Internet : vos données restent chez vous."
+             style="width:100%;height:auto;max-width:760px;display:block;margin-inline:auto">
+          <title>Comment circulent vos données</title>
+          <desc>Les lunettes se relient en Bluetooth à votre ordinateur, où tourne IRIS. Aucune donnée ne part vers Internet.</desc>
+          <rect x="16" y="70" width="196" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2"/>
+          <text x="114" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Lunettes</text>
+          <text x="114" y="136" text-anchor="middle" font-size="13" fill="currentColor" opacity="0.72">micro · son · caméra</text>
+          <text x="262" y="102" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">Bluetooth</text>
+          <line x1="220" y1="116" x2="300" y2="116" stroke="currentColor" stroke-width="2"/>
+          <polygon points="300,111 312,116 300,121" fill="currentColor"/>
+          <line x1="312" y1="134" x2="232" y2="134" stroke="currentColor" stroke-width="2"/>
+          <polygon points="232,129 220,134 232,139" fill="currentColor"/>
+          <rect x="312" y="56" width="216" height="122" rx="16" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="2.5"/>
+          <text x="420" y="102" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Votre PC</text>
+          <text x="420" y="128" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor">IRIS</text>
+          <text x="420" y="150" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.72">tout reste ici</text>
+          <line x1="528" y1="118" x2="610" y2="118" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6"/>
+          <circle cx="569" cy="118" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <line x1="559" y1="108" x2="579" y2="128" stroke="currentColor" stroke-width="2.5"/>
+          <text x="569" y="152" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Rien ne sort</text>
+          <rect x="626" y="70" width="178" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 6" opacity="0.55"/>
+          <text x="715" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" opacity="0.6">Internet</text>
+          <text x="715" y="134" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.55">aucune donnée</text>
+        </svg>
+        <figcaption>Lunettes → Bluetooth → votre PC (IRIS). Vos données restent chez vous&nbsp;: rien ne part vers Internet.</figcaption>
+      </figure>
+
+      <div class="grid grid-2" style="margin-top:26px">
         <div class="card">
           <h3>Rien ne remonte vers nous</h3>
           <p>Pas de télémétrie, pas de statistiques d’usage, pas d’envoi automatique. Le service local d’IRIS
@@ -165,14 +257,78 @@
             modifient un par un&nbsp;; une purge retire les données pour de bon.</p>
         </div>
       </div>
-      <p class="small muted" style="margin-top:18px">
-        Le détail, mécanisme par mécanisme, est dans la
-        <a href="politique-confidentialite.html">politique de confidentialité</a>.
-      </p>
     </div>
   </section>
 
-  <!-- ================================================== et l'écoute, alors ? -->
+  <!-- =========================================================== garde-fous -->
+  <section class="band">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Quatre garde-fous</p>
+        <h2>Ce que vous gardez la main dessus.</h2>
+        <p>Aucun réglage caché. Chacun est visible, réversible, et inscrit au registre quand il change.</p>
+      </div>
+      <div class="grid grid-4">
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
+          <h3>Le consentement, par type</h3>
+          <p>Texte, audio, images, captures, mémoire&nbsp;: rien ne sort sans votre accord pour ce type précis.
+            Chaque interrupteur se retire d’un geste.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
+          <h3>L’indicateur de capture</h3>
+          <p>Dès que le micro, l’écran ou la caméra servent, un témoin s’affiche. Un témoin lumineux s’allume
+            aussi sur les lunettes quand la caméra filme&nbsp;: vous le savez toujours.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
+          <h3>Le mode confidentiel</h3>
+          <p>Un geste coupe le micro. Le mode 100&nbsp;% local s’appuie sur une voix française hors ligne
+            (Piper) et une reconnaissance vocale locale (Vosk)&nbsp;: plus rien ne part.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
+          <h3>Sur votre disque, à votre durée</h3>
+          <p>Souvenirs, messages et journaux restent sur votre appareil. Vous fixez la durée de conservation et
+            vous purgez quand bon vous semble.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================== l'indicateur de capture -->
+  <section id="temoin">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Le témoin de capture</p>
+        <h2>Un témoin s’allume dès que la caméra filme.</h2>
+        <p>Rien ne se fait en cachette. La demande, l’action, la trace&nbsp;: chaque étape est visible, et la
+          dernière s’inscrit au registre que vous pouvez vérifier.</p>
+      </div>
+
+      <figure class="viz viz-voice">
+        <div class="vs">
+          <div class="vs-row vs-ask">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
+            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
+            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, prends une photo.&nbsp;»</span></p>
+          </div>
+          <div class="vs-row vs-do">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-camera"/></svg></span>
+            <p>Photo prise. Un témoin lumineux s’allume pendant la capture ; l’image se range sur votre ordinateur.</p>
+          </div>
+          <div class="vs-row vs-log">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
+            <p>Inscrit au registre&nbsp;: <span class="mono">capture — vérifiable</span>.</p>
+          </div>
+        </div>
+        <figcaption>La demande, l’action, la trace — sur votre appareil, vérifiable par vous.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================= et l'écoute, alors ? -->
   <section class="band">
     <div class="wrap narrow">
       <h2>Et l’écoute permanente, alors&nbsp;?</h2>
@@ -181,12 +337,16 @@
         «&nbsp;est-ce qu’elle écoute&nbsp;?&nbsp;» mais «&nbsp;où va ce qu’elle entend&nbsp;?&nbsp;».
       </p>
       <p>
-        La reconnaissance vocale peut tourner entièrement sur votre appareil, avec un modèle français
-        téléchargé une fois. Dans ce cas, aucun son ne part. Et pour qu’un agent réponde, seul le texte de
+        La reconnaissance vocale peut tourner entièrement sur votre appareil, avec un modèle français local
+        (Vosk). Dans ce cas, aucun son ne part. Et pour qu’un service d’IA en ligne réponde, seul le texte de
         votre demande est transmis — avec votre accord, et inscrit au registre à chaque fois.
       </p>
+      <p class="small muted">
+        Le détail, mécanisme par mécanisme, est dans la
+        <a href="politique-confidentialite.html">politique de confidentialité</a>.
+      </p>
       <p class="actions">
-        <a class="btn primary" href="installer.html">Installer IRIS</a>
+        <a class="btn primary" href="installer.html">Installer IRIS, gratuitement</a>
         <a class="btn" href="fonctionnalites.html">Ce qu’IRIS sait faire</a>
       </p>
     </div>
@@ -219,14 +379,26 @@
           <li><a href="fonctionnalites.html">Ce qu’IRIS fait</a></li>
           <li><a href="confidentialite.html">Confidentialité</a></li>
           <li><a href="plans.html">Plans et prix</a></li>
+          <li><a href="entreprises.html">Pour les entreprises</a></li>
           <li><a href="installer.html">Installer IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>En savoir plus</h3>
+        <ul>
+          <li><a href="a-propos.html">À propos</a></li>
+          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="presse.html">Presse</a></li>
+          <li><a href="faq.html">Questions fréquentes</a></li>
+          <li><a href="accessibilite.html">Accessibilité</a></li>
+          <li><a href="garantie-retour.html">Garantie et retours</a></li>
         </ul>
       </div>
       <div>
         <h3>Nous joindre</h3>
         <ul>
           <li><a href="suivi.html">Suivre ma commande</a></li>
-          <li><a href="mailto:miguelfreddy65@gmail.com">miguelfreddy65@gmail.com</a></li>
+          <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>
           <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
           <li><a href="contact.html">Formulaire de contact</a></li>
         </ul>
@@ -236,12 +408,14 @@
       <p>© 2026 VELA. IRIS version 0.1.0, pour Windows 10 et 11 (64&nbsp;bits).</p>
       <p class="foot-legal">
         <a href="politique-confidentialite.html">Politique de confidentialité</a>
+        <a href="conditions-vente.html">Conditions de vente</a>
+        <a href="garantie-retour.html">Garantie et retours</a>
         <a href="mentions-legales.html">Mentions légales</a>
       </p>
     </div>
   </div>
 </footer>
 
-<script src="assets/site.js?v=8"></script>
+<script src="assets/site.js?v=9"></script>
 </body>
 </html>

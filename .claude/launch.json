@@ -6,6 +6,18 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["electron-vite", "dev", "--rendererOnly"],
       "port": 5173
+    },
+    {
+      "name": "mobile-web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8899", "--directory", "mobile-web"],
+      "port": 8899
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "site"],
+      "port": 8080
     }
   ]
 }

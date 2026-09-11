@@ -739,7 +739,7 @@ ul.boite .d { display: block; color: var(--muted); font-size: .92rem; margin-top
    16. PIED DE PAGE
    ========================================================================== */
 .site-foot { background: var(--paper-2); border-top: 1px solid var(--line); padding-block: clamp(40px, 6vw, 68px) 30px; margin-top: clamp(40px, 6vw, 80px); }
-.foot-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: clamp(24px, 4vw, 48px); }
+.foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: clamp(24px, 4vw, 48px); }
 .foot-grid > div > p { color: var(--muted); font-size: .92rem; }
 .foot-grid h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .12em; color: var(--ocre); margin-bottom: 12px; }
 .foot-grid ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
@@ -782,4 +782,163 @@ ul.boite .d { display: block; color: var(--muted); font-size: .92rem; margin-top
 /* Respect de « mouvement réduit » : on coupe les animations décoratives */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+
+
+/* ==========================================================================
+   18. AJOUTS 2026-09-09 (correctifs transverses)
+   Note Beta déplacée, barre d'achat collante, capture d'email, chiffres du
+   hero produit, série limitée, file des témoignages.
+   ========================================================================== */
+
+/* --- Note Beta déplacée (V6) : plus de bandeau plein écran ; l'info vit ici,
+   au niveau des sections Plans / fiche produit. --- */
+.beta-note {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--warn-bg); border: 1px solid var(--line);
+  border-left: 4px solid var(--ocre); border-radius: var(--r);
+  padding: 13px 18px; margin: 20px 0; font-size: .92rem; color: var(--ink);
+}
+.beta-note b {
+  color: var(--ocre); text-transform: uppercase; letter-spacing: .07em;
+  font-size: .72rem; flex: none; padding-top: 2px;
+}
+.beta-note p { margin: 0; color: var(--ink); }
+
+/* --- Barre d'achat collante (V5) : accueil + fiche produit, mobile inclus.
+   Masquée au départ, révélée par assets/site.js après le 1er défilement. --- */
+.sticky-buy {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  border-top: 1px solid var(--line-strong);
+  box-shadow: 0 -6px 22px rgba(20, 38, 57, .12);
+  transform: translateY(115%); transition: transform .28s ease; will-change: transform;
+}
+.sticky-buy.show { transform: translateY(0); }
+.sb-inner { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding-block: 10px; }
+.sb-info { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.sb-prix { font-family: "Fraunces", serif; font-weight: 600; font-size: 1.35rem; color: var(--sail); }
+.sb-dev { font-family: "Mulish", sans-serif; font-weight: 700; font-size: .7rem; color: var(--muted); margin-left: 5px; letter-spacing: .04em; }
+.sb-rassure { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sticky-buy .btn { flex: none; }
+@media (max-width: 520px) { .sb-rassure { display: none; } .sb-inner { gap: 12px; } .sb-prix { font-size: 1.2rem; } }
+
+/* --- Capture d'email « Prévenez-moi » (V2) : Netlify Forms + pot de miel. --- */
+.capture {
+  position: relative;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: clamp(20px, 3vw, 28px);
+  box-shadow: var(--shadow-sm); max-width: 580px;
+}
+.capture.center { margin-inline: auto; }
+.capture h3 { margin: 0 0 .3em; }
+.capture > p { color: var(--muted); margin: 0 0 14px; }
+.capture-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.capture-row input[type="email"] {
+  flex: 1 1 220px; font: inherit; color: var(--ink);
+  background: var(--surface-2); border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-pill); padding: 12px 18px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.capture-row input[type="email"]:focus { outline: none; border-color: var(--sail); box-shadow: 0 0 0 3px var(--sail-tint); }
+.capture .hp { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden; }
+.capture-note { font-size: .8rem; color: var(--muted); margin: 12px 0 0; }
+.capture-note a { color: var(--sail); }
+
+/* --- Chiffres du hero produit (C4) : délai / retour / garantie, près du prix. --- */
+.pb-stats {
+  display: flex; flex-wrap: wrap; gap: 12px 22px;
+  margin: 14px 0 0; padding-top: 14px; border-top: 1px dashed var(--line-strong);
+}
+.pb-stats div { display: flex; flex-direction: column; line-height: 1.15; }
+.pb-stats .n { font-family: "Fraunces", serif; font-weight: 600; font-size: 1.08rem; color: var(--ink); }
+.pb-stats .l { font-size: .74rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+
+/* --- Série limitée (V4) : structure seulement, le nombre reste un marqueur. --- */
+.limited {
+  display: inline-flex; align-items: center; gap: 11px;
+  background: var(--ocre-soft); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 9px 18px; font-weight: 700; font-size: .92rem;
+}
+.limited .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ocre); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ocre) 25%, transparent); }
+
+/* --- File des témoignages (C8) : places réservées, aucun faux avis. --- */
+.temoignages-soon { display: grid; gap: var(--gap); grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 820px) { .temoignages-soon { grid-template-columns: 1fr; } }
+.temoin-carte { background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); padding: 24px; }
+.temoin-carte .pill { margin-bottom: 14px; }
+.temoin-carte p { color: var(--muted); margin: 0; }
+.temoin-vide { height: 10px; border-radius: 6px; background: var(--surface-2); margin: 9px 0; }
+.temoin-vide.court { width: 60%; }
+
+/* ============================================================================
+   POLICES AUTO-HÉBERGÉES (ajouté 2026-09-10)
+   ----------------------------------------------------------------------------
+   Fraunces (titres) et Mulish (corps) étaient chargées depuis Google Fonts, ce
+   qui retardait l'affichage et faisait sortir une requête vers un tiers. Les
+   fichiers .woff2 sont maintenant servis depuis assets/fonts/ (aucun appel
+   externe). Les deux familles sont des polices variables : un seul fichier par
+   sous-ensemble couvre toute la plage de graisses.
+     - Fraunces : graisses 400 à 600, normal + italique.
+     - Mulish   : graisses 400 à 800 (normal).
+   Sous-ensembles inclus : latin + latin-ext (couvrent le français et les
+   langues européennes). Les unicode-range évitent de télécharger un fichier
+   inutile. font-display: swap → le texte reste lisible pendant le chargement.
+   Les font-family ("Fraunces", "Mulish") utilisées plus haut ne changent pas.
+   ============================================================================ */
+
+/* --- Fraunces — normal --- */
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/fraunces-latin-400-600-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/fraunces-latinext-400-600-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* --- Fraunces — italique --- */
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/fraunces-latin-400-600-italic.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/fraunces-latinext-400-600-italic.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* --- Mulish — normal (variable 400→800) --- */
+@font-face {
+  font-family: "Mulish";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('fonts/mulish-latin-400-800.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Mulish";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('fonts/mulish-latinext-400-800.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }

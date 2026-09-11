@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cosa fa IRIS — controllare il computer con la voce — VELA</title>
+<meta name="description" content="Cosa sa fare IRIS, onestamente, con il piano richiesto: la parola di attivazione « Dis-moi Iris », il controllo del PC con la voce, le routine e i promemoria, una memoria locale, la lettura dello schermo, la fotocamera. IRIS agisce su comando, mai di propria iniziativa — un registro tiene traccia di tutto.">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
+
+<link rel="canonical" href="https://velaglass.ca/it/fonctionnalites.html">
+<link rel="alternate" hreflang="fr" href="https://velaglass.ca/fonctionnalites.html">
+<link rel="alternate" hreflang="en" href="https://velaglass.ca/en/fonctionnalites.html">
+<link rel="alternate" hreflang="es" href="https://velaglass.ca/es/fonctionnalites.html">
+<link rel="alternate" hreflang="it" href="https://velaglass.ca/it/fonctionnalites.html">
+<link rel="stylesheet" href="/assets/style.css?v=9">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VELA">
+<meta property="og:locale" content="it_IT">
+<meta property="og:title" content="Cosa fa IRIS — controllare il computer con la voce — VELA">
+<meta property="og:description" content="Cosa sa fare IRIS, onestamente, con il piano richiesto: parola di attivazione « Dis-moi Iris », controllo del PC con la voce, routine, memoria locale, lettura dello schermo, fotocamera. IRIS agisce su comando; un registro tiene traccia di tutto.">
+<meta property="og:url" content="https://velaglass.ca/it/fonctionnalites.html">
+<meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+<meta property="og:image:width" content="900">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="Occhiali VELA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cosa fa IRIS — controllare il computer con la voce — VELA">
+<meta name="twitter:description" content="Cosa sa fare IRIS, onestamente, con il piano richiesto. IRIS agisce su comando, mai di propria iniziativa; un registro tiene traccia di tutto.">
+<meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+
+<!-- JSON-LD : breadcrumb (BreadcrumbList). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/it/index.html" },
+    { "@type": "ListItem", "position": 2, "name": "Cosa fa IRIS", "item": "https://velaglass.ca/it/fonctionnalites.html" }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#contenu">Vai al contenuto</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-micro" viewBox="0 0 24 24">
+    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
+    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
+  </symbol>
+  <symbol id="i-son" viewBox="0 0 24 24">
+    <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
+    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
+  </symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24">
+    <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
+    <path d="M8.4 7 10 4.2h4L15.6 7"/><circle cx="12" cy="13.3" r="3.5"/>
+  </symbol>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M3 10.6 12 3.6l9 7"/><path d="M5 9.4V20h14V9.4"/><path d="M9.6 20v-5.4h4.8V20"/>
+  </symbol>
+  <symbol id="i-fais" viewBox="0 0 24 24">
+    <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
+    <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
+  </symbol>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
+  <symbol id="i-chaine" viewBox="0 0 24 24">
+    <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
+    <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
+  </symbol>
+  <symbol id="i-quebec" viewBox="0 0 24 24">
+    <path d="M12 21.4C7 17.7 4.2 14 4.2 9.6a7.8 7.8 0 0 1 15.6 0c0 4.4-2.8 8.1-7.8 11.8Z"/>
+    <circle cx="12" cy="9.6" r="2.6"/>
+  </symbol>
+  <symbol id="i-access" viewBox="0 0 24 24">
+    <circle cx="12" cy="4.2" r="2"/>
+    <path d="M4.5 8.2h15"/><path d="M12 7.4v6.2"/><path d="M12 13.6 8.4 21"/><path d="M12 13.6 15.6 21"/>
+  </symbol>
+  <symbol id="i-oeil" viewBox="0 0 24 24">
+    <path d="M2.5 12S6 5.6 12 5.6 21.5 12 21.5 12 18 18.4 12 18.4 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3.2"/>
+  </symbol>
+</svg>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="/it/index.html">
+      <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Il logo di VELA: una vela">
+        <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+        <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <nav class="site-lang" aria-label="Langue / Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
+  <a href="/index.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
+  <a href="/en/index.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
+  <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+  <a href="/it/index.html" hreflang="it" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">IT</a>
+</nav>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigazione principale">
+      <a href="/it/lunettes.html">Gli occhiali</a>
+      <a href="/it/fonctionnalites.html" aria-current="page">Cosa fa IRIS</a>
+      <a href="/it/accessibilite.html">Accessibilità</a>
+      <a href="/it/plans.html">Piani</a>
+      <a href="/it/confidentialite.html">Privacy</a>
+      <a href="/it/contact.html" class="nav-cta">Contatti</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <!-- =============================================================== hero -->
+  <section class="hero">
+    <svg class="hero-voile-bg" viewBox="0 0 120 158" aria-hidden="true" focusable="false">
+      <path class="hv-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+      <path class="hv-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+    </svg>
+    <div class="wrap">
+      <p class="eyebrow">Cosa fa IRIS</p>
+      <h1>Controllare il computer con la voce.</h1>
+      <p class="lead">
+        IRIS agisce sul tuo computer, con la voce, <strong>solo quando lo chiedi</strong>.
+        Ecco cosa sa fare — e, più in basso, ciò che ancora non esiste.
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="/it/plans.html">Confronta i piani</a>
+        <a class="btn" href="/it/confidentialite.html">Come puoi verificare</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================= video indossata (lifestyle) -->
+  <section class="band">
+    <div class="wrap narrow">
+      <figure class="viz" style="margin-block:0">
+        <div class="pv-plaque">
+          <video src="/assets/videos/vela-rue.mp4"
+                 poster="/assets/photos/lunettes-trois-quarts.jpg"
+                 muted loop playsinline autoplay preload="metadata"
+                 aria-label="Una persona indossa gli occhiali VELA per strada e parla con IRIS."
+                 style="width:100%;border-radius:var(--r);display:block"></video>
+        </div>
+        <figcaption>Fuori come a casa&nbsp;: tutto con la voce.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================= su comando + registro -->
+  <section id="sur-commande">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">La regola, prima di tutto</p>
+        <h2>Su comando. Mai di propria iniziativa.</h2>
+        <p>IRIS agisce solo dopo la tua richiesta. Ogni azione viene annotata nel registro locale, che
+          apri con un clic — e che puoi esportare.</p>
+      </div>
+
+      <figure class="viz viz-voice">
+        <div class="vs">
+          <div class="vs-row vs-ask">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
+            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
+            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, apri le mie email.&nbsp;»</span></p>
+          </div>
+          <div class="vs-row vs-do">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-fais"/></svg></span>
+            <p>IRIS apre l’applicazione — perché l’hai chiesto, e per nient’altro.</p>
+          </div>
+          <div class="vs-row vs-log">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
+            <p>Annotato nel registro&nbsp;: <span class="mono">azione — verificabile</span>.</p>
+          </div>
+        </div>
+        <figcaption>La richiesta, l’azione, la traccia — sul tuo dispositivo.</figcaption>
+      </figure>
+
+      <p class="actions" style="justify-content:center">
+        <a class="btn" href="/it/confidentialite.html">Come funziona la verifica</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================= come funziona -->
+  <section class="band">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Come funziona</p>
+        <h2>Tutto avviene sul tuo PC.</h2>
+        <p><strong>IRIS funziona sul tuo PC Windows — deve essere acceso perché gli occhiali
+          funzionino.</strong> Gli occhiali comunicano con il computer via Bluetooth&nbsp;; niente va
+          su Internet.</p>
+      </div>
+
+      <figure class="viz" style="margin-top:8px">
+        <svg class="arch-svg" viewBox="0 0 820 230" role="img"
+             aria-label="Schema: gli occhiali VELA si collegano al tuo computer via Bluetooth. IRIS funziona su questo computer. Niente va su Internet: i tuoi dati restano da te."
+             style="width:100%;height:auto;max-width:760px;display:block;margin-inline:auto">
+          <title>Come circolano i tuoi dati</title>
+          <desc>Gli occhiali si collegano via Bluetooth al tuo computer, dove funziona IRIS. Nessun dato va su Internet.</desc>
+
+          <!-- Riquadro 1 : gli occhiali -->
+          <rect x="16" y="70" width="196" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2"/>
+          <text x="114" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Occhiali</text>
+          <text x="114" y="136" text-anchor="middle" font-size="13" fill="currentColor" opacity="0.72">microfono · audio · fotocamera</text>
+
+          <!-- Freccia 1 : Bluetooth, nei due sensi -->
+          <text x="262" y="102" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">Bluetooth</text>
+          <line x1="220" y1="116" x2="300" y2="116" stroke="currentColor" stroke-width="2"/>
+          <polygon points="300,111 312,116 300,121" fill="currentColor"/>
+          <line x1="312" y1="134" x2="232" y2="134" stroke="currentColor" stroke-width="2"/>
+          <polygon points="232,129 220,134 232,139" fill="currentColor"/>
+
+          <!-- Riquadro 2 : il tuo PC (IRIS) -->
+          <rect x="312" y="56" width="216" height="122" rx="16" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="2.5"/>
+          <text x="420" y="102" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Il tuo PC</text>
+          <text x="420" y="128" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor">IRIS</text>
+          <text x="420" y="150" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.72">tutto resta qui</text>
+
+          <!-- Freccia 2 : barrata, niente esce -->
+          <line x1="528" y1="118" x2="610" y2="118" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6"/>
+          <circle cx="569" cy="118" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <line x1="559" y1="108" x2="579" y2="128" stroke="currentColor" stroke-width="2.5"/>
+          <text x="569" y="152" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Niente esce</text>
+
+          <!-- Riquadro 3 : Internet / il cloud -->
+          <rect x="626" y="70" width="178" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 6" opacity="0.55"/>
+          <text x="715" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" opacity="0.6">Internet</text>
+          <text x="715" y="134" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.55">nessun dato</text>
+        </svg>
+        <figcaption>Occhiali → Bluetooth → il tuo PC (IRIS). Niente va su Internet.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================= capacità, per gruppo -->
+  <section id="capacites">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Ogni giorno</p>
+        <h2>Tu parli. Lei esegue.</h2>
+        <p>La maggior parte funziona sul tuo dispositivo, senza connessione. Le risposte libere del
+          servizio di IA online arrivano <span class="pill warn">Prossimamente</span>.</p>
+      </div>
+
+      <div class="galerie" style="margin-bottom:26px">
+        <figure>
+          <div class="pv-plaque">
+            <img src="/assets/photos/lunettes-trois-quarts.jpg"
+                 srcset="/assets/photos/lunettes-trois-quarts-450.jpg 450w, /assets/photos/lunettes-trois-quarts.jpg 900w"
+                 sizes="(max-width:560px) 100vw, (max-width:900px) 50vw, 33vw"
+                 width="900" height="900" loading="lazy" decoding="async"
+                 alt="Gli occhiali VELA visti di tre quarti, aste aperte, su sfondo chiaro.">
+          </div>
+          <figcaption>Tu dici, IRIS agisce sul PC.</figcaption>
+        </figure>
+        <figure>
+          <div class="pv-plaque">
+            <img src="/assets/photos/lunettes-face.jpg"
+                 srcset="/assets/photos/lunettes-face-450.jpg 450w, /assets/photos/lunettes-face.jpg 900w"
+                 sizes="(max-width:560px) 100vw, (max-width:900px) 50vw, 33vw"
+                 width="900" height="900" loading="lazy" decoding="async"
+                 alt="Gli occhiali VELA visti di fronte, montatura nera spessa, su sfondo chiaro.">
+          </div>
+          <figcaption>Il microfono e l’audio sono nella montatura.</figcaption>
+        </figure>
+      </div>
+
+      <div class="grid grid-3">
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
+          <h3>Ascolto e dialogo</h3>
+          <p>«&nbsp;Dis-moi Iris&nbsp;», e la conversazione prosegue senza ripetere la parola di attivazione.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg></span>
+          <h3>Voce e riconoscimento, in locale</h3>
+          <p>Parla e ti ascolta offline&nbsp;: nessun dato vocale va altrove.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-fais"/></svg></span>
+          <h3>Agire sul computer</h3>
+          <p>Aprire un’applicazione o un sito, cercare un file, digitare&nbsp;: controlla il PC con la voce.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
+          <h3>Routine e promemoria</h3>
+          <p>Una frase riesegue una sequenza di azioni&nbsp;; il promemoria viene detto ad alta voce all’ora stabilita.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
+          <h3>Una memoria locale</h3>
+          <p>Le tue preferenze vengono ricordate e richiamate quando serve — conservate sul dispositivo.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg></span>
+          <h3>Fotocamera&nbsp;: la foto con la voce</h3>
+          <p>«&nbsp;Scatta una foto&nbsp;»&nbsp;: una spia si accende, l’immagine viene archiviata sul tuo PC.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
+          <h3>Leggere e controllare lo schermo</h3>
+          <p>Legge ad alta voce il testo mostrato e fa clic su un’etichetta che indichi.</p>
+          <span class="pill plan-note">Dal piano Premium</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
+          <h3>Navigazione web assistita</h3>
+          <p>Cercare e seguire una pagina con la voce, con il servizio di IA online.</p>
+          <span class="pill warn plan-note">Dal piano Pro · prossimamente</span>
+        </div>
+
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-quebec"/></svg></span>
+          <h3>In francese, dal Canada</h3>
+          <p>Pensata e scritta in francese, in Canada. Una persona vera risponde alle tue email.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+
+      </div>
+
+      <figure class="viz">
+        <div class="pv-plaque est-sombre">
+          <video src="/assets/videos/vela-camera-led.mp4"
+                 poster="/assets/photos/lunettes-fond-sombre.jpg"
+                 muted loop playsinline autoplay preload="metadata"
+                 aria-label="Primo piano degli occhiali VELA: la spia luminosa si accende quando la fotocamera riprende."
+                 style="width:100%;border-radius:var(--r);display:block"></video>
+        </div>
+        <figcaption>La spia si accende non appena la fotocamera riprende — niente di nascosto.</figcaption>
+      </figure>
+
+      <div class="callout" style="margin-top:26px">
+        <p><strong>Ciò che sblocca un piano superiore è il volume e i modelli online</strong> — non la
+          privacy. Memoria locale, consenso per tipo di dato, indicatore di acquisizione,
+          modalità riservata e registro verificabile ci sono già <strong>dal piano gratuito</strong>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================= accessibilità -->
+  <section class="band" id="accessibilite">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="section-label">Per tutti</p>
+        <h2>La voce come mezzo, mai come ostacolo.</h2>
+        <p>Controllare il computer senza guardarlo, o farsi leggere lo schermo ad alta voce.</p>
+      </div>
+
+      <div class="grid grid-3">
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-access"/></svg></span>
+          <h3>Tutto con la voce</h3>
+          <p>Aprire, scrivere, avviare&nbsp;: portare avanti la giornata senza toccare il mouse.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
+          <h3>Lo schermo, letto ad alta voce</h3>
+          <p>Legge il testo mostrato e fa clic su un’etichetta indicata, per controllare senza vedere lo schermo.</p>
+          <span class="pill plan-note">Dal piano Premium</span>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
+          <h3>E anche per iscritto</h3>
+          <p>Tutto ciò che si dice si può digitare&nbsp;: una conversazione resta consultabile se parlare non è comodo.</p>
+          <span class="pill ok plan-note">Dal piano Gratuito</span>
+        </div>
+      </div>
+
+      <p class="actions" style="justify-content:center;margin-top:24px">
+        <a class="btn" href="/it/accessibilite.html">Scopri di più sull’accessibilità</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================= ciò che ancora non esiste -->
+  <section id="a-venir">
+    <div class="wrap narrow">
+      <p class="section-label">Onestà</p>
+      <h2>Ciò che ancora non esiste.</h2>
+      <p class="lead">Preferiamo dirlo. Nulla di tutto questo è incluso in ciò che paghi oggi.</p>
+      <ul class="check" style="margin-top:18px">
+        <li><strong>Le risposte libere del servizio di IA online</strong> — e la navigazione web — sono in corso di distribuzione. Il resto, che funziona da te, funziona già.</li>
+        <li><strong>Comandare IRIS dal telefono, lontano da casa.</strong> Per ora, un computer acceso deve essere a portata. È il prossimo traguardo.</li>
+        <li><strong>Mac e Linux.</strong> L’installer di oggi è quello per Windows 10 e 11, a 64&nbsp;bit. macOS e Linux sono nella tabella di marcia.</li>
+        <li><strong>La governance aziendale.</strong> Prevista per il piano Aziende&nbsp;: in arrivo.</li>
+      </ul>
+      <p class="actions" style="margin-top:26px">
+        <a class="btn primary" href="/it/plans.html">Confronta i piani</a>
+        <a class="btn" href="/it/confidentialite.html">Vedi la privacy</a>
+      </p>
+      <p class="small muted" style="margin-top:14px">
+        Una domanda su cosa è pronto&nbsp;? Scrivici a
+        <a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a> o al
+        <a href="tel:+18195242804">819&nbsp;524-2804</a>.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="/it/index.html" style="margin-bottom:12px">
+          <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Il logo di VELA: una vela">
+            <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+            <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>La tua voce dà la rotta.<br>IRIS tiene il timone.</p>
+        <nav class="foot-social" aria-label="VELA sui social">
+          <a href="https://www.instagram.com/vela_iris2026/" target="_blank" rel="noopener noreferrer me">Instagram</a>
+          <a href="https://www.linkedin.com/in/vela-glass-427361431/" target="_blank" rel="noopener noreferrer me">LinkedIn</a>
+          <a href="https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw" target="_blank" rel="noopener noreferrer me">YouTube</a>
+        </nav>
+      </div>
+      <div>
+        <h3>Il prodotto</h3>
+        <ul>
+          <li><a href="/it/lunettes.html">Gli occhiali VELA</a></li>
+          <li><a href="/it/fonctionnalites.html">Cosa fa IRIS</a></li>
+          <li><a href="/it/confidentialite.html">Privacy</a></li>
+          <li><a href="/it/plans.html">Piani e prezzi</a></li>
+          <li><a href="/it/entreprises.html">Per le aziende</a></li>
+          <li><a href="/it/installer.html">Installare IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Scopri di più</h3>
+        <ul>
+          <li><a href="/it/a-propos.html">Chi siamo</a></li>
+          <li><a href="/it/feuille-de-route.html">Tabella di marcia</a></li>
+          <li><a href="/presse.html">Stampa</a></li>
+          <li><a href="/it/faq.html">Domande frequenti</a></li>
+          <li><a href="/it/accessibilite.html">Accessibilità</a></li>
+          <li><a href="/garantie-retour.html">Garanzia e resi</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Contattaci</h3>
+        <ul>
+          <li><a href="/suivi.html">Traccia il mio ordine</a></li>
+          <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="/it/contact.html">Modulo di contatto</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS versione 0.1.0, per Windows 10 e 11 (64&nbsp;bit).</p>
+      <p class="foot-legal">
+        <a href="/politique-confidentialite.html">Informativa sulla privacy</a>
+        <a href="/conditions-vente.html">Condizioni di vendita</a>
+        <a href="/garantie-retour.html">Garanzia e resi</a>
+        <a href="/mentions-legales.html">Note legali</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js?v=9"></script>
+</body>
+</html>

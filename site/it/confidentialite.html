@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — la prova, non la promessa — VELA</title>
+<meta name="description" content="Il pilastro della trasparenza di VELA: ogni acquisizione e ogni invio viene annotato in un registro che verificate voi stessi, con un clic. Elaborazione locale in modo predefinito, una spia quando la fotocamera riprende, consenso per tipo di dato, modalità riservata.">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
+
+<link rel="canonical" href="https://velaglass.ca/it/confidentialite.html">
+<link rel="alternate" hreflang="fr" href="https://velaglass.ca/confidentialite.html">
+<link rel="alternate" hreflang="en" href="https://velaglass.ca/en/confidentialite.html">
+<link rel="alternate" hreflang="es" href="https://velaglass.ca/es/confidentialite.html">
+<link rel="alternate" hreflang="it" href="https://velaglass.ca/it/confidentialite.html">
+<link rel="stylesheet" href="/assets/style.css?v=9">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VELA">
+<meta property="og:locale" content="it_IT">
+<meta property="og:title" content="Privacy — la prova, non la promessa — VELA">
+<meta property="og:description" content="Ogni acquisizione e ogni invio viene annotato in un registro che verificate voi stessi, con un clic. Elaborazione locale in modo predefinito, una spia quando la fotocamera riprende, consenso per tipo di dato.">
+<meta property="og:url" content="https://velaglass.ca/it/confidentialite.html">
+<meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+<meta property="og:image:width" content="900">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="Occhiali VELA">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Privacy — la prova, non la promessa — VELA">
+<meta name="twitter:description" content="Un registro che verificate voi stessi, con un clic. I vostri dati restano sul vostro computer — niente nel cloud in modo predefinito.">
+<meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
+
+<!-- JSON-LD : breadcrumb (BreadcrumbList). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/it/" },
+    { "@type": "ListItem", "position": 2, "name": "Privacy", "item": "https://velaglass.ca/it/confidentialite.html" }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#contenu">Vai al contenuto</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-micro" viewBox="0 0 24 24">
+    <rect x="9" y="2.6" width="6" height="11.4" rx="3"/>
+    <path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18v3.4"/><path d="M8.6 21.4h6.8"/>
+  </symbol>
+  <symbol id="i-son" viewBox="0 0 24 24">
+    <path d="M4.4 9.4h3.2L12 5.6v12.8L7.6 14.6H4.4Z"/>
+    <path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8"/><path d="M18.4 7.2a7.2 7.2 0 0 1 0 9.6"/>
+  </symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24">
+    <rect x="2.4" y="7" width="19.2" height="12.6" rx="2.6"/>
+    <path d="M8.4 7 10 4.2h4L15.6 7"/><circle cx="12" cy="13.3" r="3.5"/>
+  </symbol>
+  <symbol id="i-local" viewBox="0 0 24 24">
+    <path d="M3 10.6 12 3.6l9 7"/><path d="M5 9.4V20h14V9.4"/><path d="M9.6 20v-5.4h4.8V20"/>
+  </symbol>
+  <symbol id="i-fais" viewBox="0 0 24 24">
+    <path d="M5 3.2 11.6 18.9 13.8 12.6 20.1 10.4Z"/>
+    <path d="M15.6 15.4 20.4 20.2"/><path d="M4.4 8.4H2.2"/><path d="M8.4 4.4V2.2"/>
+  </symbol>
+  <symbol id="i-memoire" viewBox="0 0 24 24">
+    <circle cx="6" cy="16.6" r="2.2"/><circle cx="12" cy="6.4" r="2.2"/><circle cx="18.4" cy="15" r="2.2"/>
+    <path d="M7.5 14.8 10.7 8.4"/><path d="M13.6 8.1 17.1 13.2"/><path d="M8.2 16.9 16.2 15.4"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.6 12.6 9.5 17.4 19.4 6.6"/></symbol>
+  <symbol id="i-chaine" viewBox="0 0 24 24">
+    <path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.9-2.9a4 4 0 0 0-5.7-5.7l-1.7 1.7"/>
+    <path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.9 2.9a4 4 0 0 0 5.7 5.7l1.7-1.7"/>
+  </symbol>
+  <symbol id="i-quebec" viewBox="0 0 24 24">
+    <path d="M12 21.4C7 17.7 4.2 14 4.2 9.6a7.8 7.8 0 0 1 15.6 0c0 4.4-2.8 8.1-7.8 11.8Z"/>
+    <circle cx="12" cy="9.6" r="2.6"/>
+  </symbol>
+  <symbol id="i-access" viewBox="0 0 24 24">
+    <circle cx="12" cy="4.2" r="2"/>
+    <path d="M4.5 8.2h15"/><path d="M12 7.4v6.2"/><path d="M12 13.6 8.4 21"/><path d="M12 13.6 15.6 21"/>
+  </symbol>
+  <symbol id="i-oeil" viewBox="0 0 24 24">
+    <path d="M2.5 12S6 5.6 12 5.6 21.5 12 21.5 12 18 18.4 12 18.4 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3.2"/>
+  </symbol>
+</svg>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="/it/index.html">
+      <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Il logo di VELA: una vela">
+        <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+        <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+      </svg>
+      <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+    </a>
+    <nav class="site-lang" aria-label="Langue / Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
+  <a href="/index.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
+  <a href="/en/index.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
+  <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+  <a href="/it/index.html" hreflang="it" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">IT</a>
+</nav>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav" class="site-nav" aria-label="Navigazione principale">
+      <a href="/it/lunettes.html">Gli occhiali</a>
+      <a href="/it/fonctionnalites.html">Cosa fa IRIS</a>
+      <a href="/it/accessibilite.html">Accessibilità</a>
+      <a href="/it/plans.html">Piani</a>
+      <a href="/it/confidentialite.html" aria-current="page">Privacy</a>
+      <a href="/it/contact.html" class="nav-cta">Contatti</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+
+  <!-- ================================================================= hero -->
+  <section class="hero">
+    <svg class="hero-voile-bg" viewBox="0 0 120 158" aria-hidden="true" focusable="false">
+      <path class="hv-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+      <path class="hv-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+    </svg>
+    <div class="wrap">
+      <p class="eyebrow">Privacy · pilastro della trasparenza</p>
+      <h1>Una privacy <em>che si verifica</em>.</h1>
+      <p class="lead">
+        Promettere è facile. IRIS fa il contrario&nbsp;: i vostri dati restano sul vostro computer, e un
+        registro delle attività vi permette di dimostrarlo voi stessi, con un clic. La prova, non la promessa.
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="#preuve">Vedi la verifica</a>
+        <a class="btn" href="/politique-confidentialite.html">Leggi l’informativa sulla privacy</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ==================================================== les quatre piliers -->
+  <section class="tight">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Ciò a cui teniamo</p>
+        <h2>Quattro impegni, anche qui.</h2>
+        <p>Questa è la pagina della trasparenza — ma i quattro reggono insieme.</p>
+      </div>
+      <div class="grid grid-4">
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
+          <h3>Locale</h3>
+          <p>Le vostre conversazioni, le vostre foto, la vostra memoria restano sul vostro computer. Niente parte verso un cloud in modo predefinito.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-quebec"/></svg></span>
+          <h3>Canada e francese</h3>
+          <p>Ideato e scritto qui, prima di tutto in francese. Una persona vera risponde alle vostre email.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-access"/></svg></span>
+          <h3>Accessibilità</h3>
+          <p>Comandare il computer con la voce, o farsi leggere lo schermo ad alta voce. Un modo per riuscirci da soli.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
+          <h3>Trasparenza</h3>
+          <p>Un registro delle attività che verificate voi stessi. Ogni acquisizione, ogni invio vi è annotato.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================== la preuve -->
+  <section class="band" id="preuve">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">La prova, non la promessa</p>
+        <h2>Un registro che verificate voi stessi.</h2>
+        <p>Ogni acquisizione e ogni invio viene annotato in un registro, sul vostro dispositivo. Ne controllate
+          l’integrità con un clic&nbsp;: se una riga fosse stata modificata o rimossa, la verifica fallirebbe.
+          Non è una promessa di progettazione — è una prova di esecuzione.</p>
+      </div>
+
+      <div class="proof" style="margin-bottom:20px">
+        <div class="proof-main">
+          <div class="proof-label">Registro di trasparenza — esempio</div>
+          <div class="proof-state" data-state role="status" aria-live="polite">Catena SHA-256 — non ancora verificata</div>
+          <p class="proof-hint">Ogni voce contiene l’impronta di quella precedente. Modificare o rimuovere una
+            riga spezza la catena, e la verifica lo mostra.</p>
+        </div>
+      </div>
+
+      <div class="demo" data-chain-demo>
+        <div class="demo-head">
+          <span class="grow small muted">Giornata del 3 settembre 2026 · 5 voci</span>
+          <button class="btn primary sm" type="button" data-verify>Verifica la catena</button>
+          <button class="btn sm" type="button" data-tamper>Riscrivi la voce n.&nbsp;2</button>
+          <button class="btn sm" type="button" data-reset hidden>Ripristina</button>
+        </div>
+        <div class="demo-body" data-entries>
+          <p class="small muted">Attivate JavaScript per manipolare questa dimostrazione. Il principio resta lo
+            stesso&nbsp;: ogni riga del registro è sigillata da un’impronta che contiene quella della riga
+            precedente.</p>
+        </div>
+        <p class="demo-status" data-status>Catena SHA-256 — non ancora verificata.</p>
+      </div>
+      <p class="demo-note">
+        Registro di esempio, a scopo illustrativo&nbsp;: queste voci non provengono da alcun utente. Il
+        calcolo delle impronte, però, è quello vero — SHA-256, eseguito in questa pagina, senza inviare nulla da nessuna parte.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================================================== traitement local -->
+  <section id="local">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Elaborazione locale in modo predefinito</p>
+        <h2>Niente parte verso un cloud in modo predefinito.</h2>
+        <p>IRIS gira sul vostro PC. Gli occhiali vi si collegano via Bluetooth. Tutto avviene sul vostro
+          computer&nbsp;: è la contropartita assunta del «&nbsp;tutto resta da voi&nbsp;».</p>
+      </div>
+
+      <figure class="viz" style="margin-top:8px">
+        <svg class="arch-svg" viewBox="0 0 820 230" role="img"
+             aria-label="Schema: gli occhiali VELA si collegano al vostro computer via Bluetooth. IRIS gira su questo computer. Niente parte verso Internet: i vostri dati restano da voi."
+             style="width:100%;height:auto;max-width:760px;display:block;margin-inline:auto">
+          <title>Come circolano i vostri dati</title>
+          <desc>Gli occhiali si collegano via Bluetooth al vostro computer, dove gira IRIS. Nessun dato parte verso Internet.</desc>
+          <rect x="16" y="70" width="196" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2"/>
+          <text x="114" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Occhiali</text>
+          <text x="114" y="136" text-anchor="middle" font-size="13" fill="currentColor" opacity="0.72">microfono · audio · fotocamera</text>
+          <text x="262" y="102" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">Bluetooth</text>
+          <line x1="220" y1="116" x2="300" y2="116" stroke="currentColor" stroke-width="2"/>
+          <polygon points="300,111 312,116 300,121" fill="currentColor"/>
+          <line x1="312" y1="134" x2="232" y2="134" stroke="currentColor" stroke-width="2"/>
+          <polygon points="232,129 220,134 232,139" fill="currentColor"/>
+          <rect x="312" y="56" width="216" height="122" rx="16" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="2.5"/>
+          <text x="420" y="102" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Il vostro PC</text>
+          <text x="420" y="128" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor">IRIS</text>
+          <text x="420" y="150" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.72">tutto resta qui</text>
+          <line x1="528" y1="118" x2="610" y2="118" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6"/>
+          <circle cx="569" cy="118" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <line x1="559" y1="108" x2="579" y2="128" stroke="currentColor" stroke-width="2.5"/>
+          <text x="569" y="152" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Niente esce</text>
+          <rect x="626" y="70" width="178" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 6" opacity="0.55"/>
+          <text x="715" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" opacity="0.6">Internet</text>
+          <text x="715" y="134" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.55">nessun dato</text>
+        </svg>
+        <figcaption>Occhiali → Bluetooth → il vostro PC (IRIS). I vostri dati restano da voi&nbsp;: niente parte verso Internet.</figcaption>
+      </figure>
+
+      <div class="grid grid-2" style="margin-top:26px">
+        <div class="card">
+          <h3>Niente risale fino a noi</h3>
+          <p>Nessuna telemetria, nessuna statistica d’uso, nessun invio automatico. Il servizio locale di IRIS
+            ascolta solo sulla vostra macchina, dietro un token rigenerato a ogni avvio.</p>
+        </div>
+        <div class="card">
+          <h3>Li portate con voi, o li cancellate</h3>
+          <p>Il registro si esporta in JSON o in CSV, e si svuota quando lo decidete voi. I vostri ricordi si
+            modificano uno per uno&nbsp;; una purga rimuove i dati per sempre.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================== garde-fous -->
+  <section class="band">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Quattro salvaguardie</p>
+        <h2>Ciò su cui mantenete il controllo.</h2>
+        <p>Nessuna impostazione nascosta. Ognuna è visibile, reversibile, e annotata nel registro quando cambia.</p>
+      </div>
+      <div class="grid grid-4">
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
+          <h3>Il consenso, per tipo</h3>
+          <p>Testo, audio, immagini, acquisizioni, memoria&nbsp;: niente esce senza il vostro consenso per quel tipo preciso.
+            Ogni interruttore si ritira con un gesto.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
+          <h3>L’indicatore di acquisizione</h3>
+          <p>Appena il microfono, lo schermo o la fotocamera si attivano, compare una spia. Una spia luminosa si accende
+            anche sugli occhiali quando la fotocamera riprende&nbsp;: lo sapete sempre.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
+          <h3>La modalità riservata</h3>
+          <p>Un gesto spegne il microfono. La modalità 100&nbsp;% locale si appoggia a una voce francese offline
+            (Piper) e a un riconoscimento vocale locale (Vosk)&nbsp;: non parte più nulla.</p>
+        </div>
+        <div class="card feat">
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
+          <h3>Sul vostro disco, per la durata che scegliete</h3>
+          <p>Ricordi, messaggi e diari restano sul vostro dispositivo. Fissate voi la durata di conservazione e
+            fate la purga quando meglio credete.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================== l'indicateur de capture -->
+  <section id="temoin">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">La spia di acquisizione</p>
+        <h2>Una spia si accende appena la fotocamera riprende.</h2>
+        <p>Niente avviene di nascosto. La richiesta, l’azione, la traccia&nbsp;: ogni passaggio è visibile, e
+          l’ultimo si annota nel registro che potete verificare.</p>
+      </div>
+
+      <figure class="viz viz-voice">
+        <div class="vs">
+          <div class="vs-row vs-ask">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
+            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
+            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, scatta una foto.&nbsp;»</span></p>
+          </div>
+          <div class="vs-row vs-do">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-camera"/></svg></span>
+            <p>Foto scattata. Una spia luminosa si accende durante l’acquisizione; l’immagine si archivia sul vostro computer.</p>
+          </div>
+          <div class="vs-row vs-log">
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
+            <p>Annotato nel registro&nbsp;: <span class="mono">acquisizione — verificabile</span>.</p>
+          </div>
+        </div>
+        <figcaption>La richiesta, l’azione, la traccia — sul vostro dispositivo, verificabile da voi.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ================================================= et l'écoute, alors ? -->
+  <section class="band">
+    <div class="wrap narrow">
+      <h2>E l’ascolto permanente, allora&nbsp;?</h2>
+      <p>
+        Per sentire «&nbsp;Dis-moi Iris&nbsp;», bisogna pur ascoltare. La vera domanda non è quindi
+        «&nbsp;sta ascoltando&nbsp;?&nbsp;» ma «&nbsp;dove va ciò che sente&nbsp;?&nbsp;».
+      </p>
+      <p>
+        Il riconoscimento vocale può girare interamente sul vostro dispositivo, con un modello francese locale
+        (Vosk). In questo caso, nessun suono parte. E perché un servizio di IA online risponda, viene trasmesso soltanto il testo
+        della vostra richiesta — con il vostro consenso, e annotato nel registro ogni volta.
+      </p>
+      <p class="small muted">
+        Il dettaglio, meccanismo per meccanismo, è nell’
+        <a href="/politique-confidentialite.html">informativa sulla privacy</a>.
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="/it/installer.html">Installa IRIS, gratuitamente</a>
+        <a class="btn" href="/it/fonctionnalites.html">Cosa sa fare IRIS</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="/it/index.html" style="margin-bottom:12px">
+          <svg class="voile" viewBox="0 0 120 158" role="img" aria-label="Il logo di VELA: una vela">
+            <path class="v-foc" d="M 36.5 46.3 L 36.6 158 L 0 158 Z"/>
+            <path class="v-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
+          </svg>
+          <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
+        </a>
+        <p>La vostra voce dà la rotta.<br>IRIS tiene il timone.</p>
+        <nav class="foot-social" aria-label="VELA sui social">
+          <a href="https://www.instagram.com/vela_iris2026/" target="_blank" rel="noopener noreferrer me">Instagram</a>
+          <a href="https://www.linkedin.com/in/vela-glass-427361431/" target="_blank" rel="noopener noreferrer me">LinkedIn</a>
+          <a href="https://www.youtube.com/channel/UCLQ3OFNFoCiRkYGt4YQasHw" target="_blank" rel="noopener noreferrer me">YouTube</a>
+        </nav>
+      </div>
+      <div>
+        <h3>Il prodotto</h3>
+        <ul>
+          <li><a href="/it/lunettes.html">Gli occhiali VELA</a></li>
+          <li><a href="/it/fonctionnalites.html">Cosa fa IRIS</a></li>
+          <li><a href="/it/confidentialite.html">Privacy</a></li>
+          <li><a href="/it/plans.html">Piani e prezzi</a></li>
+          <li><a href="/it/entreprises.html">Per le aziende</a></li>
+          <li><a href="/it/installer.html">Installa IRIS</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Scopri di più</h3>
+        <ul>
+          <li><a href="/it/a-propos.html">Chi siamo</a></li>
+          <li><a href="/it/feuille-de-route.html">Roadmap</a></li>
+          <li><a href="/presse.html">Stampa</a></li>
+          <li><a href="/it/faq.html">Domande frequenti</a></li>
+          <li><a href="/it/accessibilite.html">Accessibilità</a></li>
+          <li><a href="/garantie-retour.html">Garanzia e resi</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Contattaci</h3>
+        <ul>
+          <li><a href="/suivi.html">Traccia il mio ordine</a></li>
+          <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>
+          <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
+          <li><a href="/it/contact.html">Modulo di contatto</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <p>© 2026 VELA. IRIS versione 0.1.0, per Windows 10 e 11 (64&nbsp;bit).</p>
+      <p class="foot-legal">
+        <a href="/politique-confidentialite.html">Informativa sulla privacy</a>
+        <a href="/conditions-vente.html">Condizioni di vendita</a>
+        <a href="/garantie-retour.html">Garanzia e resi</a>
+        <a href="/mentions-legales.html">Note legali</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js?v=9"></script>
+</body>
+</html>

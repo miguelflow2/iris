@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 150" role="img" aria-label="Logo de VELA IRIS : une voile, puis le mot VELAIRIS">
+  <title>VELA IRIS</title>
+  <!-- La voile : grand-voile en encre (#142639), foc en ocre (#C17A34). Même tracé que le favicon et l'en-tête du site. -->
+  <g transform="translate(14,18) scale(0.715)">
+    <path d="M 36.5 46.3 L 36.6 158 L 0 158 Z" fill="#C17A34"/>
+    <path d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z" fill="#142639"/>
+  </g>
+  <!-- Le mot-symbole. Police sérif du système en secours (la marque utilise Fraunces). -->
+  <text x="118" y="97" font-family="Georgia, 'Times New Roman', 'Fraunces', serif" font-size="62" letter-spacing="2">
+    <tspan fill="#142639" font-weight="600">VELA</tspan><tspan fill="#0C6E77" font-weight="400" dx="8">IRIS</tspan>
+  </text>
+</svg>
