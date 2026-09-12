@@ -34,3 +34,10 @@ serveur/outils/
 serveur/*-service.exe
 serveur/journaux/
 serveur/donnees/
+
+# relais en service : compteurs, journaux, binaire du superviseur
+serveur/relais-service.exe
+serveur/.venv/
+
+# voix Piper (modèles binaires, ~60 Mo) : téléchargeables, jamais versionnés
+backend/piper_voices/

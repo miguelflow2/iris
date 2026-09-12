@@ -942,3 +942,105 @@ ul.boite .d { display: block; color: var(--muted); font-size: .92rem; margin-top
   src: url('fonts/mulish-latinext-400-800.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
+
+
+/* ==========================================================================
+   19. THÈME « COSMOS » (2026-09-12)
+   Surcouche sombre, étoilée, holographique — inspirée de l'app HeyCyan.
+   Placée en FIN de fichier : par ordre de source, ces règles priment. Elle
+   rehabille TOUT le site (toutes langues) sans toucher au HTML, car tout passe
+   par les jetons de couleur. Sélecteur à specificité ≥ (0,1,1) pour battre les
+   blocs sombres/systeme définis plus haut → cosmos partout, quel que soit l'OS.
+   ========================================================================== */
+:root,
+:root:not([data-theme="light"]),
+:root[data-theme="light"] {
+  --paper:#08080e; --paper-2:#0e0e18; --surface:#16161f; --surface-2:#1e1e2b;
+  --ink:#f2f3fb; --muted:#9aa0b4; --ink-soft:#9aa0b4;
+  --line:#262633; --line-strong:#38384e;
+  --sail:#8ea6ff; --sail-strong:#b0c0ff; --sail-tint:rgba(142,166,255,.16); --sky:#7fd8ff;
+  --ocre:#d7a9ff; --ocre-soft:rgba(215,169,255,.16);
+  --ok:#5cc98d; --ok-bg:rgba(92,201,141,.15);
+  --warn:#e2b567; --warn-bg:rgba(226,181,103,.15);
+  --err:#ef8079; --err-bg:rgba(239,128,121,.15);
+  --btn-fg:#0a0a12;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 10px 30px rgba(0,0,0,.5);
+  --shadow-lg:0 26px 64px rgba(0,0,0,.62);
+  --glow-sail:0 0 0 1px rgba(142,166,255,.28);
+  --holo:linear-gradient(115deg,#f7c9e4 0%,#cbb6ff 46%,#a9e7ff 100%);
+  color-scheme: dark;
+}
+
+/* Nébuleuse + champ d'étoiles, fixés derrière tout le contenu */
+body::before {
+  content:""; position:fixed; inset:0; z-index:-2; pointer-events:none;
+  background:
+    radial-gradient(1100px 680px at 6% -10%, rgba(120,150,255,.14), transparent 60%),
+    radial-gradient(1000px 640px at 104% 4%, rgba(190,120,255,.12), transparent 58%),
+    radial-gradient(900px 900px at 50% 118%, rgba(70,180,220,.08), transparent 60%);
+}
+body::after {
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; opacity:.55;
+  background-image:
+    radial-gradient(1.4px 1.4px at 14% 20%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1.2px 1.2px at 72% 12%, rgba(210,225,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 42% 32%, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1.6px 1.6px at 86% 40%, rgba(200,215,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 22% 60%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1.3px 1.3px at 62% 66%, rgba(220,230,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 33% 82%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.4px 1.4px at 92% 76%, rgba(190,205,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 6% 46%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 50% 90%, rgba(255,255,255,.55), transparent 60%);
+  background-size: 900px 900px;
+  animation: cosmos-drift 90s linear infinite;
+}
+@keyframes cosmos-drift { from { background-position: 0 0; } to { background-position: 0 -900px; } }
+
+/* Héros : halo en croissant + nébuleuse plus marqués */
+.hero, .hero-produit { position: relative; }
+.hero::before, .hero-produit::before {
+  content:""; position:absolute; left:-12%; bottom:-54%; width:130%; height:132%;
+  z-index:0; pointer-events:none; transform: rotate(-7deg); filter: blur(1px);
+  background: radial-gradient(closest-side, transparent 61%, rgba(150,170,255,.10) 65%, rgba(170,150,255,.26) 70%, transparent 74%);
+}
+.hero .wrap, .hero-produit .wrap { position: relative; z-index: 2; }
+.hero-glow {
+  opacity: 1 !important;
+  background:
+    radial-gradient(60% 60% at 78% 24%, rgba(142,166,255,.18), transparent 70%),
+    radial-gradient(52% 52% at 14% 86%, rgba(215,169,255,.16), transparent 72%) !important;
+}
+.hero-voile-bg { opacity: .06; }
+
+/* Boutons holographiques (les appels à l'action principaux) */
+.btn.primary, .site-nav a.nav-cta {
+  background: var(--holo); color:#141020; border-color: transparent;
+  box-shadow: 0 8px 30px -12px rgba(190,170,255,.6), inset 0 0 0 1px rgba(255,255,255,.16);
+}
+.btn.primary:hover, .site-nav a.nav-cta:hover {
+  background: var(--holo); color:#141020; filter: brightness(1.06); transform: translateY(-2px);
+  box-shadow: 0 14px 42px -12px rgba(190,170,255,.72);
+}
+
+/* Emphase des titres : texte en dégradé holographique */
+h1 em, h2 em, .hp-titre em {
+  background: var(--holo); -webkit-background-clip: text; background-clip: text;
+  color: transparent; font-style: normal;
+}
+
+/* Coche des listes : trait cyan sur pastille teintée cosmos */
+ul.check li::before {
+  background-color: rgba(142,166,255,.16);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9e7ff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E");
+}
+
+/* Dégradés secondaires repeints en cosmos */
+.rappel-achat { background: linear-gradient(120deg, rgba(142,166,255,.12), rgba(215,169,255,.10)); }
+.beta-banner  { background: linear-gradient(90deg, rgba(215,169,255,.12), rgba(142,166,255,.12)); }
+.sticky-buy   { box-shadow: 0 -8px 26px rgba(0,0,0,.5); }
+
+/* Cartes : léger halo au survol pour la vie */
+.card, .pv-plaque, .capture, .demo, .table-scroll { transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.card.feat:hover { border-color: rgba(142,166,255,.4); box-shadow: 0 18px 44px -22px rgba(142,166,255,.5); }
