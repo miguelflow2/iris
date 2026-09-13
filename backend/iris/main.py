@@ -25,7 +25,8 @@ from .config import AGENT_NAMES, Settings, write_env_value
 from .connectors import ConnectorError, agent_catalog, build_connector
 from .consent import DATA_TYPES, ConsentGate
 from .courriel import Postier
-from .traduction import ServiceTraduction
+from .personas import PERSONAS, liste_publique as personas_publics
+from .traduction import NOMS_LANGUES, ServiceTraduction
 from .db import Database
 from .telephonie import Telephoniste
 from .telecommande import Telecommande
@@ -518,6 +519,10 @@ class ModelDownloadIn(BaseModel):
     language: str | None = None
 
 
+class TraductionIn(BaseModel):
+    langue: str = "en"  # code court (en, es, pt, it, de) ou nom dit (« espagnol ») ; voir traduction.NOMS_LANGUES
+
+
 class ElevenKeyIn(BaseModel):
     api_key: str
 
@@ -726,6 +731,8 @@ def create_app(
     @app.patch("/api/settings", dependencies=auth)
     def patch_settings(patch: SettingsPatch):
         data = patch.model_dump()
+        if "persona" in data and data["persona"] not in PERSONAS:
+            raise HTTPException(400, "rôle inconnu")
         before = ctx.settings.user
         restart_voice = ctx.voice.running and any(
             k in data and data[k] != getattr(before, k) for k in ("wake_word", "language", "stt_engine", "local_only")
@@ -753,6 +760,13 @@ def create_app(
             if ctx.settings.user.voice_autostart:
                 ctx.voice.start()
         ctx.hub.publish("privacy.mode", enabled=enabled)
+
+    # ------------------------------------------------------------------ rôles (personas)
+    @app.get("/api/personas", dependencies=auth)
+    def get_personas():
+        """Les rôles proposés par l'interface et celui en vigueur. Le choix se fait par
+        PATCH /api/settings {"persona": "<id>"} — un identifiant inconnu est refusé (400)."""
+        return {"personas": personas_publics(), "courant": ctx.settings.user.persona}
 
     # ------------------------------------------------------------------ agents
     def agent_view(name: str) -> dict:
@@ -998,6 +1012,47 @@ def create_app(
     def voice_stop_speaking():
         ctx.tts.stop()
         return {"stopped": True}
+
+    # ------------------------------------------------------------------ mode traduction
+    # Le mode a trois entrées : la voix (« Iris, traduis ce qu'il dit »), l'outil du modèle, et
+    # l'interface — celle-ci. Toutes passent par le même service ; c'est le fil audio de l'écoute
+    # (VoiceListener._boucle_traduction) qui écoute réellement l'interlocuteur.
+    @app.get("/api/traduction/etat", dependencies=auth)
+    def traduction_etat():
+        return {
+            **ctx.traduction.etat(),
+            "langues": [{"code": c, "nom": n} for c, n in NOMS_LANGUES.items()],
+            "empechement": ctx.traduction.pourquoi_impossible(),
+            "ecoute": ctx.voice.running,
+        }
+
+    @app.post("/api/traduction/demarrer", dependencies=auth)
+    def traduction_demarrer(body: TraductionIn):
+        """Ouvre le mode depuis l'interface, et fait en sorte qu'IRIS écoute VRAIMENT.
+
+        Armer le service (`ctx.traduction.demarrer`) ne suffit pas : l'écoute route la parole vers la
+        traduction sur son propre fil audio, et ce fil doit tourner. Donc :
+        1. si l'écoute est arrêtée, on la démarre par `ctx.voice.start()`, qui applique lui-même
+           TOUS les verrous (micro coupé, mode confidentiel, lunettes exigées) et refuse sinon ;
+        2. on ouvre le mode par `ctx.voice.demander_traduction`, qui ajoute au service la seule
+           condition qu'il ignore — le consentement « audio brut » — et qui dit honnêtement quand
+           le micro n'écoute pas ;
+        3. le fil audio, lui, voit le mode armé au bloc suivant et entre dans la boucle de
+           traduction sans attendre un mot d'activation (VoiceListener._wake_cycle).
+        La phrase rendue est toujours vraie : elle annonce la traduction, ou dit pourquoi il n'y en a pas."""
+        empeche = ctx.traduction.pourquoi_impossible()
+        if not empeche and ctx.consent.is_granted("audio_raw") and not ctx.voice.running:
+            ctx.voice.start()  # les verrous sont dans start() ; s'il refuse, `running` reste faux et il dit pourquoi
+        reponse = ctx.voice.demander_traduction(body.langue)
+        phrase = (reponse.get("phrase") or "").strip()
+        if reponse.get("ouvert") and not ctx.voice.running and ctx.voice.error:
+            phrase = f"{phrase} {ctx.voice.error}".strip()
+        return {"phrase": phrase, "ecoute": ctx.voice.running, **ctx.traduction.etat()}
+
+    @app.post("/api/traduction/arreter", dependencies=auth)
+    def traduction_arreter():
+        """Ferme le mode. La boucle d'écoute le voit au bloc suivant (0,25 s) et revient au mot d'activation."""
+        return {"phrase": ctx.traduction.arreter("demande"), "ecoute": ctx.voice.running, **ctx.traduction.etat()}
 
     @app.get("/api/voice/voices", dependencies=auth)
     def voice_voices():

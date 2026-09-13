@@ -198,21 +198,30 @@ def test_les_mots_darret_sont_ceux_des_reglages(app):
 # Décision commerciale de Miguel : « il faudrait sans faute qu'IRIS marche quand on est connecté
 # avec des lunettes », pour que personne ne se dise que l'application suffit. Le verrou porte sur
 # le pilotage vocal, pas sur le chat écrit.
-def test_sans_lunettes_la_voix_refuse_de_demarrer(app):
+def test_sans_lunettes_la_voix_refuse_de_demarrer(app, monkeypatch):
     voice = app.state.ctx.voice
     voice.glasses_connected = lambda: False
+    # Des lunettes CONNUES de l'appareil (appairées) mais hors de portée : c'est le seul cas où le
+    # verrou mord. Sans paire connue, la voix s'ouvrirait comme le chat écrit (voir le carve-out).
+    app.state.ctx.settings.update({"glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True}})
+    monkeypatch.setattr(voice, "mic_devices", lambda: [])
     etat = voice.start()
     assert etat["state"] == "off"
     assert "lunettes" in (etat["error"] or "").lower()
     assert voice.running is False
 
 
-def test_le_message_dit_ce_qui_reste_possible(app):
-    """Un refus sec ferait croire à une panne. Le chat écrit, lui, reste ouvert."""
+def test_le_message_nomme_les_lunettes_vela(app, monkeypatch):
+    """Un refus sec ferait croire à une panne. Depuis le 7 septembre 2026, le verrou est strict :
+    le message ne promet plus le chat écrit (lui aussi verrouillé), il dit quoi faire — brancher
+    les lunettes VELA — et rien de plus."""
     voice = app.state.ctx.voice
     voice.glasses_connected = lambda: False
+    app.state.ctx.settings.update({"glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True}})
+    monkeypatch.setattr(voice, "mic_devices", lambda: [])
     message = voice.lunettes_requises()
-    assert "VELA" in message and "écrit" in message
+    assert "VELA" in message and "lunettes" in message.lower()
+    assert "écrit" not in message, "le chat écrit n'est plus une porte de sortie"
 
 
 def test_avec_les_lunettes_le_verrou_seffance(app):
@@ -221,24 +230,48 @@ def test_avec_les_lunettes_le_verrou_seffance(app):
     assert voice.lunettes_requises() is None
 
 
-def test_lechappatoire_de_demonstration_existe_et_reste_hors_interface(app):
-    """Sur scène, une déconnexion Bluetooth ne doit pas faire taire IRIS."""
+def test_lechappatoire_de_demonstration_debloque_et_est_dans_linterface(app):
+    """Sur scène, une déconnexion Bluetooth ne doit pas faire taire IRIS. Décision de Miguel du
+    7 septembre 2026 : le verrou devient strict (voix ET chat) mais l'échappatoire « mode
+    démonstration » est désormais EXPOSÉE — Miguel doit pouvoir l'activer d'un clic si les lunettes
+    lâchent pendant sa présentation. Elle vit dans l'écran Lunettes."""
     voice = app.state.ctx.voice
     voice.glasses_connected = lambda: False
     app.state.ctx.settings.update({"demo_sans_lunettes": True})
     assert voice.lunettes_requises() is None
 
-    reglages = Path(__file__).resolve().parents[2] / "renderer" / "src" / "views" / "SettingsView.tsx"
-    assert "demo_sans_lunettes" not in reglages.read_text(encoding="utf-8"),         "ce réglage ne doit apparaître dans aucun écran vu par un client"
+    vue = Path(__file__).resolve().parents[2] / "renderer" / "src" / "screens" / "LunettesScreen.tsx"
+    assert "demo_sans_lunettes" in vue.read_text(encoding="utf-8"), "Miguel doit pouvoir l'activer d'un clic"
 
 
-def test_letat_publie_la_raison_du_verrou(app):
+def test_letat_publie_la_raison_du_verrou(app, monkeypatch):
     """L'interface doit pouvoir expliquer le silence plutôt que de laisser croire à un bogue."""
     voice = app.state.ctx.voice
     voice.glasses_connected = lambda: False
+    app.state.ctx.settings.update({"glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True}})
+    monkeypatch.setattr(voice, "mic_devices", lambda: [])
     assert voice.status()["glasses_required"]
     voice.glasses_connected = lambda: True
     assert voice.status()["glasses_required"] is None
+
+
+def test_un_pc_neuf_sans_lunettes_jamais_connues_ne_bloque_pas_la_voix(app, monkeypatch):
+    """Le carve-out, aligné sur le chat écrit (ChatService._verrou_lunettes_chat) : sur un appareil
+    qui n'a JAMAIS connu de lunettes VELA (ni nom ni adresse), la voix ne se verrouille pas — sinon
+    une application fraîchement installée verrait le chat répondre mais la voix exiger des lunettes
+    qu'elle n'a jamais eues. Le verrou ne mord que sur des lunettes CONNUES mais absentes."""
+    voice = app.state.ctx.voice
+    voice.glasses_connected = lambda: False  # aucune preuve de présence
+    monkeypatch.setattr(voice, "mic_devices", lambda: [])  # et aucune preuve par le micro
+    # Défaut d'une install neuve : require_glasses actif, démo éteinte, aucune paire mémorisée.
+    app.state.ctx.settings.update({"require_glasses": True, "demo_sans_lunettes": False,
+                                    "glasses": {"name": "", "address": "", "auto_connect": False}})
+    assert voice.lunettes_presentes() is False
+    assert voice.lunettes_requises() is None, "aucune paire jamais connue : on laisse passer, comme le chat"
+    assert voice.status()["glasses_required"] is None
+    # Dès qu'une paire est mémorisée mais absente, le verrou reprend.
+    app.state.ctx.settings.update({"glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True}})
+    assert voice.lunettes_requises() is not None
 
 
 # --------------------------------------------------------------------------- la preuve de presence

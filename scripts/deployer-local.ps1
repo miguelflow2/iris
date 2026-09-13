@@ -32,7 +32,7 @@ if (-not $complet) {
 }
 if (-not (Test-Path $cible)) {
     Write-Host "IRIS n'est pas installee dans $cible." -ForegroundColor Red
-    Write-Host "Lancez l'installateur une premiere fois : release\IRIS-Setup-<version>.exe"
+    Write-Host "Lancez l'installateur une premiere fois : release\IRIS-Setup.exe"
     exit 1
 }
 

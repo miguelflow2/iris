@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import time
+import re
 from pathlib import Path
 
 import pytest
@@ -129,7 +130,8 @@ def test_les_tentatives_repetees_sont_bloquees(comptes: Comptes):
 # --------------------------------------------------------------------------- la première ouverture
 # Constat réel : IRIS démarrait sans jamais demander de compte, et la protection du téléphone
 # restait donc désactivée sans que personne le sache. L'assistant d'accueil doit la réclamer.
-ACCUEIL = Path(__file__).resolve().parents[2] / "renderer" / "src" / "views" / "Onboarding.tsx"
+# Depuis la refonte du 2026-09-12, l'assistant d'accueil vit dans renderer/src/screens/.
+ACCUEIL = Path(__file__).resolve().parents[2] / "renderer" / "src" / "screens" / "Onboarding.tsx"
 
 
 def test_laccueil_demande_un_compte():
@@ -142,11 +144,19 @@ def test_laccueil_demande_un_compte():
 def test_on_ne_peut_pas_passer_letape_sans_mot_de_passe():
     """Un bouton « Ignorer » suffirait à ramener le problème d'origine."""
     source = ACCUEIL.read_text(encoding="utf-8")
-    debut = source.index("{step === 1 ? (")
+    # Le contenu de l'étape Compte, puis son pied de page (le seul endroit où l'on avance).
+    debut = source.index("{step === 1 && compte === null ? (")
     etape = source[debut:source.index("{step === 2 ? (")]
-    assert "disabled={compteOccupe || !mdp.trim()}" in etape
-    for echappatoire in ("Ignorer", "Passer", "Plus tard"):
-        assert echappatoire not in etape, f"échappatoire trouvée : {echappatoire}"
+    debut_pied = re.search(r"\{step === 1\s*\? pied\(", source).start()
+    pied = source[debut_pied:source.index("{step === 2 ? pied(")]
+    assert "disabled={compte === null || compteOccupe || !mdp.trim()}" in pied
+    for bloc in (etape, pied):
+        for echappatoire in ("Ignorer", "Passer", "Plus tard"):
+            assert echappatoire not in bloc, f"échappatoire trouvée : {echappatoire}"
+    # L'étape suivante ne s'atteint qu'après un compte créé ou déverrouillé.
+    assert source.count("setStep(2)") == 2, "setStep(2) : après validerCompte, et le retour depuis l'étape 3"
+    valider = source[source.index("const validerCompte"):source.index("} catch (err)", source.index("const validerCompte"))]
+    assert "setStep(2)" in valider and valider.index("await api.post") < valider.index("setStep(2)")
 
 
 def test_le_mot_de_passe_nest_jamais_renvoye_au_serveur_de_licences():

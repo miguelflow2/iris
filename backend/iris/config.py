@@ -181,6 +181,10 @@ class UserSettings(BaseModel):
     audio_input_device: str = ""  # "" = micro par défaut ; sinon (partie du) nom du périphérique, ex. lunettes appairées
     audio_output_device: str = ""  # "" = sortie par défaut ; sinon (partie du) nom, ex. sortie Hands-Free des lunettes
     user_name: str = ""
+    # Rôle (persona) choisi dans l'interface : une consigne de TON ajoutée au prompt système, et
+    # rien d'autre. Identifiants dans iris/personas.py ("defaut" = aucune consigne) ; la route
+    # PATCH /api/settings refuse un identifiant inconnu.
+    persona: str = "defaut"
     wake_word: str = MOT_ACTIVATION
     # Variantes acceptées : ce que la reconnaissance entend parfois à la place du mot d'activation,
     # et « Iris » tout court, pour qui trouve le nom complet trop long. Tous ces mots existent dans

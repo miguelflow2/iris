@@ -1,0 +1,27 @@
+/* Cartes de choix de l'écran « Enregistrement audio » : une carte anthracite cliquable,
+   bordure bleue quand c'est le mode en vigueur. */
+.carte-choix {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  width: 100%; text-align: left; border: 2px solid transparent; cursor: pointer;
+  transition: border-color 0.14s var(--ease), background 0.14s var(--ease);
+}
+.carte-choix:hover { background: var(--surface-2); }
+.carte-choix.actif { border-color: var(--blue); }
+.carte-choix:disabled { opacity: 0.55; cursor: default; }
+.carte-choix .titre { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; line-height: 1.25; }
+.carte-choix .detail { color: var(--muted); font-size: 15px; font-weight: 600; line-height: 1.4; }
+
+.avert-audio {
+  background: var(--warn-soft); color: var(--warn); border-radius: var(--r-md);
+  padding: 12px 14px; font-size: 14.5px; font-weight: 600; line-height: 1.45;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+}
+
+.manuel-audio { background: var(--surface); border-radius: var(--r-xl); padding: 4px 20px 14px; }
+.manuel-audio summary { cursor: pointer; padding: 14px 0; font-size: 18px; font-weight: 700; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+.manuel-audio summary::-webkit-details-marker { display: none; }
+.manuel-audio summary::after { content: "›"; font-size: 24px; color: var(--text-2); transform: rotate(90deg); transition: transform 0.15s var(--ease); }
+.manuel-audio[open] summary::after { transform: rotate(-90deg); }
+.manuel-audio .champ { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+.manuel-audio .champ label { font-weight: 700; font-size: 16px; }
+.manuel-audio .champ .aide { color: var(--muted); font-size: 13.5px; font-weight: 500; line-height: 1.4; }

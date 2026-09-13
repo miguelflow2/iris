@@ -16,6 +16,7 @@ from .consent import DATA_TYPES, ConsentGate, ConsentRequired, LocalOnlyMode
 from .db import Database
 from .events import EventHub
 from .memory import MemoryService
+from .personas import consigne as consigne_persona
 from .plans import QuotaExceeded
 from .quick_commands import match as match_quick_command
 from .router import AgentRouter, NoAgentAvailable, _has
@@ -620,7 +621,7 @@ class ChatService:
             except Exception:
                 opts = options
             out: list[str] = []
-            system = "Tu traduis en français du Québec naturel et parlé. Réponds uniquement par la traduction, sans commentaire."
+            system = "Tu traduis en français canadien naturel et parlé. Réponds uniquement par la traduction, sans commentaire."
             async for chunk in connector.stream([{"role": "user", "content": text}], system, None, None, opts):
                 if chunk.kind == "text":
                     out.append(chunk.text)
@@ -702,7 +703,7 @@ class ChatService:
             f"bureau qui contrôle l'ordinateur à la voix, retient ce qui compte pour l'utilisateur, et garde ses "
             f"données chez lui.{who} Tu réponds en {lang}, de façon naturelle, directe et concise.",
             (
-                "RÈGLE ABSOLUE DE LANGUE : tu écris uniquement en français (français du Québec, naturel), du premier au dernier mot. "
+                "RÈGLE ABSOLUE DE LANGUE : tu écris uniquement en français (français canadien, naturel), du premier au dernier mot. "
                 "Jamais d'anglais, jamais de mélange des deux langues, même si les résultats d'outils, les pages web, les fichiers ou "
                 "les noms de commandes sont en anglais : tu traduis. Emploie le mot français quand il existe (« fichier », « dossier », "
                 "« navigateur », « c'est fait »). Seuls les noms propres et les noms de produits restent tels quels. "
@@ -729,6 +730,16 @@ class ChatService:
             "d'où vient la réponse. Si tu ne peux pas vérifier, dis clairement que tu ne sais pas et propose de "
             "chercher — ne devine jamais en donnant l'air d'être sûre.",
         ]
+        # Rôle choisi dans l'interface (iris/personas.py) : une couleur de ton, placée APRÈS l'identité
+        # et les règles absolues, et qui le dit elle-même. Vide pour « defaut » et pour un identifiant
+        # inconnu (réglage corrompu) : IRIS reste alors exactement ce qu'elle est.
+        style = consigne_persona(getattr(u, "persona", "defaut"))
+        if style:
+            parts.append(
+                "Style demandé par l'utilisateur : " + style.strip() + " Ce style ne change ni la langue, ni "
+                "l'honnêteté, ni ce que tu es : les règles ci-dessus (langue, faits et incertitude, identité) "
+                "priment toujours sur lui."
+            )
         if source == "voice":
             parts.append(
                 "Cette demande a été dictée à la voix : réponds vite, en une ou deux phrases orales, sans markdown ni liste. "

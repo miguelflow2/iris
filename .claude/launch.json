@@ -3,20 +3,36 @@
   "configurations": [
     {
       "name": "renderer",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["electron-vite", "dev", "--rendererOnly"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "node_modules/electron-vite/bin/electron-vite.js",
+        "dev",
+        "--rendererOnly"
+      ],
       "port": 5173
     },
     {
       "name": "mobile-web",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8899", "--directory", "mobile-web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8899",
+        "--directory",
+        "mobile-web"
+      ],
       "port": 8899
     },
     {
       "name": "site",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "site"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8080",
+        "--directory",
+        "site"
+      ],
       "port": 8080
     }
   ]

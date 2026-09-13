@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray } from 'electron'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { basename, extname, join } from 'path'
 import { BackendProcess, type BackendInfo } from './backend'
@@ -52,11 +52,14 @@ if (!gotLock) {
 app.setAppUserModelId('com.vela.iris')
 
 function createMainWindow(): BrowserWindow {
+  // Format portrait, façon téléphone : c'est ainsi que l'interface est dessinée. La hauteur
+  // s'adapte aux petits écrans ; l'utilisateur peut agrandir, la colonne reste centrée.
+  const zone = screen.getPrimaryDisplay().workAreaSize
   const win = new BrowserWindow({
-    width: 1280,
-    height: 840,
-    minWidth: 980,
-    minHeight: 640,
+    width: Math.min(640, zone.width),
+    height: Math.min(980, zone.height - 40),
+    minWidth: 420,
+    minHeight: 600,
     show: false,
     title: 'IRIS',
     backgroundColor: '#0c0c0c',

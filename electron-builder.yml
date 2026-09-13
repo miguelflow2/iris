@@ -27,7 +27,7 @@ win:
     - target: nsis
       arch: [x64]
   icon: build/icon.ico
-  artifactName: IRIS-Setup-${version}.${ext}
+  artifactName: IRIS-Setup.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

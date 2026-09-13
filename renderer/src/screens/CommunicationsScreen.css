@@ -1,0 +1,21 @@
+/* Repli « Configuration avancée (Twilio) » : sans marqueur natif du navigateur,
+   chevron de la fondation qui pivote à l'ouverture. */
+.communications > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 4px 0;
+  border-radius: 8px;
+  transition: color 0.14s var(--ease);
+}
+.communications > summary::-webkit-details-marker { display: none; }
+.communications > summary::marker { content: ''; }
+.communications > summary:hover { color: var(--text); }
+.communications > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.communications > summary .chevron { flex: none; display: grid; place-items: center; transform: rotate(-90deg); transition: transform 0.2s var(--ease); }
+.communications > summary .chevron svg { width: 18px; height: 18px; }
+.communications[open] > summary .chevron { transform: rotate(0deg); }

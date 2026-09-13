@@ -1,5 +1,6 @@
 import React from 'react'
 import { Voile } from './Voile'
+import { Holo } from './ui'
 
 /**
  * Écrans de démarrage et de panne du service IRIS.
@@ -48,15 +49,15 @@ export function Splash({ logPath }: { logPath?: string }): JSX.Element {
   return (
     <div className="splash">
       <Voile taille={60} variante="clair" className="voile lueur" anime titre="VELA" />
-      <div>IRIS se prépare…</div>
+      <div style={{ color: 'var(--text)', fontSize: 22, fontWeight: 700 }}>IRIS se prépare…</div>
       <div className="progress indet" style={{ width: 220 }}>
         <div />
       </div>
-      <div className="small muted" style={{ maxWidth: 420, textAlign: 'center' }}>{patience}</div>
+      <div className="muted" style={{ maxWidth: 420, textAlign: 'center', fontSize: 15, lineHeight: 1.4 }}>{patience}</div>
       {secondes >= 25 ? (
-        <div className="row" style={{ gap: 8 }}>
-          <button className="btn sm primary" onClick={() => void relancerService()}>Relancer IRIS</button>
-          {logPath ? <button className="btn sm" onClick={() => ouvrirDetail(logPath)}>Voir le détail technique</button> : null}
+        <div className="row" style={{ gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Holo variante="blanc" taille="petit" onClick={() => void relancerService()}>Relancer IRIS</Holo>
+          {logPath ? <button type="button" className="btn" onClick={() => ouvrirDetail(logPath)}>Voir le détail technique</button> : null}
         </div>
       ) : null}
     </div>
@@ -87,16 +88,16 @@ export function Failure({ down, message, logPath }: { down: boolean; message: st
       {/* La voile garde sa variante claire — l'encre disparaîtrait sur ce fond sombre.
           C'est le halo, rouge, qui dit la panne. */}
       <Voile taille={54} variante="clair" className="voile panne" titre="VELA" />
-      <div style={{ color: 'var(--text)', fontSize: 16 }}>
+      <div style={{ color: 'var(--text)', fontSize: 18, fontWeight: 600, maxWidth: 460, lineHeight: 1.35 }}>
         {down ? 'IRIS a été interrompue. Elle redémarre toute seule, quelques secondes.' : 'IRIS n’a pas réussi à démarrer sur cet ordinateur.'}
       </div>
-      <div className="row" style={{ gap: 8 }}>
-        <button className="btn primary" disabled={enCours} onClick={() => void relancer()}>
+      <div className="row" style={{ gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Holo variante="blanc" taille="petit" disabled={enCours} onClick={() => void relancer()}>
           {enCours ? 'Relance en cours…' : 'Relancer IRIS'}
-        </button>
-        {logPath ? <button className="btn" onClick={() => ouvrirDetail(logPath)}>Ouvrir le rapport d’erreur</button> : null}
+        </Holo>
+        {logPath ? <button type="button" className="btn" onClick={() => ouvrirDetail(logPath)}>Ouvrir le rapport d’erreur</button> : null}
       </div>
-      {echec ? <div className="small" style={{ color: 'var(--danger)', maxWidth: 460, textAlign: 'center' }}>{echec}</div> : null}
+      {echec ? <div className="small" style={{ color: 'var(--red)', maxWidth: 460, textAlign: 'center' }}>{echec}</div> : null}
       <div className="col small muted" style={{ gap: 4, maxWidth: 460, textAlign: 'center' }}>
         <div>Vérifiez qu’aucune autre copie d’IRIS n’est déjà ouverte (icône dans la barre système, près de l’horloge).</div>
         {logPath ? <div className="mono" style={{ wordBreak: 'break-all', opacity: 0.7 }}>{logPath}</div> : null}
@@ -104,7 +105,7 @@ export function Failure({ down, message, logPath }: { down: boolean; message: st
       {message ? (
         <details style={{ maxWidth: 640, textAlign: 'center' }}>
           <summary className="small muted" style={{ cursor: 'pointer' }}>Détail technique</summary>
-          <div className="small mono muted" style={{ marginTop: 8, opacity: 0.75 }}>{message}</div>
+          <div className="small mono muted" style={{ marginTop: 8, opacity: 0.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{message}</div>
         </details>
       ) : null}
     </div>

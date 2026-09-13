@@ -1,7 +1,7 @@
 {
   "name": "iris-desktop",
   "productName": "IRIS",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "IRIS — couche logicielle VELA. Confidentialité locale prouvable, mémoire continue et contrôle vocal de l'ordinateur.",
   "main": "./out/main/index.js",
   "author": "VELA",
