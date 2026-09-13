@@ -14,6 +14,7 @@ import time
 
 from ..config import Settings
 from ..events import EventHub
+from .etirement import Etireur, est_identite, facteur_debit
 from .rotation_cles import CODES_BASCULE, etiquette, pool_elevenlabs
 
 log = logging.getLogger("iris.elevenlabs")
@@ -34,6 +35,25 @@ MODELS = [
 RETRY_AFTER_FAILURE = 120  # s : après une erreur, on repasse sur Windows puis on réessaie (chien de garde)
 QUOTA_THRESHOLDS = (0.8, 0.95, 1.0)  # alertes proactives sur le quota mensuel
 QUOTA_CHECK_EVERY = 8  # phrases lues entre deux vérifications du quota
+# Plage acceptée par voice_settings.speed de l'API text-to-speech v1 (1,0 = vitesse normale).
+# Au-delà, le reste du facteur demandé par tts_rate est appliqué localement (etirement.Etireur).
+# Précision réelle de speed NON MESURÉE (aucun appel réseau depuis les tests) : la voix locale,
+# elle, a été mesurée et son réglage natif ratait la cible de 7 à 40 % (voir piper.py). Si une mesure
+# montre le même défaut ici, mettre VITESSE_API_MIN = VITESSE_API_MAX = 1.0 : tout le facteur
+# passera alors par l'étirement local, dont la durée est exacte.
+VITESSE_API_MIN = 0.7
+VITESSE_API_MAX = 1.2
+
+
+def repartir_vitesse(tts_rate: object) -> tuple[float, float]:
+    """(speed envoyé au moteur, taux d'étirement local restant) pour le réglage tts_rate.
+
+    185 → (1,0 ; 1,0) ; 277 → (1,2 ; 1,25) ; 370 → (1,2 ; 1,667) ; 555 → (1,2 ; 2,5) ; 90 → (0,7 ; 0,695).
+    Le produit des deux vaut toujours le facteur demandé."""
+    facteur = facteur_debit(tts_rate)
+    vitesse = round(min(VITESSE_API_MAX, max(VITESSE_API_MIN, facteur)), 3)
+    reste = facteur / vitesse
+    return vitesse, (1.0 if est_identite(reste) else reste)
 
 # Passe dans la file d'attente comme une phrase, mais n'en est pas une : elle ouvre le périphérique
 # audio sans qu'on entende rien. Un objet, pas une chaîne : une chaîne finirait tôt ou tard
@@ -631,6 +651,12 @@ class ElevenLabsSpeaker:
             "model_id": model,
             "voice_settings": {"stability": 0.55, "similarity_boost": 0.8, "style": 0.0, "use_speaker_boost": True},
         }
+        # Débit : la part que le moteur sait faire lui-même, le reste par étirement local du PCM.
+        # À vitesse normale la requête reste exactement celle d'avant (aucun champ speed ajouté).
+        vitesse, reste = repartir_vitesse(u.tts_rate)
+        if not est_identite(vitesse):
+            body["voice_settings"]["speed"] = vitesse
+        etireur = None if reste == 1.0 else Etireur(reste, SAMPLE_RATE)
         if model in ("eleven_flash_v2_5", "eleven_turbo_v2_5"):
             body["language_code"] = (u.language or "fr")[:2]
         started = time.time()
@@ -647,6 +673,17 @@ class ElevenLabsSpeaker:
                 pool.marquer_epuisee(cle)
                 continue
             break
+        if resp.status_code in (400, 422) and "speed" in body["voice_settings"]:
+            # Requête refusée alors qu'elle porte speed (modèle qui ne le connaît pas, par exemple) :
+            # sans ce second essai, CHAQUE phrase à débit non normal tomberait sur la voix Windows.
+            # On la renvoie sans speed et tout le facteur passe par l'étirement local.
+            log.warning("TTS %s avec speed=%s : nouvel essai sans speed, débit appliqué localement",
+                        resp.status_code, body["voice_settings"]["speed"])
+            resp.close()
+            del body["voice_settings"]["speed"]
+            facteur = facteur_debit(u.tts_rate)
+            etireur = None if est_identite(facteur) else Etireur(facteur, SAMPLE_RATE)
+            resp = self._http().post(url, headers={**self._headers(pool.courante()), "Content-Type": "application/json"}, json=body, stream=True, timeout=(10, 60))
         if resp.status_code < 400:
             pool.apres_usage()  # énoncé réussi : alterner pour le prochain
         if resp.status_code >= 400:
@@ -668,9 +705,11 @@ class ElevenLabsSpeaker:
                 resp.close()
                 raise
             convertisseur = Reechantillonneur(SAMPLE_RATE, taux)
+            interrompu = False
             with out_stream as out:
                 for chunk in resp.iter_content(chunk_size=4800):
                     if self._stop_flag.is_set():
+                        interrompu = True
                         break
                     if not chunk:
                         continue
@@ -680,10 +719,20 @@ class ElevenLabsSpeaker:
                     pending += chunk
                     usable = len(pending) - (len(pending) % 2)  # int16 : nombre pair d'octets
                     if usable:
-                        pret = convertisseur.convertir(pending[:usable])
+                        morceau = pending[:usable]
                         pending = pending[usable:]
+                        if etireur is not None:
+                            # Étiré à 24 kHz, AVANT le rééchantillonnage vers la sortie : l'étireur
+                            # garde quelques millisecondes pour raccorder le morceau suivant.
+                            morceau = etireur.pousser_octets(morceau)
+                        pret = convertisseur.convertir(morceau) if morceau else b""
                         if pret:  # le convertisseur peut garder un morceau trop court pour la suite
                             out.write(pret)
+                if etireur is not None and not interrompu and not self._stop_flag.is_set():
+                    reste_pcm = etireur.vider_octets()  # la fin de la phrase, retenue par l'étireur
+                    pret = convertisseur.convertir(reste_pcm) if reste_pcm else b""
+                    if pret:
+                        out.write(pret)
             resp.close()
 
     def shutdown(self) -> None:

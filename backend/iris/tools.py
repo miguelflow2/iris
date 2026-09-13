@@ -51,6 +51,12 @@ class ToolContext:
     # « chat.confirm », telephonie.py:53 documente déjà le même trou pour le SMS). Ouvrir un modal
     # qu'on ne verra pas, c'est attendre 180 secondes puis refuser en silence.
     source: str = "text"
+    # ServiceAccessibilite (accessibilite.py) : décrire la vue des lunettes ou l'écran, retrouver un
+    # objet dans les souvenirs. None si le module n'est pas branché : les outils le disent.
+    accessibilite: Any = None
+    # SecretStore : l'outil importer_identifiants le lisait (ctx.secrets) sans que le champ existe,
+    # ce qui aurait levé une AttributeError au moment précis de l'import confirmé.
+    secrets: Any = None
 
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:
@@ -296,6 +302,28 @@ TOOL_SPECS: list[ToolSpec] = [
         "d'écrire des octets non prouvés (protège la puce) — relaie alors son explication telle quelle. "
         "reconnaissance=true prépare l'image pour une analyse, qui reste elle aussi locale.",
         _obj({"reconnaissance": {"type": "boolean", "description": "Préparer l'image pour analyse (défaut : non)"}}),
+    ),
+    ToolSpec(
+        "decrire_vue",
+        "Décrit ce que voit la caméra des lunettes VELA, ou l'écran de l'ordinateur, pour une personne qui ne "
+        "voit pas. Modes : scene (« qu'est-ce qu'il y a devant moi »), lecture (texte lu mot pour mot, d'abord "
+        "sur l'appareil), objet (objet ou produit, prix affiché), couleur, billets (billets et pièces canadiens, "
+        "total), personnes (description sans jamais identifier), affichage (numéro de bus, panneau, afficheur), "
+        "ecran (décrire l'écran de l'ordinateur). La photo des lunettes prend quelques secondes : ce n'est pas "
+        "une vision en direct. Rends le texte obtenu tel quel, sans l'embellir ; si l'outil refuse (caméra "
+        "indisponible, consentement, mode local), relaie son explication.",
+        _obj({
+            "mode": {"type": "string", "enum": ["scene", "lecture", "objet", "couleur", "billets", "personnes", "affichage", "ecran"]},
+            "source": {"type": "string", "enum": ["lunettes", "ecran"], "description": "lunettes (défaut) ou ecran"},
+            "question": {"type": "string", "description": "Question précise de l'utilisateur sur l'image, facultatif"},
+        }, ["mode"]),
+    ),
+    ToolSpec(
+        "ou_est_objet",
+        "Cherche dans les souvenirs réels d'IRIS (photos décrites, journal, ce que l'utilisateur a dit) où un "
+        "objet a été vu ou posé pour la dernière fois : « où j'ai posé mes clés ». Ne répond qu'à partir de "
+        "souvenirs datés ; s'il n'y en a pas, l'outil le dit, et tu dois le dire aussi.",
+        _obj({"question": {"type": "string", "description": "La question de l'utilisateur, telle quelle"}}, ["question"]),
     ),
     ToolSpec(
         "traduire_conversation",
@@ -574,7 +602,33 @@ def tool_specs(ctx: ToolContext, *, screen: bool = True, keyboard: bool = True, 
         exclus |= KEYBOARD_TOOLS
     if not web:
         exclus |= WEB_TOOLS
-    return [s for s in specs if s.name not in exclus]
+    specs = [s for s in specs if s.name not in exclus]
+    # Mode 100 % local sans IA locale capable de lire les images : seuls les modes de description
+    # qui ont un chemin local (texte lu, couleur estimée, affichage, texte de l'écran) restent
+    # proposés. On retire les autres du schéma plutôt que de laisser le modèle essayer une porte fermée.
+    if bool(getattr(getattr(getattr(ctx, "settings", None), "user", None), "local_only", False)):
+        service = getattr(ctx, "accessibilite", None)
+        try:
+            possibles = list(service.modes_possibles()) if service is not None else list(MODES_VISION_LOCAUX)
+        except Exception:
+            possibles = list(MODES_VISION_LOCAUX)
+        specs = [_restreindre_modes(s, possibles) if s.name == "decrire_vue" else s for s in specs]
+    return specs
+
+
+# Modes de decrire_vue qui donnent un résultat sans moteur (voir accessibilite.MODES).
+MODES_VISION_LOCAUX = ("lecture", "couleur", "affichage", "ecran")
+
+
+def _restreindre_modes(spec: ToolSpec, modes: list[str]) -> ToolSpec:
+    import copy
+
+    schema = copy.deepcopy(spec.input_schema)
+    enum = schema.get("properties", {}).get("mode", {}).get("enum")
+    if enum is not None:
+        schema["properties"]["mode"]["enum"] = [m for m in enum if m in modes] or list(MODES_VISION_LOCAUX)
+    return ToolSpec(spec.name, spec.description + " En mode 100 % local, seuls ces modes sont possibles : "
+                    + ", ".join(schema["properties"]["mode"]["enum"]) + ".", schema)
 
 
 OCR_INDISPO = (
@@ -797,6 +851,34 @@ async def _run_inner(ctx: ToolContext, name: str, args: dict) -> Any:
                 # Pas d'image reconstituée : on rend le constat honnête (paquets reçus, format à
                 # confirmer), pas un faux succès.
                 return res.constat
+        if name in ("decrire_vue", "ou_est_objet"):
+            # Le service fait tout le travail honnête (consentement, OCR local d'abord, mémoire suspendue,
+            # indicateur de caméra) : l'outil ne fait que relayer, sans parler — le chat lit sa propre réponse.
+            service = getattr(ctx, "accessibilite", None)
+            if service is None:
+                return _err("La description visuelle n'est pas disponible : le module n'est pas branché sur cet appareil.")
+            from fastapi import HTTPException
+
+            try:
+                if name == "decrire_vue":
+                    source = args.get("source") or "lunettes"
+                    if source not in ("lunettes", "ecran"):
+                        source = "lunettes"
+                    r = await service.decrire(args.get("mode", ""), source, question=args.get("question") or None,
+                                              parler=False, memoriser=True)
+                    texte = r["texte"]
+                    if r.get("note"):
+                        texte += f"\n(Limite : {r['note']})"
+                    return texte
+                r = await service.ou_est(args.get("question", ""), parler=False)
+                return r["reponse"]
+            except HTTPException as exc:
+                message = getattr(exc, "message", None) or (
+                    exc.detail.get("message") if isinstance(exc.detail, dict) else str(exc.detail))
+                return _err(str(message))
+            except Exception as exc:
+                # Le détail technique peut contenir un chemin local ou un nom de moteur : pas pour le modèle.
+                return _err(f"Description impossible pour l'instant ({type(exc).__name__}).")
         if name == "retrouver_site":
             from . import historique_web
 

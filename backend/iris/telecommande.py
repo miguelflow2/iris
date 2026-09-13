@@ -10,6 +10,13 @@ Sécurité : opt-in (réglage `telecommande`, désactivé par défaut — une in
 pilotable) ; cloisonné par courriel côté relais ; jeton d'appareil signé ; aucun port ouvert (la
 connexion est sortante). Couper le réglage ferme le canal.
 
+Verrouillage à distance (2026-09-13, verrou.py) : le même canal porte aussi les messages « verrou »
+({action: verrouiller|effacer, code}) venus de la page publique /verrou du relais. La connexion s'ouvre
+donc si `telecommande` OU `verrou_distant_actif` est vrai ; quand seul le second l'est, l'ordinateur
+n'accepte QUE les messages de verrou et refuse toute commande. Le code de secours est vérifié ICI,
+contre son empreinte locale (le relais ne peut pas le vérifier). Pendant qu'IRIS est verrouillée,
+aucune commande distante n'est exécutée.
+
 L'entrée/sortie WebSocket (`run`/`_session`) est isolée de la logique (`_traiter`, `_executer`,
 `_on_confirm`, `confirmer`) pour que cette dernière se teste sans réseau.
 """
@@ -34,6 +41,8 @@ class Telecommande:
         self._reqs: dict[str, str] = {}  # conv_id réel -> req_id (pour router les demandes d'accord)
         self._stop = False
         self._pairing = ""
+        # Service de verrouillage (verrou.VerrouIRIS), posé par routes_confiance ; None = pas de verrou.
+        self.verrou = None
         chat.set_sink_confirm_distant(self._on_confirm)
 
     def pairing(self) -> str:
@@ -73,25 +82,69 @@ class Telecommande:
             return "ws://" + base[len("http://"):] + "/appareil/ws"
         return base + "/appareil/ws"
 
+    def pilotage_permis(self) -> bool:
+        """Le téléphone peut-il envoyer des commandes ? Seulement si l'utilisateur a activé la télécommande."""
+        return bool(getattr(self.settings.user, "telecommande", False))
+
+    def verrou_distant_permis(self) -> bool:
+        return bool(getattr(self.settings.user, "verrou_distant_actif", False))
+
     def actif(self) -> bool:
-        """La télécommande ne tourne que si l'utilisateur l'a activée ET qu'un relais + un jeton
-        existent. Désactivée par défaut : c'est le coupe-circuit."""
+        """Le canal ne s'ouvre que si l'utilisateur a activé la télécommande OU le verrouillage à distance,
+        ET qu'un relais + un jeton existent. Les deux sont désactivés par défaut : c'est le coupe-circuit."""
         return (
-            bool(getattr(self.settings.user, "telecommande", False))
+            (self.pilotage_permis() or self.verrou_distant_permis())
             and not self.settings.user.local_only
             and bool(self.url())
             and bool(self._obtenir_jeton())
         )
 
+    @property
+    def connecte(self) -> bool:
+        return self._ws is not None
+
+    def _verrouillee(self) -> bool:
+        return bool(getattr(self.verrou, "verrouille", False))
+
     # ------------------------------------------------------------------ logique (testable sans réseau)
     async def _traiter(self, msg: dict) -> None:
         """Aiguille un message reçu du relais."""
         t = msg.get("type")
+        boucle = asyncio.get_running_loop()
         if t == "commande":
             req_id = str(msg.get("req_id") or uuid.uuid4().hex)
-            asyncio.get_running_loop().create_task(self._executer(req_id, str(msg.get("texte") or "")))
+            refus = None
+            if not self.pilotage_permis():
+                refus = "La télécommande est désactivée sur cet ordinateur."
+            elif self._verrouillee():
+                refus = "IRIS est verrouillée : aucune commande à distance n'est exécutée."
+            if refus:
+                boucle.create_task(self._envoyer({"type": "resultat", "req_id": req_id, "reponse": refus}))
+                return
+            boucle.create_task(self._executer(req_id, str(msg.get("texte") or "")))
         elif t == "confirm_reponse":
-            self.confirmer(str(msg.get("confirm_id") or ""), bool(msg.get("approved")))
+            if self.pilotage_permis() and not self._verrouillee():
+                self.confirmer(str(msg.get("confirm_id") or ""), bool(msg.get("approved")))
+        elif t == "verrou":
+            req_id = str(msg.get("req_id") or uuid.uuid4().hex)
+            boucle.create_task(self._verrou_distant(req_id, str(msg.get("action") or ""), str(msg.get("code") or "")))
+
+    async def _verrou_distant(self, req_id: str, action: str, code: str) -> None:
+        """Verrouiller ou effacer à la demande de la page /verrou du relais. Le code n'est ni journalisé
+        ni conservé : il est comparé à son empreinte locale, puis oublié."""
+        if not self.verrou_distant_permis():
+            resultat = {"ok": False, "etat": "desactive",
+                        "message": "Le verrouillage à distance est désactivé sur cet ordinateur."}
+        elif self.verrou is None:
+            resultat = {"ok": False, "etat": "indisponible",
+                        "message": "Le verrouillage n'est pas disponible sur cet ordinateur."}
+        else:
+            try:
+                resultat = await self.verrou.commande_distante(action, code)
+            except Exception as exc:  # commande_distante ne lève pas ; défense quand même
+                log.info("telecommande : verrou distant en erreur (%s)", exc)
+                resultat = {"ok": False, "etat": "erreur", "message": "L'ordinateur n'a pas pu exécuter la commande."}
+        await self._envoyer({"type": "resultat", "req_id": req_id, "verrou": True, **resultat})
 
     async def _executer(self, req_id: str, texte: str) -> None:
         """Exécute une commande via toute la boucle d'IRIS, puis renvoie le résultat au téléphone."""
@@ -158,7 +211,7 @@ class Telecommande:
                     await ws.send(json.dumps({"type": "hello", "jeton": jeton, "pairing": code}))
                     premier = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
                     if premier.get("type") != "pret":
-                        continue
+                        raise ConnectionError("le relais n'a pas accepté la connexion")
                     log.info("telecommande : connectee au relais. Code d'appairage a saisir dans le telephone : %s", code)
                     async for brut in ws:
                         if self._stop or not self.actif():  # coupe-circuit

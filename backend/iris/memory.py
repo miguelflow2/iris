@@ -202,6 +202,48 @@ class MemoryService:
         cur = self.db.execute("DELETE FROM memories")
         return cur.rowcount
 
+    def supprimer_plage(self, debut: str | None, fin: str | None) -> int:
+        """Efface les souvenirs créés entre `debut` et `fin` (« oublie ce que tu as retenu hier après-midi »).
+
+        Bornes ISO 8601 : « AAAA-MM-JJ » ou « AAAA-MM-JJTHH:MM[:SS] », avec ou sans fuseau. Sans
+        fuseau, c'est l'heure de l'ordinateur — c'est celle que l'utilisateur a en tête — convertie en
+        UTC, le format de `created_at`. Une date seule en `fin` couvre toute la journée. Au moins une
+        borne est exigée : tout effacer a déjà sa propre route (DELETE /api/memory), et une plage vide
+        ne doit jamais devenir un effacement total par accident. Les souvenirs épinglés sont effacés
+        eux aussi : la demande porte sur une période, pas sur un choix de souvenirs.
+        Lève ValueError sur une borne illisible ou absente."""
+
+        def _borne(valeur: str | None, est_fin: bool) -> str | None:
+            texte = (valeur or "").strip()
+            if not texte:
+                return None
+            date_seule = len(texte) == 10
+            try:
+                moment = datetime.fromisoformat(texte.replace("Z", "+00:00"))
+            except ValueError:
+                raise ValueError(f"date invalide : {texte}")
+            if moment.tzinfo is None:
+                moment = moment.astimezone()  # heure locale de l'ordinateur
+            if date_seule and est_fin:
+                moment += timedelta(days=1)  # fin exclusive : le lendemain à minuit
+            return moment.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+        bas = _borne(debut, False)
+        haut = _borne(fin, True)
+        if bas is None and haut is None:
+            raise ValueError("précisez au moins une borne (debut ou fin)")
+        conditions: list[str] = []
+        params: list[str] = []
+        if bas is not None:
+            conditions.append("created_at >= ?")
+            params.append(bas)
+        if haut is not None:
+            # Fin d'une date seule : exclusive (lendemain minuit). Fin horodatée : inclusive.
+            conditions.append("created_at < ?" if len((fin or "").strip()) == 10 else "created_at <= ?")
+            params.append(haut)
+        cur = self.db.execute(f"DELETE FROM memories WHERE {' AND '.join(conditions)}", params)
+        return max(0, cur.rowcount)
+
     def export(self) -> str:
         return json.dumps(self.list(limit=100000), ensure_ascii=False, indent=2)
 

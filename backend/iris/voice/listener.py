@@ -1667,9 +1667,28 @@ class VoiceListener:
         """« Traduis ce qu'il dit » ouvre-t-il le mode ? Testé avant tout appel au modèle."""
         if not matches_any(texte, MOTS_TRADUCTION):
             return False
+        if self._phrase_interprete(texte):
+            # « mode interprète anglais », « fin de l'interprète » : c'est l'interprète (interception
+            # de priorité 30) qui répond. Sans ce test, « interprète » est un mot de MOTS_TRADUCTION
+            # et la phrase ouvrait la traduction à sens unique — « fin de l'interprète » compris.
+            return False
         # « arrête la traduction », « annule la traduction » : sans ce test, la phrase qui ferme le
         # mode le rouvrirait aussitôt.
         return not (self._est_arret(texte) or matches_any(texte, MOTS_FIN_TRADUCTION))
+
+    def _phrase_interprete(self, texte: str) -> bool:
+        """La phrase appartient-elle à l'interprète ? Une phrase de FERMETURE toujours (elle ne doit
+        jamais ouvrir quoi que ce soit) ; une phrase d'ouverture seulement si l'interprète est branché
+        — sinon la traduction à sens unique reste le meilleur service qu'on puisse rendre."""
+        try:
+            from ..traduction import est_phrase_interprete
+
+            action = est_phrase_interprete(texte)
+        except Exception:
+            return False
+        if action == "arreter":
+            return True
+        return action == "demarrer" and any(nom == "interprete" for _p, nom, _f in list(self._interceptions))
 
     def _langue_demandee(self, texte: str) -> str:
         """« traduis-moi l'espagnol » -> « es ». Vide si aucune langue n'est nommée (défaut : anglais).
@@ -1806,24 +1825,32 @@ class VoiceListener:
         entendu par personne. Le chargement coûte environ deux secondes, une seule fois, juste après
         la phrase de confirmation qu'IRIS vient de dire : le seul moment du mode où deux secondes ne
         se voient pas. `self.engine` n'est PAS touché ; le cycle normal choisit son moteur comme avant."""
-        moteur = self._vosk
+        moteur = self._moteur_local()
         if moteur is None:
-            chemin = stt.model_dir(self.settings.models_dir, self.settings.user.language)
-            if chemin is None:
-                log.warning("traduction sans guetteur de sortie : aucun modèle hors ligne installé")
-                return None
-            try:
-                moteur = stt.VoskEngine(chemin)
-            except Exception as exc:
-                log.warning("traduction sans guetteur de sortie (%s)", exc)
-                return None
-            self._vosk, self._vosk_path = moteur, chemin
+            log.warning("traduction sans guetteur de sortie : aucun modèle hors ligne utilisable")
+            return None
         vocabulaire = [m for m in dict.fromkeys(mots) if m]
         try:
             return moteur.recognizer(vocabulaire) if vocabulaire else None
         except Exception as exc:
             log.warning("guetteur de sortie indisponible (%s)", exc)
             return None
+
+    def _moteur_local(self):
+        """Le modèle hors ligne, chargé ici s'il ne l'était pas (voir `_guetteur_de_sortie`). None sinon."""
+        moteur = self._vosk
+        if moteur is not None:
+            return moteur
+        chemin = stt.model_dir(self.settings.models_dir, self.settings.user.language)
+        if chemin is None:
+            return None
+        try:
+            moteur = stt.VoskEngine(chemin)
+        except Exception as exc:
+            log.warning("modèle hors ligne non chargé (%s)", exc)
+            return None
+        self._vosk, self._vosk_path = moteur, chemin
+        return moteur
 
     def _sortie_traduction(self, texte: str, mute_words: list[str]) -> str:
         """« Iris, arrête » -> la raison de sortie ; « » si ce n'est pas un ordre.
@@ -1844,7 +1871,13 @@ class VoiceListener:
             return "muet"
         trouve, reste = contains_wake(phrase, self.settings.user.wake_word,
                                       aliases=list(self.settings.user.wake_aliases or []))
-        if trouve and self._est_arret(reste):
+        suite = reste.split()
+        # « Iris, fin de l'interprète » : la grammaire restreinte rend « iris fin de arrete » ou
+        # « iris stop dis arrete » (mesuré le 13 septembre 2026 sur une voix de synthèse) — le mot
+        # qui SUIT le nom suffit alors, le reste de la phrase ne décode pas proprement. Le nom reste
+        # exigé en tête : sans lui, rien de ce qui vient après ne ferme le mode.
+        premier_mot_arret = bool(suite) and len(suite) <= 3 and (suite[0] == "fin" or self._est_arret(suite[0]))
+        if trouve and (self._est_arret(reste) or premier_mot_arret):
             log.info("mode traduction : sortie demandée (%r)", phrase)
             return "demande"
         return ""
@@ -1876,12 +1909,16 @@ class VoiceListener:
         import concurrent.futures
 
         langue = getattr(service, "langue_entendue", "en") or "en"
+        interprete = bool(getattr(service, "bidirectionnel", False))
         phrases = wake_phrases(self.settings.user.wake_word, list(self.settings.user.wake_aliases or []))
         stop_words = [normalize(w) for w in (self.settings.user.stop_words or []) if normalize(w)]
         mute_words = [normalize(w) for w in (self.settings.user.mute_words or []) if normalize(w)]
-        guetteur = self._guetteur_de_sortie(phrases + stop_words + mute_words)
-        self._set_state("traduction", langue=langue)
-        self.hub.publish("voice.traduction", etat="ecoute", langue=langue, guetteur=guetteur is not None)
+        # « Iris, fin de l'interprète » : « fin » est dans le vocabulaire du petit modèle, « interprète »
+        # n'y entre pas proprement en grammaire restreinte (mesuré) — `_sortie_traduction` s'en contente.
+        guetteur = self._guetteur_de_sortie(phrases + stop_words + mute_words + (["fin"] if interprete else []))
+        self._set_state("traduction", langue=langue, **({"interprete": True} if interprete else {}))
+        self.hub.publish("voice.traduction", etat="ecoute", langue=langue, guetteur=guetteur is not None,
+                         mode="interprete" if interprete else "traduction")
         self._drain()
 
         segment: list[bytes] = []
@@ -1893,7 +1930,11 @@ class VoiceListener:
         dernier_verrou = 0.0  # dernière vérification du verrou des lunettes (voir la boucle)
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="iris-traduction")
         en_vol = None
-        en_attente = b""
+        en_attente: tuple | None = None  # (pcm,) en traduction ; (pcm, jeton, fin_parole) en interprète
+        # Mode interprète : la reconnaissance locale décode chaque phrase PENDANT qu'elle est dite
+        # (traduction.DecodeurContinu), pour que « qui a parlé ? » ne coûte pas la durée de la phrase.
+        decodeur = None
+        decodeur_essaye = False
         try:
             while not self._stop.is_set():
                 if not getattr(service, "actif", False):
@@ -1917,7 +1958,7 @@ class VoiceListener:
                 if en_vol is not None and en_vol.done():
                     en_vol = None
                 if en_vol is None and en_attente:
-                    en_vol, en_attente = pool.submit(self._traduire_segment, en_attente), b""
+                    en_vol, en_attente = pool.submit(self._traduire_segment, *en_attente), None
                 data = self._read()
                 if data is None:
                     continue
@@ -1929,12 +1970,22 @@ class VoiceListener:
                     if sortie:
                         raison = sortie
                         break
-                if self.tts.is_speaking:
+                # L'interprète peut s'ouvrir alors que la traduction simple tourne déjà (et l'inverse) :
+                # le mode se relit à chaque bloc — un test de booléen.
+                interprete = bool(getattr(service, "bidirectionnel", False))
+                if interprete and decodeur is None and not decodeur_essaye:
+                    decodeur_essaye = True
+                    decodeur = self._decodeur_interprete()
+                if self.tts.is_speaking or self._voix_autre_parle(service):
                     # Alternat, assumé et écrit dans le code : pendant qu'IRIS lit une traduction, ce
                     # qui entre dans le micro est SA voix, et l'accumuler la ferait se traduire
                     # elle-même. Le guetteur, lui, continue de tourner — sa grammaire ne peut rendre
-                    # qu'un mot d'arrêt isolé, ce dont `_wait_speech` vit depuis des mois.
+                    # qu'un mot d'arrêt isolé, ce dont `_wait_speech` vit depuis des mois. En mode
+                    # interprète, la voix qui parle la langue de l'autre compte aussi : sur le
+                    # haut-parleur de l'ordinateur, le micro la reprend.
                     segment, parole, silence = [], 0.0, 0.0
+                    if decodeur is not None:
+                        decodeur.annuler()
                     continue
                 secondes = len(data) / 2 / stt.SAMPLE_RATE
                 pic = self._peak_of(data)
@@ -1950,19 +2001,34 @@ class VoiceListener:
                     silence += secondes
                 if not segment:
                     continue
+                if interprete and decodeur is not None:
+                    decodeur.pousser(data)  # dépôt dans une file : ne bloque jamais le fil audio
                 if silence >= TRAD_SILENCE_FIN and parole < TRAD_PAROLE_MIN:
                     segment, parole, silence = [], 0.0, 0.0  # une toux, un « yeah » : rien à traduire
+                    if decodeur is not None:
+                        decodeur.annuler()
                     continue
                 if (silence >= TRAD_SILENCE_FIN and parole >= TRAD_PAROLE_MIN) or parole >= TRAD_SEGMENT_MAX:
                     pcm = b"".join(segment)
+                    if interprete:
+                        # La latence d'un tour part de la fin de la PAROLE, silence de fin compris : c'est
+                        # ce que vit la personne qui attend, pas ce qui arrange la mesure.
+                        jeton = decodeur.clore() if decodeur is not None else None
+                        tache: tuple = (pcm, jeton, time.monotonic() - silence)
+                    else:
+                        tache = (pcm,)
+                        if decodeur is not None:
+                            decodeur.annuler()  # l'interprète s'est refermé en cours de phrase
                     segment, parole, silence = [], 0.0, 0.0
                     if en_vol is None or en_vol.done():
-                        en_vol, en_attente = pool.submit(self._traduire_segment, pcm), b""
+                        en_vol, en_attente = pool.submit(self._traduire_segment, *tache), None
                     else:
                         # Au plus un segment en vol et un en attente ; le troisième remplace celui qui
                         # attend. Dans une conversation vivante, la phrase la plus fraîche vaut plus
                         # que la périmée — même esprit que `_callback`, qui jette le plus vieux bloc.
-                        en_attente = pcm
+                        if en_attente and len(en_attente) > 1 and en_attente[1] is not None:
+                            en_attente[1].abandonner()
+                        en_attente = tache
         finally:
             if self._stop.is_set() and raison == "demande":
                 # L'écoute s'est arrêtée sous nos pieds (bouton, muet, chien de garde, micro
@@ -1978,6 +2044,8 @@ class VoiceListener:
                 phrase = service.arreter(raison)
             except Exception as exc:
                 log.warning("fermeture du mode traduction : %s", exc)
+            if decodeur is not None:
+                decodeur.fermer()
             pool.shutdown(wait=False, cancel_futures=True)
             self.hub.publish("voice.traduction", etat="ferme", raison=raison)
             log.info("mode traduction fermé (%s)", raison)
@@ -1988,13 +2056,21 @@ class VoiceListener:
             elif not self._stop.is_set():
                 self._set_state("wake")
 
-    def _traduire_segment(self, pcm: bytes) -> None:
+    def _traduire_segment(self, pcm: bytes, jeton=None, fin_parole: float | None = None) -> None:
         """Reconnaît la phrase de l'interlocuteur, la fait traduire, la lit. Fil de travail, jamais le fil audio.
+
+        En mode interprète (`service.bidirectionnel`), la phrase peut être la sienne OU celle du
+        propriétaire : `_interpreter_segment` décide et dirige. `jeton` porte la reconnaissance locale
+        décodée pendant la parole ; `fin_parole` (horloge monotone) sert à mesurer la latence du tour.
 
         Ne lève jamais : une exception ici serait avalée par l'exécuteur, et IRIS resterait muette
         devant quelqu'un sans que rien ne l'explique."""
         service = self.traduction
         if service is None or not pcm:
+            return
+        interprete = getattr(service, "interprete", None)
+        if getattr(service, "bidirectionnel", False) and interprete is not None:
+            self._interpreter_segment(service, interprete, pcm, jeton, fin_parole)
             return
         try:
             langue = getattr(service, "langue_entendue", "en") or "en"
@@ -2021,6 +2097,113 @@ class VoiceListener:
                 self.tts.speak(a_dire, force=True)
         except Exception as exc:
             log.warning("segment non traduit (%s)", exc)
+
+    # ------------------------------------------------------------------ mode interprète (2026-09-13)
+    def _interpreter_segment(self, service, interprete, pcm: bytes, jeton=None, fin_parole: float | None = None) -> None:
+        """Une phrase du mode interprète : reconnaissance locale, renfort en ligne s'il le faut,
+        puis `ServiceInterprete.interpreter` (iris/traduction.py) attribue et dirige."""
+        try:
+            duree = len(pcm) / 2 / stt.SAMPLE_RATE
+            fin = fin_parole if fin_parole is not None else time.monotonic()
+            locale = None
+            if jeton is not None:
+                from ..traduction import ATTENTE_DECODAGE_MAX
+
+                # Le décodeur a travaillé pendant la parole : il ne lui reste que son retard. S'il
+                # traîne (ordinateur chargé), on n'attend pas la durée de la phrase une seconde fois.
+                locale = jeton.attendre(min(ATTENTE_DECODAGE_MAX, 1.0 + duree))
+                if locale is None:
+                    jeton.abandonner()
+                    log.info("interprète : décodage local en retard, reconnaissance en ligne sans lui")
+            else:
+                locale = self._decoder_local(pcm)
+            langue_autre = getattr(service, "langue_entendue", "en") or "en"
+            interprete.interpreter(
+                locale,
+                lambda: self._reconnaitre_bilingue(pcm, langue_autre),
+                fin_parole=fin,
+                executer=self._executer,
+                parler_moi=lambda texte: self.tts.speak(texte, force=True),
+            )
+        except Exception as exc:
+            log.warning("phrase de l'interprète non traitée (%s)", exc)
+
+    def _decodeur_interprete(self):
+        """Le décodeur local continu du mode interprète, ou None sans modèle hors ligne."""
+        moteur = self._moteur_local()
+        if moteur is None:
+            return None
+        try:
+            from ..traduction import DecodeurContinu, normaliser_langue
+
+            return DecodeurContinu(lambda: moteur.recognizer(words=True),
+                                   langue=normaliser_langue(self.settings.user.language) or "fr")
+        except Exception as exc:
+            log.warning("décodeur de l'interprète indisponible (%s)", exc)
+            return None
+
+    def _decoder_local(self, pcm: bytes):
+        """Repli sans décodeur continu : la phrase entière décodée d'un coup (coûte sa durée)."""
+        moteur = self._moteur_local()
+        if moteur is None or not pcm:
+            return None
+        try:
+            from ..traduction import ecoute_depuis_resultats, normaliser_langue
+
+            rec = moteur.recognizer(words=True)
+            resultats = []
+            for debut in range(0, len(pcm), 2 * BLOCK):
+                if rec.AcceptWaveform(pcm[debut:debut + 2 * BLOCK]):
+                    resultats.append(rec.Result())
+            resultats.append(rec.FinalResult())
+            return ecoute_depuis_resultats(resultats, normaliser_langue(self.settings.user.language) or "fr")
+        except Exception as exc:
+            log.warning("décodage local impossible (%s)", exc)
+            return None
+
+    def _reconnaitre_bilingue(self, pcm: bytes, langue_autre: str):
+        """La phrase part au service de reconnaissance en ligne, SANS imposer de langue quand c'est possible.
+
+        Différence voulue avec `_reconnaitre_etranger` : ici on ne sait pas encore qui a parlé.
+        Imposer la langue de l'autre ferait transcrire une phrase française comme de l'anglais ; le
+        service de reconnaissance principal détecte la langue lui-même, et `attribuer` la lit dans
+        les mots rendus. Le repli, lui, exige une langue : c'est celle de l'autre, et l'Ecoute le dit.
+        Même garde-fou et même registre que partout : consentement « audio brut », mode local
+        respecté, chaque envoi inscrit AVANT d'avoir lieu — la durée, jamais le contenu."""
+        from ..traduction import Ecoute
+
+        try:
+            self.consent.check("audio_raw")
+        except Exception:
+            return Ecoute(erreur="envoi de la voix non autorisé")
+        duree_ms = len(pcm) // 32
+        detail = f"interprète : {duree_ms} ms d'audio"
+        premier_echec = ""
+        if stt.pool_elevenlabs():
+            self.consent.log("external_send", data_type="audio_raw", agent=stt.AGENT_SCRIBE, detail=detail)
+            try:
+                texte = (stt.scribe_recognize(pcm, stt.SAMPLE_RATE, "") or "").strip()
+                if texte:
+                    return Ecoute(texte=texte, langue="")
+            except Exception as exc:
+                premier_echec = str(exc)
+                log.info("interprète : reconnaissance principale en échec (%s)", exc)
+        self.consent.log("external_send", data_type="audio_raw", agent=stt.AGENT_GOOGLE, detail=detail)
+        try:
+            texte = (stt.google_recognize(pcm, stt.SAMPLE_RATE, stt.locale_google(langue_autre)) or "").strip()
+        except Exception as exc:
+            log.info("interprète : reconnaissance de repli en échec (%s)", exc)
+            return Ecoute(erreur=getattr(exc, "a_dire", "") or premier_echec or "reconnaissance en ligne indisponible")
+        return Ecoute(texte=texte, langue=langue_autre)
+
+    @staticmethod
+    def _voix_autre_parle(service) -> bool:
+        """La voix qui parle la langue de l'autre est-elle en train de jouer ? (alternat du mode interprète)"""
+        try:
+            voix = getattr(getattr(service, "interprete", None), "voix", None)
+            return bool(getattr(voix, "parle", False))
+        except Exception:
+            return False
 
     def _executer(self, coro, timeout: float = 20.0):
         """Exécute une coroutine du service depuis le fil de travail. Rend None sur échec."""

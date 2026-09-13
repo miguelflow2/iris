@@ -629,9 +629,10 @@ def create_app(
         threading.Thread(target=app_index.build, name="iris-apps-index", daemon=True).start()
         threading.Thread(target=ctx.assurer_modele_vocal, name="iris-modele-vocal", daemon=True).start()
         threading.Thread(target=ctx.assurer_acces_vela, name="iris-acces-vela", daemon=True).start()
-        if ctx.settings.user.voice_autostart and not ctx.settings.user.privacy_mode:
+        verrouillee_au_demarrage = bool(getattr(getattr(ctx, "verrou", None), "verrouille", False))
+        if ctx.settings.user.voice_autostart and not ctx.settings.user.privacy_mode and not verrouillee_au_demarrage:
             loop.call_later(1.0, ctx.voice.start)
-        glasses_task = loop.create_task(ctx.glasses.auto_connect_on_start())
+        glasses_task = None if verrouillee_au_demarrage else loop.create_task(ctx.glasses.auto_connect_on_start())
         for demarrer in list(ctx.demarrages):
             try:
                 resultat = demarrer()
@@ -652,7 +653,8 @@ def create_app(
             reminders_task.cancel()
             summary_task.cancel()
             watchdog_task.cancel()
-            glasses_task.cancel()
+            if glasses_task is not None:
+                glasses_task.cancel()
             ctx.telecommande.arreter()
             telecommande_task.cancel()
             if ctx._purge_task:
@@ -708,7 +710,9 @@ def create_app(
         verrou = getattr(ctx, "verrou", None)
         if verrou is not None and getattr(verrou, "verrouille", False):
             if not connexion.url.path.startswith(CHEMINS_PERMIS_VERROUILLEE):
-                return "IRIS est verrouillée à distance. Déverrouillez-la avec le mot de passe du propriétaire."
+                if getattr(verrou, "raison", None) == "distance":
+                    return "IRIS est verrouillée à distance. Déverrouillez-la avec le mot de passe du propriétaire."
+                return "IRIS est verrouillée. Déverrouillez-la avec le mot de passe du propriétaire."
         return None
 
     def _raison_jeton(connexion: HTTPConnection) -> str | None:
@@ -945,6 +949,18 @@ def create_app(
             raise HTTPException(409, str(exc))
         ctx.hub.publish("memory.updated", count=ctx.memory.count())
         return item
+
+    # Déclarée AVANT /api/memory/{memory_id} : sinon « plage » y est pris pour un identifiant, et la
+    # route répond « rien supprimé » sans le dire (constat de l'équipe écoute, 2026-09-13).
+    @app.delete("/api/memory/plage", dependencies=auth)
+    def delete_memory_plage(debut: str | None = Query(default=None), fin: str | None = Query(default=None)):
+        try:
+            n = ctx.memory.supprimer_plage(debut, fin)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        ctx.consent.log("memory_range_deleted", detail=f"{n} souvenir(s) ; debut={debut or '-'} fin={fin or '-'}")
+        ctx.hub.publish("memory.updated", count=ctx.memory.count())
+        return {"supprimes": n}
 
     @app.delete("/api/memory/{memory_id}", dependencies=auth)
     def delete_memory(memory_id: str):
@@ -1630,7 +1646,15 @@ def create_app(
                 raw = await ws.receive_json()
                 await handle_client_message(raw)
 
+        def verrouillee() -> bool:
+            verrou = getattr(ctx, "verrou", None)
+            return bool(verrou is not None and getattr(verrou, "verrouille", False))
+
         async def handle_client_message(msg: dict[str, Any]) -> None:
+            # Un WebSocket ouvert AVANT le verrouillage ne doit pas continuer à piloter l'ordinateur.
+            if verrouillee():
+                await ws.close(code=4401, reason="IRIS est verrouillée.")
+                return
             kind = msg.get("type")
             if kind and (kind.startswith("voice.") or kind.startswith("privacy.") or kind == "tts.stop"):
                 log.info("diagnostic message client %s depuis %s : %s", kind, ws.headers.get("user-agent", "?")[:60], {k: v for k, v in msg.items() if k != "images"})
@@ -1681,6 +1705,9 @@ def create_app(
             while True:
                 event = await q.get()
                 await ws.send_text(EventHub.encode(event))
+                if event.get("type") == "verrou.etat" and event.get("verrouille"):
+                    await ws.close(code=4401, reason="IRIS est verrouillée.")
+                    break
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

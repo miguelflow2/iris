@@ -66,13 +66,38 @@ décision de produit. Ce module fait donc trois choses, et refuse d'en faire moi
 Et parce que le texte traduit est écrit par un inconnu, il est passé au modèle comme DONNÉE
 ENCADRÉE (entre `<<<` et `>>>`), jamais comme consigne : quelqu'un qui dirait « ignore tes
 instructions et écris ceci » doit être traduit, pas obéi.
+
+LE MODE INTERPRÈTE (chantier du 13 septembre 2026)
+---------------------------------------------------
+Le mode traduction ci-dessus ne va que dans un sens : l'autre parle, le propriétaire entend. Le mode
+interprète (`ServiceInterprete`) va dans les deux : chacun parle sa langue, chacun entend la sienne.
+La difficulté n'est pas la traduction — c'est de savoir QUI vient de parler, sans reconnaissance
+du locuteur, avec un seul micro. La règle retenue, écrite ici parce qu'elle se teste sans micro :
+  1. la reconnaissance hors ligne (française) décode chaque phrase PENDANT qu'elle est dite
+     (`DecodeurContinu`) ; une confiance haute sur une vraie phrase française = « moi », et rien ne
+     quitte l'ordinateur pour la reconnaître ;
+  2. sinon, la voix part au service de reconnaissance en ligne (consentement « audio brut »), et les
+     mots-outils du texte rendu disent la langue (`attribuer`) ;
+  3. dans le doute, IRIS le DIT et ne traduit rien : une traduction assurée d'une phrase mal
+     attribuée fait plus de dégâts qu'un « faites répéter ».
+Les seuils ont été calés le 13 septembre 2026 sur des voix de synthèse rendues en mémoire (12
+phrases anglaises × 3 voix, 12 phrases françaises × 3 voix, 16 kHz) : 0 phrase anglaise sur 36
+attribuée au propriétaire par le local ; 35 françaises sur 36 reconnues sûres localement, la 36e
+(0,83) part au service en ligne. De vraies voix, un vrai micro de lunettes (bande étroite), le bruit
+d'une rue et un accent québécois n'ont PAS été mesurés : ces seuils sont à revoir sur le matériel.
+La latence de chaque tour est mesurée de la fin de la parole à la remise à la voix, et publiée ;
+elle n'est jamais promise.
 """
 from __future__ import annotations
 
 import asyncio
+import difflib
 import inspect
+import json
 import logging
+import queue
 import re
+import threading
 import time
 import unicodedata
 from collections import deque
@@ -390,6 +415,25 @@ def phrase_entree(langue: str) -> str:
             "Dis « Iris, arrête » quand tu as fini.")
 
 
+# Où l'autre personne entend la traduction de ce que dit le propriétaire (réglage interprete_sortie_autre).
+DESTINATIONS_AUTRE = {
+    "pc": "par le haut-parleur de l'ordinateur",
+    "lunettes": "par le haut-parleur des lunettes",
+    "telephone": "sur le téléphone",
+}
+
+
+def phrase_entree_interprete(langue: str, sortie: str = "") -> str:
+    """Ce qu'IRIS dit en ouvrant l'interprète : la langue, où l'autre entendra, et comment sortir.
+
+    Courte exprès : pendant qu'IRIS la dit, elle n'écoute personne (alternat), et c'est souvent la
+    première chose que l'autre personne entend d'elle."""
+    nom = nom_langue(langue)
+    destination = DESTINATIONS_AUTRE.get(sortie, "")
+    milieu = f" Ce que vous dites lui sera traduit {destination}." if destination else ""
+    return f"Interprète en {nom}.{milieu} Dites « Iris, arrête » pour finir."
+
+
 def phrase_sortie(raison: str = "demande") -> str:
     """Ce qu'IRIS dit en sortant. Elle le dit sur TOUS les chemins de sortie, y compris les ratés.
 
@@ -431,6 +475,16 @@ class ServiceTraduction:
         self._latences: deque[float] = deque(maxlen=10)
         self._derniere_parole = 0.0
         self._echecs = 0
+        # Mode interprète : les deux sens à la fois. Le drapeau vit ici parce que c'est CE service que
+        # l'écoute connaît (voice.traduction) ; la logique du mode vit dans ServiceInterprete.
+        self.bidirectionnel = False
+        self.interprete: Any = None  # ServiceInterprete, branché par routes_interprete
+        # Vérifie que le texte a le droit de partir (ctx.consent.check("transcript")). Lève quand
+        # l'envoi est refusé. None = aucune vérification (tests de ce module, sans registre réel).
+        self.verifier_envoi: Callable[[], None] | None = None
+        # Appelées à la fermeture d'un mode interprète, quel que soit le chemin (voix, bouton, API).
+        self.a_la_fermeture: list[Callable[[str], None]] = []
+        self._refus = ""  # raison du dernier envoi refusé AVANT le réseau (consentement)
 
     # ------------------------------------------------------------ état
     @property
@@ -475,6 +529,7 @@ class ServiceTraduction:
             "latence_visee": LATENCE_VISEE,
             "erreur": self.erreur,
             "empechement": self.pourquoi_impossible(),
+            "bidirectionnel": self.bidirectionnel,
         }
 
     @property
@@ -508,40 +563,68 @@ class ServiceTraduction:
         return ""
 
     # ------------------------------------------------------------ entrée / sortie du mode
-    def demarrer(self, langue: str = LANGUE_ENTENDUE_DEFAUT) -> str:
+    def demarrer(self, langue: str = LANGUE_ENTENDUE_DEFAUT, bidirectionnel: bool = False) -> str:
         """Ouvre le mode et rend la phrase à dire. Le mode ne s'active PAS si c'est impossible.
 
         La phrase rendue est toujours vraie : elle annonce la traduction, ou elle explique pourquoi
         il n'y en aura pas. Dans les deux cas le propriétaire sait où il en est sans regarder.
+        `bidirectionnel` ouvre le mode interprète (les deux sens) ; ServiceInterprete l'appelle.
         """
         empechement = self.pourquoi_impossible()
         if empechement:
             self.actif = False
             return empechement
-        self.langue_entendue = normaliser_langue(langue) or LANGUE_ENTENDUE_DEFAUT
-        if self.langue_entendue == self.langue_moi:
-            self.actif = False
+        voulue = normaliser_langue(langue) or LANGUE_ENTENDUE_DEFAUT
+        if voulue == self.langue_moi:
+            if not (self.actif and self.bidirectionnel):
+                self.actif = False
             return (f"On parle déjà {nom_langue(self.langue_moi)} tous les deux — "
                     "dis-moi plutôt dans quelle langue il te parle.")
+        if self.actif and self.bidirectionnel and not bidirectionnel:
+            # La traduction simple remplace l'interprète : ceux qui suivaient l'interprète (écran,
+            # voix de l'autre langue) doivent l'apprendre, sinon ils croiraient qu'il tourne encore.
+            self._prevenir_fermeture("remplace")
+        self.langue_entendue = voulue
         self.oublier()  # un mode qui s'ouvre ne recolle pas les paroles de la conversation d'avant
         self.actif = True
+        self.bidirectionnel = bool(bidirectionnel)
         self.erreur = ""
+        self._refus = ""
         self._echecs = 0
         self._derniere_parole = self._horloge()
         self._publier("voice.traduction", etat="ouvert", langue=self.langue_entendue,
-                      langue_nom=nom_langue(self.langue_entendue))
-        log.info("Mode traduction ouvert (%s -> %s).", self.langue_entendue, self.langue_moi)
+                      langue_nom=nom_langue(self.langue_entendue),
+                      mode="interprete" if self.bidirectionnel else "traduction")
+        log.info("Mode %s ouvert (%s <-> %s).", "interprète" if self.bidirectionnel else "traduction",
+                 self.langue_entendue, self.langue_moi)
+        if self.bidirectionnel:
+            return phrase_entree_interprete(self.langue_entendue)
         return phrase_entree(self.langue_entendue)
 
     def arreter(self, raison: str = "demande") -> str:
         """Ferme le mode, efface le fil, et rend la phrase à dire. Sûre à appeler deux fois."""
         etait_actif = self.actif
+        etait_interprete = self.bidirectionnel
         self.actif = False
+        self.bidirectionnel = False
         self.oublier()  # les paroles d'un inconnu ne survivent pas à la conversation
         if etait_actif:
             self._publier("voice.traduction", etat="ferme", raison=raison)
             log.info("Mode traduction fermé (%s).", raison)
+        if etait_actif and etait_interprete:
+            self._prevenir_fermeture(raison)
         return phrase_sortie(raison)
+
+    def _prevenir_fermeture(self, raison: str) -> None:
+        for rappel in list(self.a_la_fermeture):
+            try:
+                rappel(raison)
+            except Exception as exc:  # un écran qui plante ne doit pas empêcher la fermeture
+                log.warning("Fermeture de l'interprète mal relayée : %s", exc)
+
+    def noter_parole(self) -> None:
+        """Quelqu'un a parlé (même sans traduction) : le compte à rebours du silence repart."""
+        self._derniere_parole = self._horloge()
 
     # ------------------------------------------------------------ le fil
     def _purger(self) -> None:
@@ -578,12 +661,15 @@ class ServiceTraduction:
         return "\n".join(reversed(lignes))
 
     # ------------------------------------------------------------ traduire
-    async def traduire_entendu(self, texte: str, confiance: float | None = None) -> Traduction:
+    async def traduire_entendu(self, texte: str, confiance: float | None = None,
+                               avec_reponse: bool = True) -> Traduction:
         """La phrase de l'interlocuteur -> traduction + réponse possible + réponse traduite.
 
         UN SEUL aller-retour pour les trois : c'est ce qui tient le budget de cinq secondes.
         Ne lève jamais — appelée depuis un fil de travail derrière l'écoute, une exception y serait
         avalée et IRIS resterait muette devant quelqu'un.
+        `avec_reponse=False` (mode interprète) : le propriétaire répond lui-même, la suggestion ne
+        coûterait que des jetons et des dixièmes de seconde.
         """
         source = self.langue_entendue
         cible = self.langue_moi
@@ -595,7 +681,7 @@ class ServiceTraduction:
             return Traduction(ok=False, original=texte, langue_source=source, langue_cible=cible,
                               raison=verdict.a_dire, charabia=True)
 
-        systeme = self._systeme(source, cible, avec_reponse=True)
+        systeme = self._systeme(source, cible, avec_reponse=avec_reponse)
         message = self._message(texte, self._contexte())
         depart = self._horloge()
         brut = await self._appeler(systeme, message)
@@ -606,7 +692,7 @@ class ServiceTraduction:
         if brut is None:
             self._echecs += 1
             return Traduction(ok=False, original=texte, langue_source=source, langue_cible=cible,
-                              raison="Je n'ai pas réussi à traduire cette phrase-là. Demande-lui de la répéter.",
+                              raison=self._refus or "Je n'ai pas réussi à traduire cette phrase-là. Demande-lui de la répéter.",
                               latence=latence)
 
         traduction, suggestion, suggestion_traduite = lire_reponse_modele(brut)
@@ -647,7 +733,7 @@ class ServiceTraduction:
         self._derniere_parole = self._horloge()
         if brut is None:
             return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
-                              raison="Je n'ai pas réussi à traduire ta réponse.", latence=latence)
+                              raison=self._refus or "Je n'ai pas réussi à traduire ta réponse.", latence=latence)
 
         traduction, _s, _st = lire_reponse_modele(brut)
         probleme = self._verifier(traduction, source, cible)
@@ -655,6 +741,43 @@ class ServiceTraduction:
             return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
                               raison="Je n'ai pas réussi à traduire ta réponse.", latence=latence)
         self._retenir("moi", propre, traduction)
+        self._tracer(propre, source, cible)
+        return Traduction(ok=True, original=propre, traduction=traduction, langue_source=source,
+                          langue_cible=cible, latence=latence)
+
+    async def traduire_texte(self, texte: str, source: str, cible: str) -> Traduction:
+        """Un texte déjà écrit (téléphone, clavier), dans des langues données explicitement.
+
+        Sert le chemin où ce n'est PAS le micro du PC qui a entendu : le téléphone a reconnu la
+        phrase lui-même. Pas d'analyse anti-charabia (un « yes » tapé est une vraie réponse), mais
+        le même garde-fou de sortie (une « traduction » restée dans la langue de départ est refusée).
+        Le fil n'est utilisé et nourri que si le mode est ouvert sur cette même paire de langues :
+        mêler deux conversations donnerait un contexte faux. Ne lève jamais.
+        """
+        source = normaliser_langue(source)
+        cible = normaliser_langue(cible)
+        propre = (texte or "").strip()
+        if not propre:
+            return Traduction(ok=False, langue_source=source, langue_cible=cible, raison="Il n'y a rien à traduire.")
+        if not source or not cible or source == cible:
+            return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
+                              raison="Les deux langues doivent être différentes.")
+        meme_conversation = self.actif and {source, cible} == {self.langue_moi, self.langue_entendue}
+        depart = self._horloge()
+        brut = await self._appeler(self._systeme(source, cible, avec_reponse=False),
+                                   self._message(propre, self._contexte() if meme_conversation else ""))
+        latence = self._horloge() - depart
+        if brut is None:
+            return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
+                              raison=self._refus or "Je n'ai pas réussi à traduire ce texte.", latence=latence)
+        traduction, _s, _st = lire_reponse_modele(brut)
+        probleme = self._verifier(traduction, source, cible)
+        if probleme:
+            return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
+                              raison="Je n'ai pas réussi à traduire ce texte.", latence=latence)
+        if meme_conversation:
+            self._derniere_parole = self._horloge()
+            self._retenir("moi" if source == self.langue_moi else "interlocuteur", propre, traduction)
         self._tracer(propre, source, cible)
         return Traduction(ok=True, original=propre, traduction=traduction, langue_source=source,
                           langue_cible=cible, latence=latence)
@@ -694,8 +817,38 @@ class ServiceTraduction:
         parts.append("À traduire :\n<<<" + (texte or "").strip() + ">>>")
         return "\n".join(parts)
 
+    def _refus_envoi(self) -> str:
+        """La raison pour laquelle le texte n'a PAS le droit de partir, ou « ».
+
+        Même règle que partout dans IRIS : rien ne quitte l'ordinateur sans le consentement du type
+        de donnée (ici « transcript »). Dans le doute — vérification qui plante — on ne l'envoie pas.
+        Typage par nom plutôt qu'import : ce module reste testable sans base ni registre réels."""
+        verifier = self.verifier_envoi
+        if verifier is None:
+            return ""
+        try:
+            verifier()
+            return ""
+        except Exception as exc:
+            if type(exc).__name__ == "LocalOnlyMode":
+                return ("Le mode local est actif : traduire exige d'envoyer le texte à un service en "
+                        "ligne, ce que le mode local interdit.")
+            data_type = getattr(exc, "data_type", None)
+            if data_type:
+                libelle = getattr(exc, "reason", "") or data_type
+                return (f"Pour traduire, IRIS doit envoyer le texte au moteur VELA : autorise « {libelle} » "
+                        "dans Confidentialité.")
+            log.warning("Vérification du consentement impossible, rien n'est envoyé : %s", exc)
+            return "Je ne peux pas vérifier ton accord d'envoi en ce moment, alors je ne traduis pas."
+
     async def _appeler(self, systeme: str, message: str) -> str | None:
         """Un aller-retour, borné dans le temps. Rend None sur échec ; ne lève jamais."""
+        self._refus = self._refus_envoi()
+        if self._refus:
+            # Refusé AVANT le réseau : aucun octet ne part, et la raison sera dite telle quelle.
+            self.erreur = self._refus
+            log.info("Traduction refusée avant l'envoi : %s", self._refus)
+            return None
         try:
             resultat = self._interroger(systeme, message)
             if inspect.isawaitable(resultat):
@@ -801,3 +954,768 @@ def lire_reponse_modele(brut: str) -> tuple[str, str, str]:
     if not trouve:
         return texte, "", ""
     return champs["traduction"], champs["reponse"], champs["reponse_traduite"]
+
+
+# ================================================================ mode interprète : qui a parlé ?
+# Calé le 13 septembre 2026 sur 72 phrases de voix de synthèse rendues en mémoire (voir la docstring
+# du module) : le français décodé par le modèle local tient presque toujours au-dessus de 0,85 sans
+# mot incertain ; l'anglais décodé par ce même modèle va de 0,45 à 0,91 — mais toujours avec des mots
+# incertains ou une boucle de répétition (0 faux « moi » sur 36). À revoir sur de vraies voix, avec
+# le micro des lunettes.
+SEUIL_CONFIANCE_MOI = 0.85
+PART_INCERTAINE_MAX = 0.15  # part des mots incertains au-delà de laquelle le local ne suffit plus
+MOT_INCERTAIN = 0.5
+CONFIANCE_MOI_PROBABLE = 0.70  # départage une phrase courte, sans mot-outil qui trahisse sa langue
+SIMILITUDE_MIN = 0.6  # « même phrase » entre la reconnaissance locale et celle en ligne
+# Le décodage local d'une phrase ne doit pas coûter plus que ceci d'attente après la fin de la
+# parole : au-delà (ordinateur chargé), on passe à la reconnaissance en ligne sans lui.
+ATTENTE_DECODAGE_MAX = 6.0
+
+DOUTE_INCOMPRIS = "Je n'ai pas compris cette phrase, je ne la traduis pas. Faites-la répéter."
+DOUTE_LOCUTEUR = "Je ne sais pas qui a parlé ni en quelle langue, je préfère ne rien traduire. Faites répéter."
+DOUTE_RECONNAISSANCE = "Je n'ai pas pu reconnaître cette phrase. Faites-la répéter."
+# Une phrase de doute au plus toutes les huit secondes : dans une salle bruyante, une IRIS qui dit
+# « je n'ai pas compris » à chaque bruit couvrirait la conversation qu'elle est censée servir.
+DOUTE_INTERVALLE = 8.0
+
+
+@dataclass(frozen=True)
+class Ecoute:
+    """Ce qu'un moteur de reconnaissance a rendu pour UNE phrase."""
+
+    texte: str = ""
+    confiance: float | None = None  # moyenne des confiances par mot ; None si le moteur n'en donne pas
+    part_incertaine: float = 0.0  # part des mots sous MOT_INCERTAIN
+    # « fr » pour le modèle local ; le code imposé au service en ligne ; « » quand le service a
+    # détecté la langue lui-même. Un texte sans mot-outil distinctif ne prouve pas la même chose
+    # dans les trois cas (voir `attribuer`).
+    langue: str = ""
+    erreur: str = ""  # la reconnaissance n'a pas pu avoir lieu (réseau, refus, consentement)
+
+
+def ecoute_depuis_resultats(resultats: list[str], langue: str = "") -> Ecoute:
+    """Les résultats JSON successifs d'un reconnaisseur Vosk (avec les mots) -> une seule Ecoute."""
+    mots: list[dict] = []
+    textes: list[str] = []
+    for brut in resultats or []:
+        try:
+            donnees = json.loads(brut or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(donnees, dict):
+            continue
+        liste = donnees.get("result") or []
+        if liste:
+            mots.extend(m for m in liste if isinstance(m, dict) and m.get("word") and m.get("word") != "[unk]")
+        elif str(donnees.get("text") or "").strip():
+            textes.append(str(donnees["text"]).strip())
+    if mots:
+        confiances = [float(m.get("conf", 0.0) or 0.0) for m in mots]
+        return Ecoute(
+            texte=" ".join(str(m["word"]) for m in mots),
+            confiance=sum(confiances) / len(confiances),
+            part_incertaine=sum(1 for c in confiances if c < MOT_INCERTAIN) / len(confiances),
+            langue=langue,
+        )
+    return Ecoute(texte=" ".join(textes), confiance=None, langue=langue)
+
+
+@dataclass(frozen=True)
+class Attribution:
+    """Le verdict sur une phrase : qui l'a dite, dans quelle langue, et quoi dire en cas de doute."""
+
+    qui: str  # "moi" | "autre" | "doute"
+    texte: str = ""
+    langue: str = ""
+    raison: str = ""  # pour le journal et l'écran
+    a_dire: str = ""  # doute : la phrase dite au propriétaire ; « » = rien à dire (un souffle, un bruit)
+
+
+def juger_local(locale: Ecoute | None, langue_moi: str = LANGUE_MOI_DEFAUT) -> str:
+    """« moi » si la reconnaissance locale suffit à affirmer que le propriétaire a parlé ;
+    « incertain » sinon ; « vide » si elle n'a rien rendu.
+
+    Trois conditions, toutes nécessaires. La confiance moyenne seule ne suffit pas — mesuré :
+    « hum hum hum hum hum hum » a été rendu à 0,91 de confiance sur une phrase anglaise. D'où la part
+    de mots incertains, et l'analyse anti-charabia (répétitions, mots d'une autre langue)."""
+    if locale is None or not (locale.texte or "").strip():
+        return "vide"
+    if locale.confiance is None or len(_tokens(locale.texte)) < MOTS_MINIMUM:
+        return "incertain"
+    if locale.confiance < SEUIL_CONFIANCE_MOI or locale.part_incertaine > PART_INCERTAINE_MAX:
+        return "incertain"
+    if not analyser_transcription(locale.texte, langue_moi, locale.confiance).utilisable:
+        return "incertain"
+    return "moi"
+
+
+def langue_du_texte(texte: str, langue_moi: str, langue_autre: str) -> str:
+    """La langue que trahissent les mots-outils DISTINCTIFS du texte, ou « » si rien ne départage."""
+    na, nb = compter_distinctifs(_tokens(texte), langue_moi, langue_autre)
+    if nb > na:
+        return langue_autre
+    if na > nb:
+        return langue_moi
+    return ""
+
+
+def _similaires(a: str, b: str) -> bool:
+    return difflib.SequenceMatcher(None, _sans_accent(a), _sans_accent(b)).ratio() >= SIMILITUDE_MIN
+
+
+def attribuer(locale: Ecoute | None, distante: Ecoute | None, langue_moi: str, langue_autre: str) -> Attribution:
+    """Qui a parlé : « moi », « autre », ou « doute ». Pure : se teste avec de fausses reconnaissances.
+
+    1. La reconnaissance locale est sûre (`juger_local`) : c'est le propriétaire, et sa phrase n'a
+       pas eu à quitter l'ordinateur pour être reconnue.
+    2. Sinon, c'est le texte rendu par le service en ligne qui décide, par ses mots-outils
+       distinctifs (« the », « you » contre « le », « vous »).
+    3. Un texte qui ne départage rien (« OK Toronto ») : si le service ne cherchait QUE la langue de
+       l'autre, il ne prouve rien, et une reconnaissance locale confiante le contredit -> doute ;
+       s'il a détecté la langue lui-même, la reconnaissance locale tranche (même phrase et
+       confiance correcte -> moi ; confiance effondrée -> autre ; entre les deux -> doute).
+    4. La phrase retenue passe l'analyse anti-charabia dans SA langue ; un échec est un doute.
+    Dans le doute, rien n'est traduit : une traduction fluide d'une phrase mal attribuée est le
+    pire résultat possible de ce mode, parce que personne ne peut le détecter."""
+    langue_moi = normaliser_langue(langue_moi) or LANGUE_MOI_DEFAUT
+    langue_autre = normaliser_langue(langue_autre) or LANGUE_ENTENDUE_DEFAUT
+    if locale is not None and juger_local(locale, langue_moi) == "moi":
+        return Attribution("moi", locale.texte.strip(), langue_moi, "reconnaissance locale sûre")
+    if distante is None or distante.erreur:
+        raison = (distante.erreur if distante is not None else "") or "reconnaissance en ligne indisponible"
+        return Attribution("doute", "", "", raison, DOUTE_RECONNAISSANCE)
+    texte = (distante.texte or "").strip()
+    if not texte:
+        return Attribution("doute", "", "", "rien reconnu", "")
+    confiance_locale = locale.confiance if (locale is not None and locale.confiance is not None) else 0.0
+    langue = langue_du_texte(texte, langue_moi, langue_autre)
+    if not langue:
+        imposee = normaliser_langue(distante.langue)
+        if imposee == langue_autre:
+            if confiance_locale >= CONFIANCE_MOI_PROBABLE:
+                return Attribution("doute", "", "", "reconnaissances contradictoires", DOUTE_LOCUTEUR)
+            langue = langue_autre
+        elif imposee == langue_moi:
+            langue = langue_moi
+        elif locale is not None and confiance_locale >= CONFIANCE_MOI_PROBABLE and _similaires(locale.texte, texte):
+            langue = langue_moi
+        elif confiance_locale < CONFIANCE_MINIMALE:
+            langue = langue_autre
+        else:
+            return Attribution("doute", "", "", "langue indécidable", DOUTE_LOCUTEUR)
+    verdict = analyser_transcription(texte, langue, None)
+    if not verdict.utilisable:
+        # « trop court » : un « yes », un « OK ». Rien à traduire, et rien à dire non plus.
+        return Attribution("doute", "", langue, verdict.raison,
+                           "" if verdict.raison == "trop court" else DOUTE_INCOMPRIS)
+    qui = "moi" if langue == langue_moi else "autre"
+    return Attribution(qui, texte, langue, f"reconnaissance en ligne, {nom_langue(langue)}")
+
+
+# ---------------------------------------------------------------- phrases qui ouvrent ou ferment l'interprète
+_FIN_INTERPRETE = re.compile(
+    r"\b(?:fin|fini|finir)\s+(?:(?:de|du|d)\s+)?(?:(?:l|la|le|mode)\s+)*interpret"
+    # « fin de l'interprète » est rendu « fait de l'interprète » par le petit modèle français (mesuré).
+    r"|\bfait\s+(?:de|du|d)\s+(?:(?:l|la|le|mode)\s+)*interpret"
+)
+MOTS_FIN_INTERPRETE = {
+    "fin", "fini", "finir", "arrete", "arreter", "arretes", "arretez", "stop", "stoppe", "termine",
+    "terminer", "quitte", "quitter", "ferme", "fermer", "coupe", "couper", "sors", "sortir", "annule",
+    "annuler", "desactive", "desactiver",
+}
+MOTS_OUVERTURE_INTERPRETE = {
+    "mode", "direct", "active", "activer", "lance", "lancer", "demarre", "demarrer", "sois", "fais",
+    "fait", "commence", "ouvre", "bidirectionnel",
+}
+
+
+def est_phrase_interprete(texte: str) -> str | None:
+    """« demarrer », « arreter », ou None si la phrase ne concerne pas l'interprète.
+
+    Très rapide et sans réseau : elle est consultée pour chaque commande vocale (interception de
+    priorité 30). « mode interprète anglais », « interprète espagnol », « traduis en direct avec
+    lui », « fin de l'interprète », « arrête l'interprète ». Un mot « interprète » seul, sans langue
+    ni verbe d'ouverture, ne suffit pas : « c'est quoi un interprète » n'ouvre rien."""
+    t = _sans_accent(texte).replace("'", " ")
+    mots = t.split()
+    if not mots:
+        return None
+    interprete = any(m.startswith("interpret") for m in mots)
+    direct = "direct" in mots and any(m.startswith("tradu") for m in mots)
+    if not (interprete or direct):
+        return None
+    if _FIN_INTERPRETE.search(t) or any(m in MOTS_FIN_INTERPRETE for m in mots):
+        return "arreter"
+    if direct or langue_depuis_phrase(texte) or any(m in MOTS_OUVERTURE_INTERPRETE for m in mots):
+        return "demarrer"
+    return None
+
+
+# ---------------------------------------------------------------- décodage local pendant la parole
+class _Jeton:
+    """La reconnaissance locale d'UNE phrase, livrée plus tard par le fil de décodage."""
+
+    def __init__(self) -> None:
+        self._fait = threading.Event()
+        self.resultat: Ecoute | None = None
+        self.abandonne = False
+
+    def poser(self, resultat: Ecoute | None) -> None:
+        self.resultat = resultat
+        self._fait.set()
+
+    def attendre(self, delai: float) -> Ecoute | None:
+        return self.resultat if self._fait.wait(max(0.0, delai)) else None
+
+    def abandonner(self) -> None:
+        """Plus personne n'attend : le fil de décodage saute le reste de cette phrase et rattrape."""
+        self.abandonne = True
+
+
+class DecodeurContinu:
+    """Décode la parole avec le modèle local PENDANT qu'elle est dite, sur un fil à part.
+
+    POURQUOI : le plein vocabulaire coûte à peu près le temps réel sur la machine de développement
+    (1,13 fois mesuré le 5 septembre ; 1 à 2,4 fois le 13 septembre, processeur chargé par d'autres
+    programmes). Décoder la phrase APRÈS sa fin ajouterait donc toute sa durée à la latence de chaque
+    tour ; la décoder pendant qu'elle est dite ne laisse que le retard du décodeur — mesuré le 13
+    septembre sur quatre phrases de synthèse enchaînées au rythme réel, processeur chargé : de 0,02 s
+    (première phrase) à 2,97 s (le retard s'accumule quand les phrases se suivent sans pause). Le fil audio ne
+    fait que déposer des blocs dans une file (jamais bloquant) : c'est la règle qui a sauvé l'écoute
+    le 5 septembre.
+
+    `fabrique()` rend un reconnaisseur neuf (AcceptWaveform / Result / FinalResult). Les appels
+    `pousser`, `clore` et `annuler` viennent tous du même fil (l'écoute), dans l'ordre."""
+
+    def __init__(self, fabrique: Callable[[], Any], langue: str = LANGUE_MOI_DEFAUT):
+        self._fabrique = fabrique
+        self.langue = langue
+        self._file: "queue.Queue[tuple[str, _Jeton, bytes] | None]" = queue.Queue()
+        self._courant: _Jeton | None = None
+        self._ferme = False
+        self._fil = threading.Thread(target=self._tourner, name="iris-interprete-decodeur", daemon=True)
+        self._fil.start()
+
+    def pousser(self, bloc: bytes) -> None:
+        if self._ferme or not bloc:
+            return
+        if self._courant is None:
+            self._courant = _Jeton()
+            self._file.put(("debut", self._courant, b""))
+        self._file.put(("bloc", self._courant, bloc))
+
+    def clore(self) -> _Jeton | None:
+        """La phrase est finie : rend le jeton qui portera sa reconnaissance."""
+        jeton, self._courant = self._courant, None
+        if jeton is not None:
+            self._file.put(("fin", jeton, b""))
+        return jeton
+
+    def annuler(self) -> None:
+        """La phrase en cours n'en était pas une (toux, voix d'IRIS) : on la jette."""
+        jeton, self._courant = self._courant, None
+        if jeton is not None:
+            jeton.abandonner()
+            self._file.put(("fin", jeton, b""))
+
+    def fermer(self) -> None:
+        self.annuler()
+        self._ferme = True
+        self._file.put(None)
+
+    def _tourner(self) -> None:
+        reconnaisseur = None
+        resultats: list[str] = []
+        while True:
+            message = self._file.get()
+            if message is None:
+                return
+            quoi, jeton, bloc = message
+            try:
+                if quoi == "debut":
+                    resultats = []
+                    reconnaisseur = None if jeton.abandonne else self._fabrique()
+                elif quoi == "bloc":
+                    if reconnaisseur is not None and not jeton.abandonne and reconnaisseur.AcceptWaveform(bloc):
+                        resultats.append(reconnaisseur.Result())
+                elif quoi == "fin":
+                    if reconnaisseur is not None and not jeton.abandonne:
+                        resultats.append(reconnaisseur.FinalResult())
+                        jeton.poser(ecoute_depuis_resultats(resultats, self.langue))
+                    else:
+                        jeton.poser(None)
+                    reconnaisseur, resultats = None, []
+            except Exception as exc:  # un décodeur qui plante ne doit ni tuer le fil ni bloquer l'attente
+                log.warning("Décodage local de la phrase impossible : %s", exc)
+                reconnaisseur, resultats = None, []
+                jeton.poser(None)
+
+
+# ---------------------------------------------------------------- le service de l'interprète
+SORTIES_AUTRE = ("pc", "lunettes", "telephone")
+TOURS_MAX = 50
+TEXTE_MAX = 2000
+LIBELLE_AUDIO_BRUT = "Audio brut du micro"  # consent.DATA_TYPES["audio_raw"]["label"]
+CONFIDENTIEL_INTERPRETE = "Le mode confidentiel est actif : le micro est coupé et l'interprète ne peut pas démarrer."
+AUDIO_REQUIS = (
+    "Pour reconnaître ce que dit l'autre personne, IRIS doit envoyer sa voix à un service de "
+    "reconnaissance en ligne : la reconnaissance hors ligne ne connaît que votre langue. Autorisez "
+    f"« {LIBELLE_AUDIO_BRUT} » dans Confidentialité."
+)
+MODELE_ABSENT_INTERPRETE = (
+    "La reconnaissance hors ligne n'est pas installée : toutes les phrases, les vôtres comprises, "
+    "partiront au service de reconnaissance en ligne, et « Iris, arrête » ne sera pas entendu. "
+    "Utilisez le bouton Arrêter."
+)
+
+
+def voix_absente(langue: str) -> str:
+    nom = nom_langue(langue)
+    return (f"Aucune voix capable de parler {nom} n'est installée sur cet ordinateur : ce que vous dites "
+            "sera traduit et affiché, mais pas lu à voix haute pour l'autre personne. Choisissez la "
+            f"sortie « téléphone », ou ajoutez une voix en {nom} dans les paramètres de langue de Windows.")
+
+
+class RefusInterprete(Exception):
+    """L'interprète ne peut pas faire ce qui est demandé. `statut` suit HTTP (409, 403, 422, 502)."""
+
+    def __init__(self, statut: int, message: str, detail: Any = None, phrase: str = ""):
+        super().__init__(message)
+        self.statut = int(statut)
+        self.message = message
+        self.detail = detail if detail is not None else message
+        self.phrase = phrase or message
+
+
+def _executer_ici(coro: Any) -> Any:
+    """Hors de l'application (tests) : aucune boucle à qui confier la coroutine."""
+    return asyncio.run(coro)
+
+
+class ServiceInterprete:
+    """Le mode interprète : état, fil des tours, empêchements, et le sort de chaque phrase entendue.
+
+    N'ouvre aucun micro et ne joue aucun son par lui-même : l'écoute (voice/listener.py) lui apporte
+    les reconnaissances ; `voix` (routes_interprete.VoixAutreLangue) parle la langue de l'autre ;
+    `parler_moi` passe par la voix d'IRIS pour le propriétaire. Tout est injecté : les tests n'ont
+    ni micro, ni haut-parleur, ni réseau. Rien de ce qui est dit n'est écrit sur le disque : les
+    tours vivent en mémoire vive, effacés à la fermeture et après DUREE_MEMOIRE d'inactivité."""
+
+    def __init__(
+        self,
+        traduction: ServiceTraduction,
+        settings: Any = None,
+        hub: Any = None,
+        voix: Any = None,
+        ecoute: Any = None,
+        audio_autorise: Callable[[], bool] | None = None,
+        parler_moi: Callable[[str], Any] | None = None,
+        horloge: Callable[[], float] = time.monotonic,
+        murale: Callable[[], float] = time.time,
+    ):
+        self.traduction = traduction
+        self.settings = settings if settings is not None else traduction.settings
+        self.hub = hub if hub is not None else traduction.hub
+        self.voix = voix
+        self.ecoute = ecoute
+        self.audio_autorise = audio_autorise
+        self.parler_moi = parler_moi
+        self._horloge = horloge
+        self._murale = murale
+        self._verrou = threading.Lock()
+        self._tours: deque[dict] = deque(maxlen=TOURS_MAX)
+        self._dernier_tour = 0.0
+        self._dernier_doute_dit = float("-inf")
+        self.dernier_doute: dict | None = None
+        self.sortie_autre = self._sortie_reglee()
+        traduction.interprete = self
+        traduction.a_la_fermeture.append(self._sur_fermeture)
+
+    # ------------------------------------------------------------ réglages et état
+    @property
+    def _user(self) -> Any:
+        return getattr(self.settings, "user", None)
+
+    def _sortie_reglee(self) -> str:
+        valeur = str(getattr(self._user, "interprete_sortie_autre", "") or "").strip().lower()
+        return valeur if valeur in SORTIES_AUTRE else "pc"
+
+    def _langue_reglee(self) -> str:
+        return normaliser_langue(str(getattr(self._user, "interprete_langue", "") or "")) or LANGUE_ENTENDUE_DEFAUT
+
+    @property
+    def actif(self) -> bool:
+        return bool(self.traduction.actif and self.traduction.bidirectionnel)
+
+    def voix_disponible(self, langue: str) -> bool:
+        if self.voix is None:
+            return False
+        try:
+            return bool(self.voix.disponible(langue))
+        except Exception as exc:
+            log.warning("Voix de l'autre langue illisible : %s", exc)
+            return False
+
+    def _nom_voix(self, langue: str) -> str | None:
+        try:
+            return self.voix.nom_voix(langue) if self.voix is not None else None
+        except Exception:
+            return None
+
+    def langues(self) -> list[dict]:
+        moi = self.traduction.langue_moi
+        return [{"code": code, "nom": nom, "voix": self.voix_disponible(code)}
+                for code, nom in NOMS_LANGUES.items() if code != moi]
+
+    def _refus_consentement_texte(self) -> RefusInterprete | None:
+        verifier = self.traduction.verifier_envoi
+        if verifier is None:
+            return None
+        try:
+            verifier()
+            return None
+        except Exception as exc:
+            if type(exc).__name__ == "LocalOnlyMode":
+                return RefusInterprete(409, self.traduction.pourquoi_impossible() or
+                                       "Le mode local est actif : l'interprète exige un envoi en ligne.")
+            data_type = getattr(exc, "data_type", None)
+            if data_type:
+                libelle = getattr(exc, "reason", "") or data_type
+                message = (f"Pour traduire, IRIS doit envoyer le texte au moteur VELA. Autorisez « {libelle} » "
+                           "dans Confidentialité, puis réessayez.")
+                return RefusInterprete(
+                    403, message,
+                    detail={"code": "consentement", "data_type": data_type, "label": libelle, "message": message},
+                    phrase=f"Je ne peux pas traduire sans ton accord : autorise « {libelle} » dans Confidentialité.",
+                )
+            log.warning("Vérification du consentement impossible : %s", exc)
+            return RefusInterprete(409, "Je ne peux pas vérifier l'accord d'envoi en ce moment : je ne traduis pas.")
+
+    def constats(self, langue: str, sortie: str, pour_voix: bool = True) -> tuple[RefusInterprete | None, list[str]]:
+        """(ce qui EMPÊCHE, ce qui LIMITE) pour cette langue et cette sortie.
+
+        Les empêchements arrêtent tout, dans l'ordre où il faut les lever. Les limites laissent le
+        mode s'ouvrir, mais sont dites à l'ouverture et affichées : un mode qui marche à moitié sans
+        le dire est exactement la promesse que VELA s'interdit."""
+        u = self._user
+        if getattr(u, "privacy_mode", False):
+            return RefusInterprete(409, CONFIDENTIEL_INTERPRETE), []
+        impossible = self.traduction.pourquoi_impossible()
+        if impossible:
+            return RefusInterprete(409, impossible), []
+        moi = self.traduction.langue_moi
+        if not langue or langue not in NOMS_LANGUES:
+            possibles = ", ".join(nom for code, nom in NOMS_LANGUES.items() if code != moi)
+            return RefusInterprete(422, f"Je ne sais pas interpréter cette langue. Langues possibles : {possibles}."), []
+        if langue == moi:
+            return RefusInterprete(422, f"Vous parlez déjà {nom_langue(moi)} : choisissez la langue de l'autre personne."), []
+        refus = self._refus_consentement_texte()
+        if refus is not None:
+            return refus, []
+        if pour_voix and self.audio_autorise is not None:
+            try:
+                autorise = bool(self.audio_autorise())
+            except Exception:
+                autorise = False
+            if not autorise:
+                return RefusInterprete(
+                    403, AUDIO_REQUIS,
+                    detail={"code": "consentement", "data_type": "audio_raw", "label": LIBELLE_AUDIO_BRUT,
+                            "message": AUDIO_REQUIS},
+                    phrase=f"Pour entendre l'autre personne, autorise « {LIBELLE_AUDIO_BRUT} » dans Confidentialité.",
+                ), []
+        limites: list[str] = []
+        if sortie in ("pc", "lunettes") and not self.voix_disponible(langue):
+            limites.append(voix_absente(langue))
+        if pour_voix and self.ecoute is not None:
+            try:
+                modele = bool(self.ecoute.model_ready())
+            except Exception:
+                modele = True  # on ne sait pas : on ne l'affirme pas absent
+            if not modele:
+                limites.append(MODELE_ABSENT_INTERPRETE)
+        return None, limites
+
+    def _purger(self) -> None:
+        with self._verrou:
+            if self._tours and not self.actif and self._horloge() - self._dernier_tour > DUREE_MEMOIRE:
+                self._tours.clear()
+
+    def tours(self) -> list[dict]:
+        self._purger()
+        with self._verrou:
+            return [dict(t) for t in self._tours]
+
+    def etat(self) -> dict:
+        actif = self.actif
+        langue = self.traduction.langue_entendue if actif else self._langue_reglee()
+        sortie = self.sortie_autre if actif else self._sortie_reglee()
+        refus, limites = self.constats(langue, sortie, pour_voix=True)
+        tours = self.tours()
+        latences = [t["latence_ms"] for t in tours if t.get("origine") == "voix" and t.get("latence_ms") is not None]
+        return {
+            "actif": actif,
+            "langue_moi": self.traduction.langue_moi,
+            "langue_autre": langue,
+            "langue_autre_nom": nom_langue(langue),
+            "sortie_autre": sortie,
+            "tours": tours,
+            "langues": self.langues(),
+            "empechement": refus.message if refus is not None else (" ".join(limites) or None),
+            # Compléments (hors contrat minimal) : l'écran distingue « ne démarre pas » de « démarre, mais… ».
+            "empechement_bloquant": refus is not None,
+            "avertissements": limites,
+            "voix_autre": {"disponible": self.voix_disponible(langue), "nom": self._nom_voix(langue)},
+            "ecoute": bool(getattr(self.ecoute, "running", False)),
+            "latence_moyenne_ms": int(sum(latences) / len(latences)) if latences else None,
+            "latence_visee_ms": int(LATENCE_VISEE * 1000),
+            "traduction_simple_active": bool(self.traduction.actif and not self.traduction.bidirectionnel),
+            "dernier_doute": self.dernier_doute,
+        }
+
+    # ------------------------------------------------------------ ouvrir / fermer
+    def demarrer(self, langue_autre: str | None = None, sortie_autre: str | None = None,
+                 annoncer: bool = True) -> dict:
+        """Ouvre l'interprète. Lève RefusInterprete si c'est impossible. Rend l'état et la phrase dite.
+
+        Démarre l'écoute si elle est arrêtée : sans micro, un interprète ouvert n'entendrait personne,
+        et le laisser croire est le raté le plus coûteux de cette fonction."""
+        langue = normaliser_langue(langue_autre or "") or self._langue_reglee()
+        sortie = str(sortie_autre or self._sortie_reglee()).strip().lower()
+        if sortie not in SORTIES_AUTRE:
+            raise RefusInterprete(422, "La sortie doit être « pc », « lunettes » ou « telephone ».")
+        if self.voix is not None:
+            try:
+                self.voix.rafraichir()  # une voix installée depuis la dernière fois doit compter
+            except Exception as exc:
+                log.info("Liste des voix non rafraîchie : %s", exc)
+        refus, limites = self.constats(langue, sortie, pour_voix=True)
+        if refus is not None:
+            raise refus
+        ecoute = self.ecoute
+        if ecoute is not None and not getattr(ecoute, "running", False):
+            try:
+                ecoute.start()
+            except Exception as exc:
+                log.warning("Écoute non démarrée pour l'interprète : %s", exc)
+            if not getattr(ecoute, "running", False):
+                raison = (getattr(ecoute, "error", "") or "raison inconnue").strip()
+                raise RefusInterprete(409, f"L'écoute vocale ne démarre pas : {raison}")
+        phrase_service = self.traduction.demarrer(langue, bidirectionnel=True)
+        if not self.actif:
+            raise RefusInterprete(409, phrase_service)
+        self.sortie_autre = sortie
+        with self._verrou:
+            self._tours.clear()
+        self.dernier_doute = None
+        self._dernier_doute_dit = float("-inf")
+        phrase = phrase_entree_interprete(langue, sortie)
+        if sortie in ("pc", "lunettes") and not self.voix_disponible(langue):
+            phrase += f" Aucune voix en {nom_langue(langue)} n'est installée : ce que vous dites sera seulement affiché."
+        self._publier("interprete.etat", actif=True, langue_autre=langue, sortie_autre=sortie,
+                      empechement=" ".join(limites) or None)
+        if annoncer and self.parler_moi is not None:
+            try:
+                self.parler_moi(phrase)
+            except Exception as exc:
+                log.warning("Annonce de l'interprète impossible : %s", exc)
+        return {**self.etat(), "phrase": phrase}
+
+    def arreter(self, raison: str = "demande") -> dict:
+        """Ferme l'interprète. Sûre à appeler deux fois ; ne touche pas à une traduction simple ouverte."""
+        if self.actif:
+            phrase = self.traduction.arreter(raison)  # prévient _sur_fermeture
+        else:
+            phrase = phrase_sortie(raison)
+            if self.voix is not None:
+                try:
+                    self.voix.arreter()
+                except Exception:
+                    pass
+        return {**self.etat(), "phrase": phrase}
+
+    def appliquer_reglages(self) -> None:
+        """Mode confidentiel ou mode local activé pendant l'interprète : on ferme, tout de suite."""
+        u = self._user
+        if self.actif and (getattr(u, "privacy_mode", False) or getattr(u, "local_only", False)):
+            self.traduction.arreter("arret")
+
+    def _sur_fermeture(self, raison: str) -> None:
+        if self.voix is not None:
+            try:
+                self.voix.arreter()  # la phrase en cours pour l'autre personne ne continue pas seule
+            except Exception as exc:
+                log.warning("Voix de l'autre langue non arrêtée : %s", exc)
+        with self._verrou:
+            self._tours.clear()  # les paroles d'un tiers ne survivent pas à la conversation
+        self.dernier_doute = None
+        self._publier("interprete.etat", actif=False, raison=raison)
+
+    # ------------------------------------------------------------ une phrase entendue par le micro
+    def interpreter(
+        self,
+        locale: Ecoute | None,
+        reconnaitre_distante: Callable[[], Ecoute | None] | None,
+        fin_parole: float | None = None,
+        executer: Callable[[Any], Any] | None = None,
+        parler_moi: Callable[[str], Any] | None = None,
+    ) -> dict:
+        """Attribue la phrase, la fait traduire, et dirige la traduction vers la bonne oreille.
+
+        Appelée depuis le fil de travail de l'écoute, jamais le fil audio. `reconnaitre_distante`
+        n'est appelée QUE si la reconnaissance locale ne suffit pas : la voix du propriétaire, bien
+        reconnue sur l'ordinateur, ne part pas en ligne pour rien. `fin_parole` (horloge monotone)
+        sert à mesurer la latence du tour : de la fin de la parole à la remise à la voix. Ne lève
+        jamais : une exception ici laisserait IRIS muette devant deux personnes."""
+        parler = parler_moi or self.parler_moi
+        fin = self._horloge() if fin_parole is None else fin_parole
+        trad = self.traduction
+        try:
+            moi, autre = trad.langue_moi, trad.langue_entendue
+            distante: Ecoute | None = None
+            if juger_local(locale, moi) != "moi" and reconnaitre_distante is not None:
+                try:
+                    distante = reconnaitre_distante()
+                except Exception as exc:
+                    log.warning("Reconnaissance en ligne impossible : %s", exc)
+                    distante = Ecoute(erreur=str(exc) or type(exc).__name__)
+            attribution = attribuer(locale, distante, moi, autre)
+            if not self.actif:
+                return {"qui": attribution.qui, "abandon": True}
+            if attribution.qui == "doute":
+                return self._doute(attribution, parler)
+            trad.noter_parole()
+            executer = executer or _executer_ici
+            if attribution.qui == "autre":
+                resultat = executer(trad.traduire_entendu(attribution.texte, avec_reponse=False))
+            else:
+                resultat = executer(trad.traduire_ma_reponse(attribution.texte))
+            if resultat is None or not getattr(resultat, "ok", False):
+                raison = getattr(resultat, "raison", "") or DOUTE_RECONNAISSANCE
+                return self._doute(Attribution("doute", "", attribution.langue, raison, raison), parler,
+                                   qui=attribution.qui)
+            if not self.actif:
+                # Fermé pendant l'aller-retour : parler maintenant, ce serait parler après « Je ne traduis plus ».
+                return {"qui": attribution.qui, "abandon": True}
+            latence_ms = max(0, int(round((self._horloge() - fin) * 1000)))
+            if attribution.qui == "autre":
+                sortie = "voix_iris"
+                if parler is not None:
+                    parler(resultat.traduction)
+            else:
+                sortie = self._diriger_vers_autre(resultat.traduction, autre, self.sortie_autre)
+            tour = self._ajouter_tour(attribution.qui, attribution.texte, resultat.traduction,
+                                      resultat.langue_source, resultat.langue_cible, latence_ms, sortie, "voix")
+            return {"qui": attribution.qui, "tour": tour}
+        except Exception as exc:
+            log.warning("Phrase non interprétée : %s", exc)
+            return {"qui": "doute", "raison": str(exc)}
+
+    def _doute(self, attribution: Attribution, parler: Callable[[str], Any] | None, qui: str = "") -> dict:
+        maintenant = self._horloge()
+        if attribution.raison != "rien reconnu":
+            self.traduction.noter_parole()  # quelqu'un a parlé, même sans traduction
+        info = {"ts": round(self._murale(), 3), "raison": attribution.raison, "a_dire": attribution.a_dire,
+                "qui_suppose": qui or None}
+        self.dernier_doute = info
+        dit = False
+        if attribution.a_dire and parler is not None and maintenant - self._dernier_doute_dit >= DOUTE_INTERVALLE:
+            self._dernier_doute_dit = maintenant
+            try:
+                parler(attribution.a_dire)
+                dit = True
+            except Exception as exc:
+                log.warning("Doute non dit : %s", exc)
+        self._publier("interprete.doute", dit=dit, **info)
+        return {"qui": "doute", "raison": attribution.raison, "dit": dit}
+
+    def _diriger_vers_autre(self, texte: str, langue: str, sortie: str) -> str:
+        """Fait entendre la traduction à l'autre personne. Rend la sortie RÉELLEMENT utilisée.
+
+        « telephone » : le téléphone la lit lui-même (événement interprete.a_lire) ; « pc » et
+        « lunettes » : une voix de cette langue installée sur l'ordinateur ; « ecran » quand aucune
+        voix ne peut la dire — le tour s'affiche, et c'est tout ce qu'on prétend."""
+        if sortie == "telephone":
+            self._publier("interprete.a_lire", texte=texte, langue=langue, langue_nom=nom_langue(langue))
+            return "telephone"
+        if not self.voix_disponible(langue):
+            return "ecran"
+        try:
+            if self.voix.parler(texte, langue, sortie):
+                return sortie
+        except Exception as exc:
+            log.warning("Voix de l'autre langue en erreur : %s", exc)
+        return "ecran"
+
+    def _ajouter_tour(self, qui: str, original: str, traduction: str, source: str, cible: str,
+                      latence_ms: int | None, sortie: str, origine: str) -> dict:
+        tour = {
+            "ts": round(self._murale(), 3),
+            "qui": qui,
+            "original": original,
+            "traduction": traduction,
+            "langue_source": source,
+            "langue_cible": cible,
+            "latence_ms": latence_ms,
+            "sortie": sortie,
+            "origine": origine,
+        }
+        with self._verrou:
+            self._tours.append(tour)
+            self._dernier_tour = self._horloge()
+        self._publier("interprete.tour", **tour)
+        return dict(tour)
+
+    # ------------------------------------------------------------ texte du téléphone ou du clavier
+    async def traduire_texte(self, qui: str, texte: str, langue: str | None = None) -> dict:
+        """Une phrase déjà reconnue ailleurs (téléphone, clavier) -> sa traduction. La voix est jouée
+        par l'appelant. `langue` est la langue de L'AUTRE personne (celle du couple qui n'est pas la
+        vôtre), quel que soit `qui` ; à défaut, celle de l'interprète ouvert ou du réglage."""
+        qui = (qui or "").strip().lower()
+        if qui not in ("moi", "autre"):
+            raise RefusInterprete(422, "« qui » doit valoir « moi » ou « autre ».")
+        propre = (texte or "").strip()
+        if not propre:
+            raise RefusInterprete(422, "Le texte à traduire est vide.")
+        if len(propre) > TEXTE_MAX:
+            raise RefusInterprete(422, f"Texte trop long : {TEXTE_MAX} caractères au plus.")
+        autre = normaliser_langue(langue or "") or (self.traduction.langue_entendue if self.actif else self._langue_reglee())
+        refus, _limites = self.constats(autre, "telephone", pour_voix=False)
+        if refus is not None:
+            raise refus
+        moi = self.traduction.langue_moi
+        source, cible = (moi, autre) if qui == "moi" else (autre, moi)
+        depart = self._horloge()
+        resultat = await self.traduction.traduire_texte(propre, source, cible)
+        latence_ms = max(0, int(round((self._horloge() - depart) * 1000)))
+        if not resultat.ok:
+            raise RefusInterprete(502, resultat.raison or "La traduction a échoué.")
+        self._ajouter_tour(qui, propre, resultat.traduction, source, cible, latence_ms, "appelant", "texte")
+        return {"ok": True, "traduction": resultat.traduction, "langue_source": source,
+                "langue_cible": cible, "latence_ms": latence_ms}
+
+    # ------------------------------------------------------------ la voix : interception de priorité 30
+    def interception(self, texte: str) -> str | None:
+        """« mode interprète anglais », « fin de l'interprète »… -> la phrase à dire ; None sinon."""
+        action = est_phrase_interprete(texte)
+        if action is None:
+            return None
+        if action == "arreter":
+            if not self.actif:
+                return "L'interprète n'est pas ouvert."
+            return self.arreter("demande")["phrase"]
+        try:
+            return self.demarrer(langue_depuis_phrase(texte) or None, None, annoncer=False)["phrase"]
+        except RefusInterprete as exc:
+            return exc.phrase
+        except Exception as exc:
+            log.warning("Ouverture de l'interprète à la voix impossible : %s", exc)
+            return "Je n'arrive pas à ouvrir l'interprète."
+
+    def _publier(self, type_: str, **donnees: Any) -> None:
+        if self.hub is None:
+            return
+        try:
+            self.hub.publish(type_, **donnees)
+        except Exception as exc:
+            log.warning("Publication %s impossible : %s", type_, exc)

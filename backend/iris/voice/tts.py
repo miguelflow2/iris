@@ -2,17 +2,57 @@
 from __future__ import annotations
 
 import logging
+import math
 import queue
 import re
+import sys
 import threading
 import time
 
 from ..config import Settings
 from ..events import EventHub
 from .elevenlabs import PRECHAUFFAGE, ElevenLabsSpeaker, classer_sorties, micro_mains_libres
+from .etirement import facteur_debit
 from .piper import PiperSpeaker
 
 log = logging.getLogger("iris.tts")
+
+# --------------------------------------------------------------------------- débit de la voix Windows
+# SAPI ne prend pas des mots par minute mais un Rate entier de -10 à +10, sur une échelle
+# logarithmique : +10 = 3 fois la vitesse normale de la voix, -10 = le tiers, chaque cran multiplie
+# la vitesse par la racine dixième de 3 (≈ 1,116). Mesuré le 13 septembre 2026 sur la voix SAPI de
+# ce PC, rendue dans un tampon mémoire (aucun haut-parleur) : Rate 6 → 2,005×, Rate 10 → 2,96×,
+# Rate -10 → 0,333×, et Rate 12 est accepté mais plafonné en silence au même son que 10.
+RATE_SAPI_MIN = -10
+RATE_SAPI_MAX = 10
+# Coefficients de pyttsx3 (pyttsx3/drivers/sapi5.py, E_REG) pour convertir ses « mots par minute »
+# en Rate SAPI : int(log(mpm / a, b)). Valeur de repli si le pilote n'est pas chargé.
+_COEFFS_PYTTSX3 = (156.63, 1.11)
+
+
+def rate_sapi(tts_rate: object) -> int:
+    """Rate SAPI (-10..10) qui donne la vitesse demandée par tts_rate (185 → 0, 370 → 6, 555 → 10)."""
+    facteur = facteur_debit(tts_rate)
+    cran = int(round(10 * math.log(facteur) / math.log(3)))
+    return max(RATE_SAPI_MIN, min(RATE_SAPI_MAX, cran))
+
+
+def mots_minute_pyttsx3(rate: int, voix_id: str | None = None) -> float:
+    """Valeur « rate » à confier à pyttsx3 pour qu'il pose lui-même exactement ce Rate SAPI.
+
+    Pourquoi : pyttsx3 recalcule Rate depuis sa valeur mémorisée chaque fois qu'on change de voix
+    (setProperty("voice")) ; si cette valeur mémorisée n'est pas cohérente, le débit choisi saute au
+    premier changement de voix. pyttsx3 tronque vers zéro : on vise le milieu du cran voulu."""
+    a, b = _COEFFS_PYTTSX3
+    pilote = sys.modules.get("pyttsx3.drivers.sapi5")
+    registre = getattr(pilote, "E_REG", None)
+    if isinstance(registre, dict) and registre:
+        try:
+            a, b = registre.get(voix_id) or registre.get(getattr(pilote, "MSMARY", "")) or (a, b)
+        except Exception:
+            pass
+    decalage = 0.5 if rate > 0 else (-0.5 if rate < 0 else 0.0)
+    return float(a) * float(b) ** (rate + decalage)
 
 _CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE = re.compile(r"`([^`]*)`")
@@ -139,16 +179,42 @@ class TextToSpeech:
             return
         u = self.settings.user
         try:
-            self._engine.setProperty("rate", int(u.tts_rate or 175))
             self._engine.setProperty("volume", 1.0)
             if u.tts_voice:
                 self._engine.setProperty("voice", u.tts_voice)
         except Exception as exc:
             log.warning("réglage TTS impossible: %s", exc)
+        # Débit APRÈS la voix : pyttsx3 recalcule le débit à chaque changement de voix. Dans son propre
+        # try : un débit refusé ne doit priver ni de la voix choisie ni du routage vers les lunettes.
+        self._appliquer_debit()
         # La sortie audio n'est PAS une propriété pyttsx3 (setProperty lève KeyError) : elle se règle
         # sur l'objet SAPI, juste avant say(). Hors du try ci-dessus pour qu'un réglage de voix raté
         # ne prive pas Miguel du routage vers ses lunettes.
         self._appliquer_sortie()
+
+    def _appliquer_debit(self) -> None:
+        """tts_rate (185 = 1×, 555 = 3×) traduit en Rate SAPI, borné à [-10, 10].
+
+        pyttsx3 traduit lui-même ses « mots par minute » avec des coefficients pensés pour les voix de
+        Windows XP : 185 y donnait Rate 1 (≈ 1,1×) et 555 donnait Rate 12, hors de la plage SAPI. On
+        pose donc le Rate exact directement sur l'objet SAPI, et on donne à pyttsx3 la valeur
+        équivalente pour qu'il ne le défasse pas au prochain changement de voix. Sans objet SAPI
+        (autre pilote), le réglage est transmis tel quel, en mots par minute."""
+        tts_rate = self.settings.user.tts_rate
+        sapi = self._sapi()
+        try:
+            if sapi is None:
+                self._engine.setProperty("rate", int(tts_rate or 185))
+                return
+            rate = rate_sapi(tts_rate)
+            try:
+                voix_id = sapi.Voice.Id
+            except Exception:
+                voix_id = None
+            self._engine.setProperty("rate", mots_minute_pyttsx3(rate, voix_id))
+            sapi.Rate = rate
+        except Exception as exc:
+            log.warning("réglage du débit de la voix Windows impossible : %s", exc)
 
     # ------------------------------------------------------------------ sortie audio (lunettes)
     def _sapi(self):

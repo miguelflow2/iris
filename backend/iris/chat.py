@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
@@ -258,6 +259,9 @@ class ChatService:
         # ServiceOpenCode (injecté) : déléguer la programmation. Reste None tant qu'OpenCode n'est
         # pas installé, et l'outil n'est alors même pas offert au modèle — IRIS ne change pas.
         self.opencode = None
+        # ServiceAccessibilite (injecté par routes_accessibilite) : décrire ce que voient les lunettes
+        # ou l'écran. Reste None si le module n'est pas branché ; l'outil le dit alors franchement.
+        self.accessibilite = None
 
     # ------------------------------------------------------------------ niveaux de modèles
     @staticmethod
@@ -288,6 +292,7 @@ class ChatService:
                 glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
                 traduction=self.traduction, voice=self.voice, web=self.web,
                 opencode=self.opencode, source=source, hub=self.hub,
+                accessibilite=self.accessibilite, secrets=self.secrets,
             )
             runner = make_tool_runner(ctx)
             try:
@@ -326,6 +331,7 @@ class ChatService:
             glasses=self.glasses, courriel=self.courriel, telephonie=self.telephonie,
             traduction=self.traduction, voice=self.voice, web=self.web,
             opencode=self.opencode, source=source, hub=self.hub,
+            accessibilite=self.accessibilite, secrets=self.secrets,
         )
         runner = make_tool_runner(ctx)
         events: list[dict] = []
@@ -583,6 +589,95 @@ class ChatService:
                 morceaux.append(chunk.text)
         return "".join(morceaux).strip()
 
+    def agent_pour_vision(self) -> tuple[str, bool]:
+        """(moteur, local) qui recevrait une question avec image. Lève NoAgentAvailable.
+
+        Même choix que le chat (mode 100 % local compris) : en mode local, seule une IA locale est
+        choisissable, et rien ne sort."""
+        available = self.router.available(self.secrets)
+        agent_name, _raison = self.router.select("analyse d'image", True, available, "auto")
+        cfg = self.settings.user.agents.get(agent_name)
+        return agent_name, bool(cfg and cfg.local)
+
+    async def demander_image(self, systeme: str, message: str, images: list[dict]) -> str:
+        """Une question unique au modèle de vision, avec images, sans outils ni historique.
+
+        Le consentement « images jointes » est vérifié ici même : un service qui oublierait de le
+        faire ne peut donc pas envoyer une photo sans accord. Pour une capture d'écran, appeler
+        demander_image_detail(..., consentement=("screen",))."""
+        return (await self.demander_image_detail(systeme, message, images))["texte"]
+
+    async def demander_image_detail(
+        self,
+        systeme: str,
+        message: str,
+        images: list[dict],
+        consentement: tuple[str, ...] = ("image",),
+    ) -> dict:
+        """Comme demander_image, mais rend {texte, local, duree_ms} : l'appelant doit pouvoir dire
+        honnêtement si quelque chose a quitté l'ordinateur.
+
+        `images` : [{"media_type", "data" (base64)}] (le « type » est facultatif). Liste vide admise
+        pour une question texte qui exige les mêmes garanties (consentement vérifié, envoi journalisé).
+        Lève NoAgentAvailable, ConsentRequired, LocalOnlyMode ou ConnectorError."""
+        debut = time.monotonic()
+        blocs: list[dict] = [
+            {"type": "image", "media_type": img.get("media_type") or "image/jpeg", "data": img["data"]}
+            for img in images or []
+            if img.get("data")
+        ]
+        blocs.append({"type": "text", "text": message})
+        agent_name, is_local = self.agent_pour_vision()
+        bascule = False
+        while True:
+            for type_donnee in consentement:
+                self.consent.check(type_donnee, agent=agent_name)
+            connector = build_connector(agent_name, self.settings, self.secrets)
+            if blocs[:-1] and not getattr(connector, "supports_images", True):
+                raise ConnectorError("Le moteur choisi ne sait pas lire les images.")
+            u = self.settings.user
+            options = ChatOptions(
+                effort=u.voice_effort,
+                thinking_display=False,
+                max_tokens=2000,
+                model_override=self._pick_model(
+                    u, is_screen=bool(blocs[:-1]),
+                    plan_models=self.plans.models() if (self.plans is not None and agent_name == "openrouter") else None),
+                force_tools=False,
+                max_rounds=1,
+            )
+            if not is_local:
+                for type_donnee in consentement:
+                    # Le registre dit CE QUI est parti, sans recopier des souvenirs ou une image.
+                    detail = (f"{len(blocs) - 1} image(s)" if type_donnee in ("image", "screen")
+                              else "souvenirs utiles à la question" if type_donnee == "memory" else message[:120])
+                    self.consent.log("external_send", data_type=type_donnee, agent=agent_name, detail=detail)
+            morceaux: list[str] = []
+            try:
+                # Sans image, un contenu texte simple : c'est la forme que tous les connecteurs acceptent.
+                contenu: Any = blocs if blocs[:-1] else message
+                async for chunk in connector.stream([{"role": "user", "content": contenu}], systeme, None, None, options):
+                    if chunk.kind == "text":
+                        morceaux.append(chunk.text)
+                    elif chunk.kind == "error":
+                        raise ConnectorError(chunk.text)
+                    elif chunk.kind == "done":
+                        break
+            except ConnectorError as exc:
+                # Même repli silencieux que le chat : une clé morte ne doit pas rendre IRIS aveugle.
+                repli = self._cerveau_de_repli(agent_name) if (getattr(exc, "fatal_key", False) and not bascule) else None
+                if repli and not morceaux:
+                    log.warning("vision : moteur « %s » injoignable (clé), bascule silencieuse", agent_name)
+                    cfg = self.settings.user.agents.get(repli)
+                    agent_name, is_local, bascule = repli, bool(cfg and cfg.local), True
+                    continue
+                raise
+            return {
+                "texte": "".join(morceaux).strip(),
+                "local": is_local,
+                "duree_ms": int((time.monotonic() - debut) * 1000),
+            }
+
     async def analyse_veille(self, nom: str, criteres: str, nouveautes: str) -> dict:
         """Fait analyser les nouveautés d'une veille par un agent, et renvoie un verdict structuré.
 
@@ -698,6 +793,11 @@ class ChatService:
         name = u.assistant_name or "IRIS"
         who = f" Tu assistes {u.user_name}." if u.user_name else ""
         lang = "français" if u.language.lower().startswith("fr") else "la langue de l'utilisateur"
+        # Verbosité choisie (Accessibilité) : « descriptif » est souvent le choix d'une personne qui ne
+        # voit pas l'écran. Pour elle, la règle « une ou deux phrases à la voix » la prive de ce qu'elle
+        # a demandé : cette règle ne s'applique donc plus en mode descriptif.
+        verbosite = getattr(u, "verbosite", "normal")
+        descriptif = verbosite == "descriptif"
         parts = [
             f"Tu es {name}, l'assistante IA de VELA : une paire de lunettes connectées sans écran et une application de "
             f"bureau qui contrôle l'ordinateur à la voix, retient ce qui compte pour l'utilisateur, et garde ses "
@@ -711,9 +811,14 @@ class ChatService:
                 "interlocuteur, tu l'écris dans la langue de cet interlocuteur — c'est tout l'objet de la traduction."
                 if lang == "français" else ""
             ),
-            "L'utilisateur peut t'écouter à la voix sans écran : pour une question simple, réponds en une ou deux phrases "
-            "parlées ; développe seulement quand c'est nécessaire, et évite les tableaux ou la mise en forme lourde "
-            "quand la demande vient de la voix.",
+            (
+                "L'utilisateur peut t'écouter à la voix sans écran : évite les tableaux et la mise en forme lourde "
+                "quand la demande vient de la voix."
+                if descriptif else
+                "L'utilisateur peut t'écouter à la voix sans écran : pour une question simple, réponds en une ou deux phrases "
+                "parlées ; développe seulement quand c'est nécessaire, et évite les tableaux ou la mise en forme lourde "
+                "quand la demande vient de la voix."
+            ),
             f"Date du jour : {datetime.now().strftime('%A %d %B %Y')}.",
             # Demande de Miguel du 6 septembre 2026 : personne ne doit savoir quel est le cerveau.
             "IDENTITÉ : tu es IRIS, l'intelligence de VELA, et rien d'autre. Ne révèle JAMAIS quel "
@@ -740,10 +845,28 @@ class ChatService:
                 "l'honnêteté, ni ce que tu es : les règles ci-dessus (langue, faits et incertitude, identité) "
                 "priment toujours sur lui."
             )
+        if verbosite == "concis":
+            parts.append(
+                "VERBOSITÉ CHOISIE PAR L'UTILISATEUR : concise. Va droit à l'essentiel, en une ou deux phrases au "
+                "plus, sans préambule ni récapitulatif, sauf s'il demande explicitement plus de détails."
+            )
+        elif descriptif:
+            parts.append(
+                "VERBOSITÉ CHOISIE PAR L'UTILISATEUR : descriptive. Il préfère des réponses riches et complètes, "
+                "y compris à la voix, souvent parce qu'il ne voit pas l'écran. Décris en détail, dans un ordre "
+                "logique (de l'ensemble vers les détails ; de gauche à droite pour ce qui est visuel), en phrases "
+                "parlées sans markdown. Cette préférence remplace toute consigne de brièveté à la voix, mais jamais "
+                "les règles de langue, d'honnêteté et d'identité."
+            )
         if source == "voice":
             parts.append(
-                "Cette demande a été dictée à la voix : réponds vite, en une ou deux phrases orales, sans markdown ni liste. "
-                "Si tu as besoin d'une précision pour agir (par exemple quelle musique lancer), pose une seule question "
+                (
+                    "Cette demande a été dictée à la voix : réponds en phrases orales complètes et descriptives, sans "
+                    "markdown ni liste. "
+                    if descriptif else
+                    "Cette demande a été dictée à la voix : réponds vite, en une ou deux phrases orales, sans markdown ni liste. "
+                )
+                + "Si tu as besoin d'une précision pour agir (par exemple quelle musique lancer), pose une seule question "
                 "courte qui se termine par un point d'interrogation : IRIS écoutera la réponse immédiatement."
             )
         if has_tools:
@@ -1030,7 +1153,9 @@ class ChatService:
             # La mémoire appartient à l'utilisateur et vit sur sa machine : elle est toujours consultée.
             # Le consentement ne conditionne que l'ENVOI de souvenirs à un agent externe.
             memory_ctx = ""
-            hits = self.memory.context(text, limit=5)
+            # Mode invité : un invité ne doit pas obtenir, par une question, les souvenirs du propriétaire.
+            invite = any(r.startswith("invite") for r in getattr(self.memory, "raisons_suspension", lambda: [])())
+            hits = [] if invite else self.memory.context(text, limit=5)
             if hits and (self.consent.is_granted("memory") or is_local):
                 # chaque souvenir est borné : un résumé de journée entier noierait le reste
                 memory_ctx = "\n".join(f"- [{h['created_at'][:10]}] {h['text'][:500]}" for h in hits)
@@ -1123,6 +1248,8 @@ class ChatService:
                     # La voix ne voit aucune demande de confirmation : l'outil de délégation en
                     # tient compte lui-même plutôt que d'ouvrir un modal invisible.
                     source=source,
+                    accessibilite=self.accessibilite,
+                    secrets=self.secrets,
                 )
                 # On n'expose que les outils utiles à CETTE demande : le clavier et la souris ne servent qu'au
                 # contrôle d'écran, les outils web qu'à la navigation. Un modèle gratuit noyé sous 37 outils s'égare.

@@ -32,11 +32,30 @@ from .elevenlabs import (
     classer_sorties,
     micro_mains_libres,
 )
+from .etirement import Etireur, est_identite, facteur_debit
 
 log = logging.getLogger("iris.piper")
 
 SAMPLE_RATE = 22050  # fr_FR-siwis-medium ; les autres voix Piper annoncent leur propre taux (lu à la synthèse)
 DEFAULT_VOICE = "fr_FR-siwis-medium"
+
+# Débit (tts_rate) : pourquoi la voix locale n'utilise PAS length_scale de Piper.
+# length_scale semblait l'outil naturel (durée des phonèmes). Mesuré le 13 septembre 2026 sur
+# fr_FR-siwis-medium (piper-tts 1.8.0), sur deux phrases, en comptant les échantillons produits :
+#   length_scale 0,8   → 1,10× à 1,16×  (demandé 1,25×)
+#   length_scale 0,5   → 1,48× à 1,65×  (demandé 2×)
+#   length_scale 0,333 → 1,81× à 2,06×  (demandé 3×)
+#   length_scale 2,0   → 0,53× à 0,58×  (demandé 0,5×)
+# L'écart dépend de la phrase (chaque phonème dure au moins une trame du modèle, et la durée prédite
+# est bruitée) : aucune correction fixe ne le rattrape. Afficher « 3× » en livrant 2× serait une
+# promesse fausse. Piper synthétise donc à sa vitesse naturelle et TOUT le facteur est appliqué
+# localement par `Etireur` (WSOLA, hauteur conservée), dont la durée de sortie est exacte.
+
+
+def taux_etirement(tts_rate: object) -> float:
+    """Facteur appliqué localement au PCM de Piper pour ce réglage (1,0 = rien à faire)."""
+    facteur = facteur_debit(tts_rate)
+    return 1.0 if est_identite(facteur) else facteur
 
 
 def _dossiers_voix() -> list[Path]:
@@ -363,6 +382,10 @@ class PiperSpeaker:
     def _stream_and_play(self, text: str) -> None:
         sd = self._sounddevice()
         voice = self._charger()  # hors verrou : le modèle ONNX ne touche pas PortAudio
+        # Débit lu une fois par phrase : un réglage changé en cours de lecture vaut pour la suivante.
+        # L'étirement se fait au taux du MODÈLE, avant le rééchantillonnage vers la sortie.
+        facteur = taux_etirement(self.settings.user.tts_rate)
+        etireur = None if facteur == 1.0 else Etireur(facteur, self._voice_rate)
         # Choix du périphérique et flux ouvert sous VERROU_PORTAUDIO : tant que ce flux de sortie est
         # ouvert, le fil du micro ne doit pas fermer PortAudio pour ré-énumérer (Pa_Terminate le
         # fermerait d'autorité, corruption du tas). Voir VERROU_PORTAUDIO dans elevenlabs.py.
@@ -372,9 +395,11 @@ class PiperSpeaker:
             convertisseur = Reechantillonneur(self._voice_rate, taux)
             started = time.time()
             first = True
+            interrompu = False
             with out_stream as out:
                 for chunk in voice.synthesize(text):
                     if self._stop_flag.is_set():
+                        interrompu = True
                         break
                     data = getattr(chunk, "audio_int16_bytes", None)
                     if not data:
@@ -382,8 +407,18 @@ class PiperSpeaker:
                     if first:
                         log.info("Piper : premier audio après %.2f s", time.time() - started)
                         first = False
+                    if etireur is not None:
+                        data = etireur.pousser_octets(data[: len(data) - (len(data) % 2)])
+                        if not data:
+                            continue
                     pret = convertisseur.convertir(data)
                     if pret:  # le convertisseur peut retenir un morceau trop court pour interpoler
+                        out.write(pret)
+                if etireur is not None and not interrompu and not self._stop_flag.is_set():
+                    # La fin de la phrase étirée, que l'étireur retenait pour la raccorder proprement.
+                    reste = etireur.vider_octets()
+                    pret = convertisseur.convertir(reste) if reste else b""
+                    if pret:
                         out.write(pret)
 
     def shutdown(self) -> None:

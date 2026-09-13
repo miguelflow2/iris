@@ -245,3 +245,45 @@ def test_verrouillee_a_distance_tout_est_refuse_sauf_le_deverrouillage(client, a
     finally:
         del app.state.ctx.verrou
     assert client.get("/api/settings").status_code == 200
+
+
+# --------------------------------------------------------------------------- correctifs après la 1re vague
+def test_la_suppression_par_plage_efface_vraiment(client, app):
+    memoire = app.state.ctx.memory
+    memoire.add("souvenir à effacer")
+    avant = memoire.count()
+    r = client.delete("/api/memory/plage", params={"debut": "2000-01-01", "fin": "2999-12-31"})
+    assert r.status_code == 200 and r.json()["supprimes"] >= 1, "« plage » ne doit plus être pris pour un identifiant"
+    assert memoire.count() < avant
+
+
+def test_le_websocket_se_ferme_quand_iris_se_verrouille(client, app):
+    ctx = app.state.ctx
+    with client.websocket_connect("/ws?token=test-token") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        ctx.verrou = types.SimpleNamespace(verrouille=True, raison="distance")
+        try:
+            ctx.hub.publish("verrou.etat", verrouille=True, depuis="2026-09-13T20:00:00", raison="distance")
+            recu = ws.receive_json()
+            while recu.get("type") != "verrou.etat":
+                recu = ws.receive_json()
+            from starlette.websockets import WebSocketDisconnect
+
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_json()
+        finally:
+            del ctx.verrou
+
+
+def test_en_mode_invite_les_souvenirs_ne_sont_pas_injectes(app, monkeypatch):
+    ctx = app.state.ctx
+    appels: list[str] = []
+    monkeypatch.setattr(ctx.memory, "context", lambda texte, limit=5: appels.append(texte) or [])
+    ctx.memory.suspendre("invite")
+    try:
+        import inspect as _inspect
+
+        source = _inspect.getsource(type(ctx.chat))
+        assert "raisons_suspension" in source and 'r.startswith("invite")' in source
+    finally:
+        ctx.memory.reprendre("invite")
