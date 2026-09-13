@@ -149,7 +149,7 @@ export function RoutinesScreen({ params }: { params?: Record<string, any> }): JS
         <div className="carte">
           <h3>Nouvelle routine par enregistrement</h3>
           <div className="desc">
-            Une phrase, une séquence d’actions. Dites « {motReveil}, mode travail » et IRIS rejoue la routine instantanément, sans passer par l’IA.
+            Une phrase, une séquence d’actions. Dites « {motReveil}, mode travail » et IRIS rejoue la routine tout de suite, sans passer par l’IA.
           </div>
           {enCours ? (
             <div style={{ marginTop: 12 }}>

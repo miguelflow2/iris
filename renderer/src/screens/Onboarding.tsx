@@ -335,7 +335,7 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
                   <div style={{ marginTop: 14 }}>
                     <Field
                       label="Votre mot d’activation"
-                      hint={`Autre exemple : « ${wakeAffiche}, ouvre mon navigateur et mets de la musique ». IRIS répond en moins de 5 secondes et vous pose une question si elle a besoin d’une précision.`}
+                      hint={`Autre exemple : « ${wakeAffiche}, ouvre mon navigateur et mets de la musique ». Pour une commande courte comme celle-ci, IRIS vise une réponse en moins de 5 secondes, et vous pose une question si elle a besoin d’une précision.`}
                     >
                       <input className="input" value={wake} onChange={(e) => setWake(e.target.value)} placeholder={WAKE_DEFAUT} />
                     </Field>
