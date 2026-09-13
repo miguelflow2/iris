@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
+import inspect
 import logging
 import os
 import platform
@@ -133,6 +135,9 @@ class AppContext:
         self.crypto = Crypto(key)
         self.secrets = SecretStore(self.crypto, self.settings.data_dir, use_keyring=use_keyring)
         self.hub = EventHub()
+        # Crochets de cycle de vie des modules branchés par routeur (voir _brancher_modules).
+        self.demarrages: list = []
+        self.arrets: list = []
         self.consent = ConsentGate(self.db, self.settings, self.hub)
         self.capture = CaptureIndicator(self.hub)
         self.memory = MemoryService(self.db, self.crypto, self.settings)
@@ -389,6 +394,11 @@ class AppContext:
                 today = date.today().isoformat()
                 if now.strftime("%H:%M") >= (u.daily_summary_time or "21:00") and self._summary_done_for != today:
                     self._summary_done_for = today
+                    resume_quotidien = getattr(self, "resume_quotidien", None)
+                    if resume_quotidien is not None:
+                        # Résumé vocal de fin de journée (quotidien.py) : il garde la mémorisation.
+                        await resume_quotidien(today)
+                        continue
                     result = await self.chat.summarize_day(today)
                     if result.get("stored"):
                         self.tts.speak("Le résumé de ta journée est prêt dans ta mémoire.")
@@ -622,9 +632,23 @@ def create_app(
         if ctx.settings.user.voice_autostart and not ctx.settings.user.privacy_mode:
             loop.call_later(1.0, ctx.voice.start)
         glasses_task = loop.create_task(ctx.glasses.auto_connect_on_start())
+        for demarrer in list(ctx.demarrages):
+            try:
+                resultat = demarrer()
+                if inspect.isawaitable(resultat):
+                    await resultat
+            except Exception as exc:
+                log.warning("démarrage d'un module en erreur : %s", exc)
         try:
             yield
         finally:
+            for arreter in list(ctx.arrets):
+                try:
+                    resultat = arreter()
+                    if inspect.isawaitable(resultat):
+                        await resultat
+                except Exception as exc:
+                    log.warning("arrêt d'un module en erreur : %s", exc)
             reminders_task.cancel()
             summary_task.cancel()
             watchdog_task.cancel()
@@ -670,7 +694,24 @@ def create_app(
         header = connexion.headers.get("authorization", "")
         return header[7:] if header.lower().startswith("bearer ") else connexion.query_params.get("token", "")
 
+    # Chemins encore joignables quand IRIS est verrouillée à distance (verrou.py) : de quoi
+    # afficher l'écran de verrouillage et déverrouiller avec le mot de passe du propriétaire.
+    CHEMINS_PERMIS_VERROUILLEE = (
+        "/api/health", "/api/compte", "/api/confiance/verrou", "/api/confiance/deverrouiller",
+        "/m", "/manifest.webmanifest", "/sw.js", "/icone-",
+    )
+
     def raison_de_refus(connexion: HTTPConnection) -> str | None:
+        raison = _raison_jeton(connexion)
+        if raison is not None:
+            return raison
+        verrou = getattr(ctx, "verrou", None)
+        if verrou is not None and getattr(verrou, "verrouille", False):
+            if not connexion.url.path.startswith(CHEMINS_PERMIS_VERROUILLEE):
+                return "IRIS est verrouillée à distance. Déverrouillez-la avec le mot de passe du propriétaire."
+        return None
+
+    def _raison_jeton(connexion: HTTPConnection) -> str | None:
         """LA règle d'accès, la même pour le HTTP et pour le WebSocket. Rend la phrase de refus,
         ou None si la connexion est admise.
 
@@ -896,7 +937,12 @@ def create_app(
 
     @app.post("/api/memory", dependencies=auth)
     def add_memory(body: MemoryIn):
-        item = ctx.memory.add(body.text, source="user")
+        from .memory import MemoireSuspendue
+
+        try:
+            item = ctx.memory.add(body.text, source="user")
+        except MemoireSuspendue as exc:
+            raise HTTPException(409, str(exc))
         ctx.hub.publish("memory.updated", count=ctx.memory.count())
         return item
 
@@ -1672,4 +1718,44 @@ def create_app(
         except Exception as exc:
             log.warning("routeur Twilio entrant non branché : %s", exc)
 
+    _brancher_modules(app, ctx, auth)
     return app
+
+
+# Modules du chantier du 2026-09-13, chacun dans son propre fichier : routes_<nom>.py expose
+# creer_routeur(ctx) -> APIRouter. Import protégé (un module absent ou cassé ne doit JAMAIS
+# empêcher IRIS de démarrer). Crochets facultatifs sur le routeur : iris_demarrage et iris_arret.
+MODULES_ROUTEURS: tuple[tuple[str, bool], ...] = (
+    ("routes_accessibilite", True),
+    ("routes_ecoute", True),
+    ("routes_alertes", True),
+    ("routes_album", True),
+    ("routes_interprete", True),
+    ("routes_quotidien", True),
+    ("routes_assistants", True),
+    ("routes_confiance", True),
+    ("routes_partage", True),
+    ("routes_mobile", False),  # fichiers statiques de la page téléphone : publics, comme /m
+)
+
+
+def _brancher_modules(app: FastAPI, ctx: AppContext, auth: list) -> None:
+    for module, protege in MODULES_ROUTEURS:
+        try:
+            mod = importlib.import_module(f".{module}", __package__)
+        except Exception as exc:
+            log.info("module %s indisponible : %s", module, exc)
+            continue
+        try:
+            routeur = mod.creer_routeur(ctx)
+            if protege:
+                app.include_router(routeur, dependencies=auth)
+            else:
+                app.include_router(routeur)
+        except Exception as exc:
+            log.warning("module %s non branché : %s", module, exc)
+            continue
+        for attribut, liste in (("iris_demarrage", ctx.demarrages), ("iris_arret", ctx.arrets)):
+            crochet = getattr(routeur, attribut, None)
+            if callable(crochet):
+                liste.append(crochet)

@@ -10,9 +10,10 @@ import concurrent.futures as _cf
 import queue
 import re
 import threading
+import inspect
 import time
 import unicodedata
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from ..capture import CaptureIndicator
 from ..config import Settings
@@ -21,6 +22,7 @@ from ..consent import ConsentGate
 from ..events import EventHub
 from . import stt
 from .elevenlabs import VERROU_PORTAUDIO
+from .robinet import RobinetAudio
 from .tts import TextToSpeech
 
 log = logging.getLogger("iris.voice")
@@ -344,6 +346,14 @@ class VoiceListener:
         self.capture = capture
         self.tts = tts
         self.on_command = on_command
+        # Robinet audio (2026-09-13) : copie de chaque bloc micro pour les services parallèles
+        # (sous-titres, alertes, enregistrement, écoute assistée, verrou vocal). Voir robinet.py.
+        self.robinet = RobinetAudio()
+        # Phrases interceptées AVANT le modèle (mode invité, pas à pas, entraînement, description…).
+        # Triées par priorité croissante. Voir ajouter_interception.
+        self._interceptions: list[tuple[int, str, Callable[[str], Any]]] = []
+        # Verrou vocal : si défini, appelé avec l'audio de la commande ; (False, raison) = ignorée.
+        self.verificateur_locuteur: Callable[[bytes], tuple[bool, str]] | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.state = "off"
         self.engine: str | None = None
@@ -778,8 +788,11 @@ class VoiceListener:
         # Horodaté AVANT la mise en file : une file pleine est un retard de décodage, pas un micro
         # mort, et confondre les deux couperait l'écoute au pire moment (voir `_micro_perdu`).
         self._last_block = time.time()
+        bloc = self._resample(bytes(indata))
+        # Copie pour les services parallèles AVANT la file de l'écoute : ne bloque jamais.
+        self.robinet.publier(bloc)
         try:
-            self._audio.put_nowait(self._resample(bytes(indata)))
+            self._audio.put_nowait(bloc)
         except queue.Full:
             # File pleine : on jette le PLUS VIEUX, pas le plus récent.
             #
@@ -790,7 +803,7 @@ class VoiceListener:
             # d'activation, le son d'il y a une minute ne vaut rien. Celui de maintenant vaut tout.
             try:
                 self._audio.get_nowait()
-                self._audio.put_nowait(self._resample(bytes(indata)))
+                self._audio.put_nowait(bloc)
             except (queue.Empty, queue.Full):
                 pass
             self.dropped += 1
@@ -1364,10 +1377,57 @@ class VoiceListener:
             except _cf.TimeoutError:
                 continue
 
+    # ------------------------------------------------------------------ interceptions et locuteur
+    def ajouter_interception(self, nom: str, fonction: Callable[[str], Any], priorite: int = 50) -> None:
+        """Enregistre une fonction consultée pour chaque phrase, avant le modèle.
+
+        `fonction(texte)` renvoie None (pas pour moi), "" (traité, rien à dire) ou la phrase à dire.
+        Elle peut être async : elle est alors exécutée dans la boucle du service (90 s au plus).
+        Elle doit répondre vite quand la phrase ne la concerne pas. Même `nom` = remplacement."""
+        autres = [i for i in self._interceptions if i[1] != nom]
+        self._interceptions = sorted(autres + [(int(priorite), nom, fonction)], key=lambda i: i[0])
+
+    def retirer_interception(self, nom: str) -> None:
+        self._interceptions = [i for i in self._interceptions if i[1] != nom]
+
+    def _intercepter(self, text: str) -> str | None:
+        for _priorite, nom, fonction in list(self._interceptions):
+            try:
+                resultat = fonction(text)
+                if inspect.isawaitable(resultat):
+                    if self.loop is None:
+                        if inspect.iscoroutine(resultat):
+                            resultat.close()
+                        continue
+                    resultat = asyncio.run_coroutine_threadsafe(resultat, self.loop).result(timeout=90)  # type: ignore[arg-type]
+            except Exception as exc:
+                log.warning("interception %s en erreur : %s", nom, exc)
+                continue
+            if resultat is not None:
+                return str(resultat)
+        return None
+
+    def _locuteur_admis(self, pcm: bytes) -> bool:
+        """Verrou vocal : la commande n'est exécutée que si la voix est celle du propriétaire."""
+        verifier = self.verificateur_locuteur
+        if verifier is None or not pcm:
+            return True
+        try:
+            admis, raison = verifier(pcm)
+        except Exception as exc:
+            log.warning("verrou vocal en erreur (commande admise) : %s", exc)
+            return True
+        if not admis:
+            log.info("commande ignorée par le verrou vocal : %s", raison)
+            self.hub.publish("voice.locuteur_refuse", raison=raison)
+        return bool(admis)
+
     def _listen_command(self, primed: bytes = b"") -> str:
         """Capture une phrase et la transcrit. Fin detectee par le silence, sortie rapide si personne ne parle."""
         if self.engine != "vosk":
             segment = self._capture_segment(max_seconds=COMMAND_TIMEOUT, wait_for_speech=NO_SPEECH_TIMEOUT)
+            if segment and not self._locuteur_admis(primed + segment):
+                return ""
             text = self._cloud_recognize(segment) if segment else ""
             self._log_stt("google", text, len(segment) / 2 / stt.SAMPLE_RATE if segment else 0.0, 0)
             return text
@@ -1419,6 +1479,8 @@ class VoiceListener:
         pcm = b"".join(chunks)
         self._last_peak = peak_max
         self._log_stt("vosk", text, len(pcm) / 2 / stt.SAMPLE_RATE, peak_max)
+        if text and not self._locuteur_admis(pcm):
+            return ""
         return self._strip_wake(self._cloud_upgrade(pcm, text) or text)
 
     def _strip_wake(self, text: str) -> str:
@@ -1473,6 +1535,16 @@ class VoiceListener:
         # quelques mots ne couvrent pas.
         if self._est_demande_traduction(text):
             self._demarrer_traduction(text)
+            return
+        # Interceptions (mode invité, pas à pas, entraînement, description…) : une phrase reconnue
+        # par un service est traitée ici, sans passer par le modèle.
+        intercepte = self._intercepter(text) if self._interceptions else None
+        if intercepte is not None:
+            self.hub.publish("voice.transcript", text=text)
+            self._set_state("speaking")
+            if intercepte.strip():
+                self._say(intercepte)
+            self.hub.publish("voice.reply", text=intercepte, seconds=0.0)
             return
         self._set_state("processing")
         self.hub.publish("voice.transcript", text=text)

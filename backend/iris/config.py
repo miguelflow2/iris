@@ -119,6 +119,18 @@ def default_data_dir() -> Path:
     return Path.home() / ".local" / "share" / "iris-desktop" / "iris-data"
 
 
+TYPES_ALERTES = ("alarme", "sirene", "klaxon", "sonnette", "porte", "prenom")
+VERBOSITES = ("concis", "normal", "descriptif")
+
+
+def _borner(valeur: object, minimum: int, maximum: int, defaut: int) -> int:
+    """Entier borné ; une valeur illisible revient au défaut plutôt que de casser les réglages."""
+    try:
+        return max(minimum, min(maximum, int(float(valeur))))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return defaut
+
+
 class AgentConfig(BaseModel):
     label: str = ""
     active: bool = False
@@ -273,7 +285,84 @@ class UserSettings(BaseModel):
     relay_server: str = "https://relais.velaglass.ca"
     licence_email: str = ""
     licence_auto: bool = True
+    # ------------------------------------------------------------------ accessibilité (2026-09-13)
+    # Verbosité des réponses : « concis » (le plus court possible), « normal », « descriptif »
+    # (descriptions riches, y compris à la voix — pensé pour les personnes non voyantes).
+    verbosite: str = "normal"
+    annonce_capture: bool = True  # signal vocal court à chaque photo ou enregistrement (« Photo. »)
+    # Journal continu : les sous-titres de la journée sont gardés, chiffrés, pour « j'ai dit quoi
+    # mardi ? ». DÉSACTIVÉ par défaut : c'est une écoute permanente, elle se décide sciemment.
+    journal_continu: bool = False
+    alertes_actives: bool = False  # détecteur acoustique local (alarme, sirène, klaxon, sonnette…)
+    alertes_types: list[str] = Field(default_factory=lambda: list(TYPES_ALERTES))
+    alertes_sensibilite: int = 50  # 0-100
+    alertes_voix: bool = True  # annonce vocale de l'alerte dans les lunettes
+    ecoute_assistee_gain_db: int = 6  # 0-18, écoute assistée expérimentale
+    ecoute_assistee_reduction: int = 60  # 0-100, réduction du bruit
+    bouton_description_signature: str = ""  # trame du bouton des lunettes apprise (uuid:hex)
+    bouton_description_mode: str = "scene"  # description déclenchée par ce bouton
+    album_filigrane: bool = False
+    album_enregistrement_auto: bool = False
+    album_dossier_export: str = ""  # vide = Images/IRIS de l'utilisateur
+    interface_grand_texte: bool = False
+    # ------------------------------------------------------------------ fonctions du quotidien
+    interprete_langue: str = "en"  # langue de l'interlocuteur par défaut en mode interprète
+    interprete_sortie_autre: str = "pc"  # où l'autre personne entend la traduction : pc | lunettes | telephone
+    entrainement_repos_s: int = 90
+    recus_devise: str = "CAD"
+    # ------------------------------------------------------------------ confiance
+    verrou_vocal_actif: bool = False  # seule la voix enregistrée du propriétaire déclenche IRIS
+    verrou_vocal_seuil: int = 70  # 0-100
+    zones_sans_memoire: list[dict] = Field(default_factory=list)  # [{id, nom, lat, lon, rayon_m}]
+    mode_invite_minutes: int = 120  # retour automatique à la normale après ce délai
+    verrou_distant_actif: bool = False  # verrouillage / effacement à distance par le relais
     agents: dict[str, AgentConfig] = Field(default_factory=_default_agents)
+
+    @field_validator("tts_rate", mode="before")
+    @classmethod
+    def _borner_debit(cls, valeur: object) -> int:
+        """185 = vitesse normale ; les utilisateurs non voyants experts écoutent à 2-3× (≈ 555)."""
+        return _borner(valeur, 90, 560, 185)
+
+    @field_validator("verbosite", mode="before")
+    @classmethod
+    def _verbosite_connue(cls, valeur: object) -> str:
+        v = str(valeur or "").strip().lower()
+        return v if v in VERBOSITES else "normal"
+
+    @field_validator("alertes_sensibilite", "verrou_vocal_seuil", "ecoute_assistee_reduction", mode="before")
+    @classmethod
+    def _pourcentage(cls, valeur: object, info) -> int:
+        defaut = {"alertes_sensibilite": 50, "verrou_vocal_seuil": 70, "ecoute_assistee_reduction": 60}[info.field_name]
+        return _borner(valeur, 0, 100, defaut)
+
+    @field_validator("ecoute_assistee_gain_db", mode="before")
+    @classmethod
+    def _gain(cls, valeur: object) -> int:
+        return _borner(valeur, 0, 18, 6)
+
+    @field_validator("entrainement_repos_s", mode="before")
+    @classmethod
+    def _repos(cls, valeur: object) -> int:
+        return _borner(valeur, 10, 900, 90)
+
+    @field_validator("mode_invite_minutes", mode="before")
+    @classmethod
+    def _duree_invite(cls, valeur: object) -> int:
+        return _borner(valeur, 5, 720, 120)
+
+    @field_validator("alertes_types", mode="before")
+    @classmethod
+    def _types_alertes(cls, valeur: object) -> list[str]:
+        if not isinstance(valeur, (list, tuple)):
+            return list(TYPES_ALERTES)
+        return [t for t in dict.fromkeys(str(v) for v in valeur) if t in TYPES_ALERTES]
+
+    @field_validator("interprete_sortie_autre", mode="before")
+    @classmethod
+    def _sortie_interprete(cls, valeur: object) -> str:
+        v = str(valeur or "").strip().lower()
+        return v if v in ("pc", "lunettes", "telephone") else "pc"
 
     @field_validator("wake_word", mode="before")
     @classmethod

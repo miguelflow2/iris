@@ -33,6 +33,27 @@ import { CommunicationsScreen } from './CommunicationsScreen'
 import { ComptesWebScreen } from './ComptesWebScreen'
 import { MoteursIaScreen } from './MoteursIaScreen'
 import { ConfidentialiteScreen } from './ConfidentialiteScreen'
+import { AccessibiliteScreen } from './AccessibiliteScreen'
+import { SousTitresScreen } from './SousTitresScreen'
+import { AlertesSonoresScreen } from './AlertesSonoresScreen'
+import { EcouteAssisteeScreen } from './EcouteAssisteeScreen'
+import { ModeDehorsScreen } from './ModeDehorsScreen'
+import { JournalScreen } from './JournalScreen'
+import { BoutonLunettesScreen } from './BoutonLunettesScreen'
+import { InterpreteScreen } from './InterpreteScreen'
+import { VisionPartageeScreen } from './VisionPartageeScreen'
+import { CoursScreen } from './CoursScreen'
+import { CoursDetailScreen } from './CoursDetailScreen'
+import { RecusScreen } from './RecusScreen'
+import { PasAPasScreen } from './PasAPasScreen'
+import { EntrainementScreen } from './EntrainementScreen'
+import { PrixScreen } from './PrixScreen'
+import { ResumeJourneeScreen } from './ResumeJourneeScreen'
+import { RappelsContexteScreen } from './RappelsContexteScreen'
+import { VerrouVocalScreen } from './VerrouVocalScreen'
+import { ZonesScreen } from './ZonesScreen'
+import { ModeInviteScreen } from './ModeInviteScreen'
+import { VerrouDistantScreen } from './VerrouDistantScreen'
 
 /** Props reçues par tout écran empilé : les paramètres passés à `nav.ouvrir(ecran, params)`. */
 export type EcranProps = { params?: Record<string, any> }
@@ -75,5 +96,26 @@ export const ECRANS: Record<Ecran, React.ComponentType<EcranProps>> = {
   communications: CommunicationsScreen,
   'comptes-web': ComptesWebScreen,
   'moteurs-ia': MoteursIaScreen,
-  confidentialite: ConfidentialiteScreen
+  confidentialite: ConfidentialiteScreen,
+  accessibilite: AccessibiliteScreen,
+  'sous-titres': SousTitresScreen,
+  'alertes-sonores': AlertesSonoresScreen,
+  'ecoute-assistee': EcouteAssisteeScreen,
+  'mode-dehors': ModeDehorsScreen,
+  journal: JournalScreen,
+  'bouton-lunettes': BoutonLunettesScreen,
+  interprete: InterpreteScreen,
+  'vision-partagee': VisionPartageeScreen,
+  cours: CoursScreen,
+  'cours-detail': CoursDetailScreen,
+  recus: RecusScreen,
+  'pas-a-pas': PasAPasScreen,
+  entrainement: EntrainementScreen,
+  prix: PrixScreen,
+  'resume-journee': ResumeJourneeScreen,
+  'rappels-contexte': RappelsContexteScreen,
+  'verrou-vocal': VerrouVocalScreen,
+  zones: ZonesScreen,
+  'mode-invite': ModeInviteScreen,
+  'verrou-distant': VerrouDistantScreen
 }

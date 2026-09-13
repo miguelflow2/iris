@@ -995,3 +995,22 @@ async def telecommande_ws(ws: WebSocket):
         for r in list(mes_reqs):
             if _req_en_cours.get(r, {}).get("tel") is ws:
                 _req_en_cours.pop(r, None)
+
+
+# --------------------------------------------------------------------------- modules du 2026-09-13
+# Vision partagée en direct (partage_vision.py) et verrouillage à distance (verrou_distant.py),
+# chacun dans son fichier. Import protégé : le relais doit démarrer même si un module manque.
+# Chaque module expose une fabrique qui reçoit CE module (accès à l'état du relais).
+def _brancher_modules_relais() -> None:
+    import importlib
+    import sys
+
+    for _module, _fabrique in (("partage_vision", "creer_routeur_partage"), ("verrou_distant", "creer_routeur_verrou")):
+        try:
+            _mod = importlib.import_module(_module)
+            app.include_router(getattr(_mod, _fabrique)(sys.modules[__name__]))
+        except Exception as _exc:  # pragma: no cover - module absent
+            log.info("module %s indisponible : %s", _module, _exc)
+
+
+_brancher_modules_relais()

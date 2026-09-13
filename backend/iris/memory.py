@@ -31,11 +31,33 @@ def tokenize(text: str) -> set[str]:
     return {w.lower() for w in _WORD.findall(text or "") if w.lower() not in _STOP}
 
 
+class MemoireSuspendue(ValueError):
+    """Mémorisation suspendue (mode invité, zone sans mémoire…) : rien n'est écrit."""
+
+
 class MemoryService:
     def __init__(self, db: Database, crypto: Crypto, settings: Settings):
         self.db = db
         self.crypto = crypto
         self.settings = settings
+        # Raisons actives de suspension (« invite », « zone:Clinique »…). Tant qu'il en reste une,
+        # aucun souvenir n'est écrit. Les services qui gardent des traces (journal, cours, photos
+        # décrites) consultent `suspendue` avant d'écrire.
+        self._suspensions: set[str] = set()
+
+    def suspendre(self, raison: str) -> None:
+        self._suspensions.add(str(raison))
+
+    def reprendre(self, raison: str) -> None:
+        self._suspensions.discard(str(raison))
+
+    @property
+    def suspendue(self) -> str | None:
+        """La première raison de suspension active, ou None si la mémoire écrit normalement."""
+        return sorted(self._suspensions)[0] if self._suspensions else None
+
+    def raisons_suspension(self) -> list[str]:
+        return sorted(self._suspensions)
 
     def _retained_until(self) -> str | None:
         days = self.settings.user.retention_days
@@ -55,6 +77,8 @@ class MemoryService:
         text = (text or "").strip()
         if not text:
             raise ValueError("mémoire vide")
+        if self._suspensions:
+            raise MemoireSuspendue(f"mémorisation suspendue ({self.suspendue})")
         item = {
             "id": uuid.uuid4().hex,
             "created_at": now_iso(),
@@ -77,6 +101,8 @@ class MemoryService:
         Renvoie les souvenirs réellement ajoutés (les doublons sont ignorés)."""
         from .recall import doublon, extraire
 
+        if self._suspensions:
+            return []
         trouves = extraire(text)
         if not trouves:
             return []
