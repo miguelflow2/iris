@@ -1,0 +1,15 @@
+# Déploiement Netlify de l'app web téléphone d'IRIS.
+# L'app est entièrement statique : aucun build, aucune dépendance. On publie le dossier tel quel.
+#
+# Deux façons de déployer (voir README.md) :
+#   1. Glisser-déposer le dossier mobile-web/ sur https://app.netlify.com/drop
+#   2. Relier le dépôt et pointer « base » sur mobile-web/ avec la config ci-dessous.
+
+[build]
+  # Le site à publier est ce dossier lui-même (pas de sous-dossier de build).
+  publish = "."
+  # Aucune commande de build : rien à compiler.
+  command = ""
+
+# Les en-têtes vivent dans le fichier _headers (à côté de ce fichier). On n'en duplique pas ici
+# pour éviter deux sources de vérité qui divergent.

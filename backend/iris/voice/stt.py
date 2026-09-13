@@ -21,6 +21,8 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from .rotation_cles import CODES_BASCULE, etiquette, pool_elevenlabs
+
 log = logging.getLogger("iris.stt")
 
 SAMPLE_RATE = 16000
@@ -242,8 +244,9 @@ def google_recognize(pcm: bytes, sample_rate: int, language: str) -> str:
 
 # ------------------------------------------------------------------ ElevenLabs Scribe
 def cle_elevenlabs() -> str:
-    """Même source que la voix (voice/elevenlabs.py) : l'environnement, jamais le code."""
-    return (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
+    """Même source que la voix (voice/elevenlabs.py) : le pool de clés de l'environnement, jamais le
+    code. ELEVENLABS_API_KEY peut en contenir plusieurs (virgules) : voir rotation_cles."""
+    return pool_elevenlabs().courante()
 
 
 _session = None
@@ -297,26 +300,44 @@ def scribe_recognize(pcm: bytes, rate: int, langue: str, *, client=None, cle: st
 
     `client` : tout objet avec `.post(url, headers=, data=, files=, timeout=)` — les tests en
     injectent un faux, la production prend la session partagée."""
-    cle = cle_elevenlabs() if cle is None else cle
-    if not cle:
+    # `cle` imposée (tests) : une seule tentative, sans rotation. Sinon on tire du pool et on bascule
+    # d'une clé à l'autre quand l'une refuse (quota atteint), pour étaler sur plusieurs comptes.
+    pool = pool_elevenlabs()
+    rotation = cle is None
+    if not rotation and not cle:
+        raise ReconnaissanceImpossible(NON_CONFIGURE, "clé ELEVENLABS_API_KEY absente")
+    if rotation and not pool:
         raise ReconnaissanceImpossible(NON_CONFIGURE, "clé ELEVENLABS_API_KEY absente")
     client = client or _client_http()
     champs = {"model_id": SCRIBE_MODEL, "tag_audio_events": "false"}  # les rires et bruits ne se traduisent pas
     code = code_court(langue)
     if code:
         champs["language_code"] = code
+    contenu_wav = wav_en_memoire(pcm, rate)
+    resp = None
+    statut = 0
     debut = time.time()
-    try:
-        resp = client.post(
-            SCRIBE_URL,
-            headers={"xi-api-key": cle},
-            data=champs,
-            files={"file": ("parole.wav", wav_en_memoire(pcm, rate), "audio/wav")},
-            timeout=SCRIBE_TIMEOUT,
-        )
-    except Exception as exc:
-        raise ReconnaissanceImpossible(RESEAU, f"Scribe injoignable ({exc})") from exc
-    statut = int(getattr(resp, "status_code", 0) or 0)
+    for _ in range(max(1, len(pool)) if rotation else 1):
+        cle_utilisee = pool.courante() if rotation else cle
+        debut = time.time()
+        try:
+            resp = client.post(
+                SCRIBE_URL,
+                headers={"xi-api-key": cle_utilisee},
+                data=champs,
+                files={"file": ("parole.wav", contenu_wav, "audio/wav")},
+                timeout=SCRIBE_TIMEOUT,
+            )
+        except Exception as exc:
+            raise ReconnaissanceImpossible(RESEAU, f"Scribe injoignable ({exc})") from exc
+        statut = int(getattr(resp, "status_code", 0) or 0)
+        if rotation and statut in CODES_BASCULE and len(pool) > 1:
+            log.warning("Scribe %s clé %s : bascule sur une autre clé", statut, etiquette(cle_utilisee))
+            pool.marquer_epuisee(cle_utilisee)
+            continue
+        break
+    if rotation and statut < 400:
+        pool.apres_usage()  # reconnaissance réussie : alterner pour la prochaine
     if statut >= 500:
         raise ReconnaissanceImpossible(PANNE, f"Scribe HTTP {statut}")
     if statut >= 400:
@@ -381,7 +402,7 @@ def reconnaitre_etranger(
     detail_envoi = f"traduction : {duree_ms} ms d'audio en {langue or '?'}"
     echecs: list[tuple[str, ReconnaissanceImpossible]] = []
 
-    if cle_elevenlabs():
+    if pool_elevenlabs():
         if journal:
             journal(AGENT_SCRIBE, detail_envoi)
         try:

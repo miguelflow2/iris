@@ -1,0 +1,26 @@
+# Service systemd du serveur de licences de VELA sur la VM Oracle.
+# À déposer dans : /etc/systemd/system/vela-licences.service
+#
+# Le serveur de licences charge lui-même server/.env (via config.py), donc pas besoin
+# d'EnvironmentFile — il suffit que server/.env existe et que WorkingDirectory soit server/.
+# Il n'écoute que sur 127.0.0.1 : cloudflared (même VM) l'expose en licences.velaglass.ca.
+# --proxy-headers / --forwarded-allow-ips=* : on est derrière le proxy Cloudflare.
+
+[Unit]
+Description=VELA - serveur de licences (uvicorn 127.0.0.1:8110)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=vela
+WorkingDirectory=/home/vela/iris/server
+ExecStart=/home/vela/iris/server/.venv/bin/uvicorn licences.app:creer_app --factory --host 127.0.0.1 --port 8110 --proxy-headers --forwarded-allow-ips=*
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<!-- Identité VELA : fond encre, la barre d'état du téléphone doit suivre. -->
+<meta name="theme-color" content="#1B140E">
+
+<!-- Installation « Sur l'écran d'accueil » : ces balises rendent l'app plein écran une fois posée. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IRIS">
+
+<meta name="description" content="Parlez à Iris, l'assistante vocale de VELA, depuis votre téléphone.">
+
+<!-- Chemins relatifs : l'app marche à la racine d'un domaine comme dans un sous-dossier. -->
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icone-192.png">
+<link rel="apple-touch-icon" href="./icone-192.png">
+<link rel="stylesheet" href="./assets/app.css">
+
+<title>IRIS</title>
+</head>
+<body>
+
+<!-- ================================================================= EN-TÊTE -->
+<header class="tete">
+  <!-- La voile VELA. Fond sombre : grand-voile crème, foc terracotta. Jamais l'encre ici. -->
+  <svg class="voile" width="22" height="29" viewBox="0 0 120 158" aria-hidden="true">
+    <path d="M 36.5 46.3 L 36.6 158 L 0 158 Z" fill="#B36B3B"/>
+    <path d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z" fill="#F8F0E7"/>
+  </svg>
+  <span class="marque">IRIS</span>
+  <span class="par">par VELA</span>
+</header>
+
+<main class="page">
+
+  <!-- ============================================================= ACCUEIL / VOIX -->
+  <section class="hero">
+    <h1>Parlez à Iris.</h1>
+    <p class="sous">
+      Elle vous répond de vive voix, en français. Touchez l'orbe d'Iris, autorisez le micro,
+      et parlez comme à quelqu'un.
+    </p>
+
+    <!-- État du composant vocal : chargé ? indisponible ? On ne prétend jamais que ça marche. -->
+    <div class="etat" id="etat" role="status" aria-live="polite">
+      <span class="point" id="point"></span>
+      <span id="etat-texte">Préparation de la voix…</span>
+    </div>
+
+    <!-- Repli honnête si le composant vocal ne se charge pas (hors ligne, script bloqué). -->
+    <div class="repli" id="repli" hidden>
+      <p>
+        La voix d'Iris n'a pas pu se charger. Vérifiez votre connexion Internet, puis rouvrez
+        l'application. La voix a besoin du réseau pour fonctionner.
+      </p>
+    </div>
+
+    <p class="indice" id="indice">
+      L'orbe d'Iris apparaît en bas de l'écran. Touchez-le pour commencer.
+    </p>
+  </section>
+
+  <!-- ============================================================= CE QUI MARCHE -->
+  <section class="carte">
+    <h2>Ce qu'Iris fait ici, sur votre téléphone</h2>
+    <ul class="liste">
+      <li><b>Elle vous écoute et vous répond</b> de vive voix, en français, sans écran devant les yeux.</li>
+      <li><b>Elle discute et vous informe</b> : questions, explications, idées, aide à réfléchir.</li>
+      <li><b>Elle cherche sur le web</b> quand son service le permet, pour l'actualité, les prix, la météo.</li>
+      <li><b>Elle garde le fil</b> de la conversation le temps de l'échange.</li>
+    </ul>
+    <p class="note">
+      La reconnaissance et la voix se font au premier plan, quand vous le décidez, avec votre
+      accord pour le micro. Rien ne s'écoute en sourdine en arrière-plan : le téléphone ne le
+      permet pas, et VELA ne le veut pas.
+    </p>
+  </section>
+
+  <!-- ============================================================= LES LIMITES, SANS DÉTOUR -->
+  <section class="carte carte--limite">
+    <h2>Ce qui exige l'application de bureau</h2>
+    <p>
+      Depuis le téléphone, Iris <b>parle et réfléchit</b> — mais elle ne peut pas
+      <b>agir sur votre ordinateur</b>. Ouvrir une application, écrire du code, piloter la souris,
+      envoyer un courriel ou un texto : tout cela passe par l'application IRIS installée sur le PC,
+      qui reste la seule à avoir des « bras ».
+    </p>
+    <p class="note">
+      Votre téléphone, sur les données cellulaires, ne peut pas rejoindre l'ordinateur resté à la
+      maison : il n'existe pas encore de canal sûr pour ça. Iris vous le dira elle-même plutôt que
+      de faire semblant. Pour commander votre ordinateur à la voix, ouvrez IRIS sur ce PC.
+    </p>
+  </section>
+
+  <!-- ============================================================= INSTALLER -->
+  <section class="carte carte--installer" id="installer" hidden>
+    <h2>Garder Iris sous la main</h2>
+    <p id="installer-texte"></p>
+    <button class="lien-plat" id="installer-ok" type="button">Compris</button>
+  </section>
+
+</main>
+
+<footer class="pied">
+  <span>VELA — Parlez. Elle agit. Vous vérifiez.</span>
+</footer>
+
+<!-- =================================================================== LA VOIX D'IRIS
+     Widget conversationnel ElevenLabs. L'agent EST Iris (français, cerveau branché sur le
+     relais VELA). On ne fournit QUE son identifiant public — aucune clé côté client.
+     Le widget demande lui-même le micro au premier geste, gère l'état écoute/parle et
+     affiche la transcription. C'est la voie la plus simple et la plus robuste. -->
+<elevenlabs-convai
+  id="iris-convai"
+  agent-id="agent_2501m1xxsyq3e6d9xn8z5039cfzs"
+  language="fr"
+  action-text="Parlez à Iris"
+  start-call-text="Parler à Iris"
+  end-call-text="Terminer"
+  listening-text="Iris écoute…"
+  speaking-text="Iris parle…"
+  avatar-orb-color-1="#B36B3B"
+  avatar-orb-color-2="#D08A55">
+</elevenlabs-convai>
+<script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
+
+<script src="./assets/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Tunnel Cloudflare de VELA — version LINUX (VM Oracle).
+# C'est le MÊME tunnel que sur le PC de Miguel (nom vela-relais, même id) : on réutilise
+# les identifiants existants, on ne recrée RIEN côté Cloudflare. Seuls les chemins changent
+# (Windows C:\Users\... -> Linux /home/vela/...).
+#
+# À déposer sur la VM dans : /home/vela/.cloudflared/config.yml
+# Le fichier d'identifiants <id>.json doit être copié dans le même dossier (voir le guide).
+
+tunnel: 3b543fb7-c1cc-4967-a9c4-a76b9afb246b
+credentials-file: /home/vela/.cloudflared/3b543fb7-c1cc-4967-a9c4-a76b9afb246b.json
+
+ingress:
+  - hostname: relais.velaglass.ca
+    service: http://localhost:8100
+  - hostname: licences.velaglass.ca
+    service: http://localhost:8110
+  - service: http_status:404

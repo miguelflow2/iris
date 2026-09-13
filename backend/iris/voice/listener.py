@@ -20,6 +20,7 @@ from .accord import interpreter_accord
 from ..consent import ConsentGate
 from ..events import EventHub
 from . import stt
+from .elevenlabs import VERROU_PORTAUDIO
 from .tts import TextToSpeech
 
 log = logging.getLogger("iris.voice")
@@ -290,27 +291,41 @@ def rafraichir_peripheriques(sd) -> bool:
 
     À N'APPELER QU'AVEC TOUS LES FLUX FERMÉS : `Pa_Terminate` ferme d'autorité ceux qui restent,
     le nôtre comme celui par lequel ElevenLabs parle. Ce garde-fou vit dans `_rafraichir_si_possible`.
-    Un faux module sans ces fonctions (les tests) est simplement laissé tel quel."""
+    Un faux module sans ces fonctions (les tests) est simplement laissé tel quel.
+
+    Verrou partagé avec les voix : même flux fermé de NOTRE côté, une voix (ElevenLabs ou Piper) peut
+    tenir un flux de SORTIE ouvert depuis un autre thread — en particulier pendant le préchauffage, qui
+    ne pose pas l'état « en train de parler » que surveille `_rafraichir_si_possible`. `Pa_Terminate`
+    le fermerait alors d'autorité → corruption du tas natif (plantage lunettes éteintes). On prend donc
+    VERROU_PORTAUDIO SANS bloquer : s'il est pris, un flux est ouvert quelque part, on renonce à
+    ré-énumérer cette fois (le fil vocal retentera) plutôt que de bloquer ou, pire, de fermer PortAudio
+    sous les pieds d'une voix."""
     terminer = getattr(sd, "_terminate", None)
     initialiser = getattr(sd, "_initialize", None)
     if terminer is None or initialiser is None:
         return False
+    if not VERROU_PORTAUDIO.acquire(blocking=False):
+        log.info("ré-énumération PortAudio reportée : une voix a un flux de sortie ouvert")
+        return False
     try:
-        terminer()
-    except Exception as exc:
-        # Pas encore initialisé, ou déjà fermé : `_initialize` ci-dessous remet les choses en ordre.
-        log.warning("PortAudio : fermeture pour ré-énumération refusée (%s)", exc)
-    derniere: Exception | None = None
-    for _ in range(2):
         try:
-            initialiser()
-            return True
+            terminer()
         except Exception as exc:
-            derniere = exc
-    # Ici PortAudio est peut-être fermé pour de bon : plus aucun micro ne s'ouvrira. Il faut le
-    # dire fort, parce que le symptôme visible sera « Micro indisponible » à chaque relance.
-    log.error("PortAudio n'a pas pu être rouvert après la ré-énumération (%s)", derniere)
-    return False
+            # Pas encore initialisé, ou déjà fermé : `_initialize` ci-dessous remet les choses en ordre.
+            log.warning("PortAudio : fermeture pour ré-énumération refusée (%s)", exc)
+        derniere: Exception | None = None
+        for _ in range(2):
+            try:
+                initialiser()
+                return True
+            except Exception as exc:
+                derniere = exc
+        # Ici PortAudio est peut-être fermé pour de bon : plus aucun micro ne s'ouvrira. Il faut le
+        # dire fort, parce que le symptôme visible sera « Micro indisponible » à chaque relance.
+        log.error("PortAudio n'a pas pu être rouvert après la ré-énumération (%s)", derniere)
+        return False
+    finally:
+        VERROU_PORTAUDIO.release()
 
 
 class VoiceListener:
@@ -406,15 +421,33 @@ class VoiceListener:
         """Message à afficher si le pilotage vocal est verrouillé faute de lunettes, sinon None.
 
         La voix est ce qu'on vend avec les lunettes. Sans elles, il resterait une assistante de
-        bureau de plus, et plus aucune raison d'acheter la monture. Le chat écrit reste ouvert :
-        il faut bien que l'application montre quelque chose avant l'achat."""
+        bureau de plus, et plus aucune raison d'acheter la monture. Décision de Miguel du
+        7 septembre 2026 : le verrou devient STRICT — sans lunettes, ni la voix NI le chat écrit ne
+        répondent (le chat est verrouillé au même endroit, voir ChatService._verrou_lunettes_chat),
+        avec une seule échappatoire assumée, le mode démonstration.
+
+        Verrouillé SAUF si les lunettes sont réellement présentes (lien Bluetooth basse énergie OU
+        micro, voir lunettes_presentes). On ne déverrouille plus sur un état « inconnu » : c'était la
+        faille — état indéterminé valait porte ouverte. La double preuve garde la résilience du
+        5 septembre 2026, où les services basse énergie du fabricant ont disparu alors que le casque
+        marchait parfaitement.
+
+        Un SEUL carve-out, exactement celui du chat écrit (ChatService._verrou_lunettes_chat) : sur un
+        appareil qui n'a JAMAIS connu de lunettes VELA (ni nom ni adresse mémorisés), on ne bloque
+        pas. Sans lui, une application fraîchement installée — qui n'a encore rien appairé, et les
+        tests qui tournent sans lunettes — verrait le chat écrit répondre mais la voix exiger
+        « Connecte tes lunettes VELA », alors que les deux portes doivent s'ouvrir de la même façon.
+        On ne verrouille donc que ce qu'on SAIT absent : des lunettes connues de l'appareil (déjà
+        appairées ou mémorisées) mais hors de portée."""
         u = self.settings.user
         if not u.require_glasses or u.demo_sans_lunettes:
             return None
-        if self.glasses_connected is None or self.lunettes_presentes():
+        if self.lunettes_presentes():
             return None
-        return ("Connectez vos lunettes VELA pour parler à IRIS. "
-                "Le chat écrit reste disponible sans elles.")
+        g = u.glasses
+        if not ((g.name or "").strip() or (g.address or "").strip()):
+            return None
+        return "Connecte tes lunettes VELA pour utiliser IRIS."
 
     def model_ready(self) -> bool:
         return stt.model_dir(self.settings.models_dir, self.settings.user.language) is not None
@@ -856,6 +889,19 @@ class VoiceListener:
                 return False
             # L'ouverture a échoué : on enchaîne sur l'essai suivant sans attendre cinq secondes
             # de plus devant une file vide.
+        # Mode strict : les lunettes ont décroché en cours d'écoute et aucun micro de repli n'a pris
+        # (ni ne devait prendre) le relais — le micro du PC écouterait la pièce. On s'arrête avec le
+        # message du verrou, exactement comme la boucle le fait quand le verrou est constaté entre
+        # deux mots d'activation. Le chien de garde repassera ; start() restera fermé tant que les
+        # lunettes ne sont pas revenues. Seulement quand un flux existait (`peut_rouvrir`) : le cas
+        # « jamais de flux » garde son message propre au micro, plus utile pour diagnostiquer.
+        verrou = self.lunettes_requises() if peut_rouvrir else None
+        if verrou:
+            self.error = verrou
+            self.hub.publish("voice.glasses_required", text=verrou)
+            log.warning("micro muet depuis %.1f s (%s) + verrou lunettes : l'écoute s'arrête", depuis, nom)
+            self._stop.set()
+            return True
         self.error = (
             f"Le micro « {nom} » ne renvoie plus rien depuis {int(depuis)} secondes et aucun autre micro "
             "n'a pu prendre le relais. Si ce sont vos lunettes : rallumez-les, vérifiez la connexion "
@@ -887,6 +933,14 @@ class VoiceListener:
         self._rafraichir_peripheriques(sd)
         device = None if forcer_defaut else self._input_device(sd)
         voulu = self._micro_voulu()
+        # Verrou des lunettes (strict). On NE retombe JAMAIS sur le micro par défaut du PC quand
+        # IRIS est verrouillée faute de lunettes : sinon des lunettes qui décrochent faisaient
+        # basculer l'écoute sur le micro du portable, qui continuait d'entendre la pièce (journal du
+        # 5 septembre 2026 : « micro Casque … introuvable → micro par défaut »). Vérification AVANT
+        # d'ouvrir. Le repli reste permis quand les lunettes SONT présentes (lunettes_requises rend
+        # None) — micro voulu momentanément muet, lien mains libres qui raccroche puis reprend seul.
+        if device is None and voulu and self.lunettes_requises():
+            raise RuntimeError("verrou lunettes : repli sur le micro par défaut refusé")
         # Fréquence d'ouverture du flux. Quand un micro est choisi, on prend celle qu'il ANNONCE,
         # même si elle ment : MME annonce 44100 Hz pour les lunettes, dont le lien mains libres
         # est réellement à 16000 Hz. Ce qui compte est d'ouvrir au taux que l'hôte attend,
@@ -1129,6 +1183,12 @@ class VoiceListener:
             pending: list[tuple[int, bytes]] = []  # audio de l'énoncé en cours (pour rejouer la fin de la commande)
             offset = 0
             while not self._stop.is_set():
+                if self._traduire_si_demande():
+                    # Mode armé de l'extérieur (bouton de l'interface, API, outil du modèle) : on y entre
+                    # sans attendre un mot d'activation. Sans ceci, la traduction demandée à l'écran ne
+                    # commençait qu'après la commande vocale suivante. Coût quand rien n'est demandé :
+                    # un test de booléen par bloc.
+                    return
                 if self._ptt.is_set():
                     self._ptt.clear()
                     self._command_cycle()
@@ -1171,6 +1231,8 @@ class VoiceListener:
                 self._command_cycle(ack=not enchaine, primed=enchaine)
                 return
         else:
+            if self._traduire_si_demande():
+                return  # même entrée directe qu'en mode hors ligne : voir ci-dessus
             segment = self._capture_segment(max_seconds=6.0)
             if self._ptt.is_set():
                 self._ptt.clear()
@@ -1374,7 +1436,7 @@ class VoiceListener:
 
     def _cloud_upgrade(self, pcm: bytes, local_text: str) -> str:
         """Renfort de reconnaissance cloud pour la COMMANDE seulement (l'activation reste toujours hors ligne).
-        Le petit modele local transcrit mal le francais parle du Quebec ; Google le fait nettement mieux.
+        Le petit modele local transcrit mal le francais canadien parle ; Google le fait nettement mieux.
         Exige le consentement « audio brut » et un reseau : sinon on garde simplement la version locale."""
         u = self.settings.user
         seconds = len(pcm) / 2 / stt.SAMPLE_RATE
@@ -1903,26 +1965,38 @@ class VoiceListener:
             return None
 
     def _reconnaitre_etranger(self, pcm: bytes, langue: str) -> str:
-        """La parole de l'interlocuteur devient du texte. Aujourd'hui, un seul chemin entend l'anglais.
+        """La parole de l'interlocuteur devient du texte. Scribe (ElevenLabs) d'abord, Google en repli.
 
         Il faut le dire en clair, parce que ce n'est pas un détail technique : LA VOIX DE
-        L'INTERLOCUTEUR PART CHEZ GOOGLE, et cette personne-là n'a rien consenti, ne sait pas
-        qu'IRIS existe et ne peut rien refuser. Le registre chaîné en garde la trace — la durée et la
-        langue, jamais le contenu — parce que c'est le minimum pour un produit vendu sur la
-        confidentialité prouvable. Le modèle hors ligne installé ici ne connaît que le français : sur
-        de l'anglais, il rendrait de vrais mots français qui ne veulent rien dire, et une traduction
-        assurée bâtie sur du charabia fait plus de dégâts qu'un « je n'ai pas compris »."""
+        L'INTERLOCUTEUR PART CHEZ UN SERVICE EN LIGNE, et cette personne-là n'a rien consenti, ne
+        sait pas qu'IRIS existe et ne peut rien refuser. Le registre chaîné en garde la trace — la
+        durée et l'agent joint (Scribe ou Google), jamais le contenu — parce que c'est le minimum
+        pour un produit vendu sur la confidentialité prouvable.
+
+        Amélioration du 7 septembre 2026 : on passe désormais par `stt.reconnaitre_etranger`, qui
+        interroge d'abord Scribe — le modèle multilingue officiel d'ElevenLabs, sous contrat, la clé
+        déjà lue pour la voix : il détecte lui-même la langue et entend nettement mieux que Google
+        Web Speech — et ne retombe sur Google qu'en cas d'échec. Jusqu'ici, la voix de l'interlocuteur
+        partait UNIQUEMENT chez Google (repli non officiel, bruité) : une meilleure écoute est le plus
+        grand levier de qualité, puisqu'une traduction assurée bâtie sur du charabia fait plus de
+        dégâts qu'un « je n'ai pas compris »."""
         if self.settings.user.local_only or not self.consent.is_granted("audio_raw"):
             return ""
-        locale = LOCALES_ETRANGERES.get(normalize(langue)[:2], "en-US")
-        # La trace est écrite AVANT l'appel, pas après, et sans condition de succès. Ce registre
-        # répond à une seule question : « qu'est-ce qui est SORTI de cet ordinateur ? » L'audio part
-        # que la reconnaissance réussisse ou non, et un envoi resté sans réponse est justement celui
-        # qu'on voudrait retrouver. Et ici la voix envoyée n'est même pas celle de Miguel : c'est
-        # celle d'un tiers qui n'a rien signé.
-        self.consent.log("external_send", data_type="audio_raw", agent="google-stt",
-                         detail=f"traduction : {len(pcm) // 32} ms d'audio en {locale}")
-        return (stt.google_recognize(pcm, stt.SAMPLE_RATE, locale) or "").strip()
+        # La trace est écrite AVANT chaque envoi, sans condition de succès, par le `journal` ci-dessous
+        # que `stt.reconnaitre_etranger` appelle juste avant d'interroger Scribe puis Google. Ce
+        # registre répond à une seule question : « qu'est-ce qui est SORTI de cet ordinateur, et vers
+        # qui ? » Et ici la voix envoyée n'est même pas celle de Miguel : c'est celle d'un tiers qui
+        # n'a rien signé.
+        def _journal(agent: str, detail: str) -> None:
+            self.consent.log("external_send", data_type="audio_raw", agent=agent, detail=detail)
+
+        try:
+            texte = stt.reconnaitre_etranger(pcm, stt.SAMPLE_RATE, langue,
+                                             consentement=True, journal=_journal)
+        except stt.ReconnaissanceImpossible as exc:
+            log.info("interlocuteur non reconnu (%s)", exc)
+            return ""
+        return (texte or "").strip()
 
     # ------------------------------------------------------------------ utilitaires
     def _say(self, text: str, capture: list[bytes] | None = None) -> None:

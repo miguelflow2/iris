@@ -380,12 +380,17 @@ def test_larret_de_lecoute_referme_le_mode(voice):
     assert service.actif is False
 
 
-def test_les_lunettes_debranchees_referment_le_mode(voice):
-    """La voix est verrouillée par les lunettes : le mode traduction ne peut pas y échapper."""
+def test_les_lunettes_debranchees_referment_le_mode(voice, monkeypatch):
+    """La voix est verrouillée par les lunettes : le mode traduction ne peut pas y échapper.
+
+    Des lunettes CONNUES mais hors de portée — le seul cas où le verrou mord depuis le carve-out
+    « PC neuf » (voir listener.lunettes_requises / ChatService._verrou_lunettes_chat)."""
     service = FauxService()
     voice.traduction = service
-    voice.settings.update({"demo_sans_lunettes": False, "require_glasses": True})
+    voice.settings.update({"demo_sans_lunettes": False, "require_glasses": True,
+                           "glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True}})
     voice.glasses_connected = lambda: False
+    monkeypatch.setattr(voice, "mic_devices", lambda: [])  # aucune preuve de présence par le micro
     _preparer(voice, [SILENCE] * 20)
     voice._boucle_traduction()
     assert service.raisons == ["lunettes"]
@@ -448,6 +453,53 @@ def test_le_reseau_qui_tombe_ne_fait_pas_exploser_le_fil_de_travail(voice):
     voice._reconnaitre_etranger = echoue
     voice._traduire_segment(PAROLE)  # ne doit rien lever
     assert voice.tts.dites == []
+
+
+def test_linterlocuteur_est_ecoute_par_scribe_dabord_pas_google_en_direct(voice, monkeypatch):
+    """La voix de l'interlocuteur passe par `stt.reconnaitre_etranger` (Scribe officiel d'abord,
+    Google en repli), et non plus par un appel direct à Google Web Speech.
+
+    Amélioration du 7 septembre 2026 : jusque-là, `_reconnaitre_etranger` appelait `google_recognize`
+    en direct — repli non officiel, bruité — en ignorant Scribe, pourtant déjà branché pour la voix.
+    Une meilleure écoute est le plus grand levier de qualité : une traduction assurée bâtie sur du
+    charabia fait plus de dégâts qu'un « je n'ai pas compris »."""
+    voice.settings.update({"local_only": False})
+    voice.consent.set("audio_raw", True)
+    vus: dict = {}
+
+    def faux_reconnaitre(pcm, rate, langue, *, consentement=False, journal=None, client=None):
+        vus["appel"] = {"langue": langue, "consentement": consentement, "journal": journal}
+        if journal:
+            journal("elevenlabs-scribe", "traduction : 500 ms")  # ce que fait la vraie fonction
+        return "  hello there  "
+
+    def google_interdit(*a, **k):
+        raise AssertionError("Google ne doit plus être appelé en direct : Scribe passe d'abord")
+
+    traces: list = []
+    monkeypatch.setattr(stt, "reconnaitre_etranger", faux_reconnaitre)
+    monkeypatch.setattr(stt, "google_recognize", google_interdit)
+    monkeypatch.setattr(voice.consent, "log", lambda *a, **k: traces.append((a, k)))
+
+    texte = voice._reconnaitre_etranger(PAROLE, "en")
+
+    assert texte == "hello there"                 # le texte est rendu, nettoyé des espaces
+    assert vus["appel"]["consentement"] is True   # le garde de consentement est déjà franchi ici
+    assert callable(vus["appel"]["journal"])      # la trace de sortie est câblée
+    assert traces, "chaque envoi doit être inscrit au registre : qu'est-ce qui est SORTI, et vers qui ?"
+
+
+def test_la_traduction_refuse_encore_le_mode_local_et_le_defaut_de_consentement(voice, monkeypatch):
+    """Les deux garde-fous de confidentialité survivent au changement de moteur : rien ne part en
+    mode local, ni sans le consentement « audio brut »."""
+    monkeypatch.setattr(stt, "reconnaitre_etranger",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("aucun envoi ne doit avoir lieu")))
+    voice.settings.update({"local_only": True})
+    voice.consent.set("audio_raw", True)
+    assert voice._reconnaitre_etranger(PAROLE, "en") == ""
+    voice.settings.update({"local_only": False})
+    voice.consent.set("audio_raw", False)
+    assert voice._reconnaitre_etranger(PAROLE, "en") == ""
 
 
 def test_trois_echecs_de_suite_referment_le_mode(voice):

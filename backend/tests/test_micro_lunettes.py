@@ -421,7 +421,11 @@ BLOC = b"\x00\x00"
 
 def _ouvrir_sur(app, monkeypatch, sd, demande: str = LUNETTES):
     voice = app.state.ctx.voice
-    app.state.ctx.settings.update({"audio_input_device": demande})
+    # Ces tests éprouvent la PLOMBERIE du micro (repli sur le portable, réouverture, reprise), qui
+    # n'a de sens que lorsque le verrou strict des lunettes n'est PAS en vigueur : sous verrou, un
+    # micro qui décroche fait s'arrêter l'écoute au lieu de retomber sur le PC (voir la section « mode
+    # strict » plus bas). On désactive donc le verrou ici pour isoler la plomberie.
+    app.state.ctx.settings.update({"audio_input_device": demande, "demo_sans_lunettes": True})
     _injecter(monkeypatch, sd)
     voice._stop.clear()
     voice._ouvrir_flux(sd)
@@ -582,6 +586,70 @@ def test_les_lunettes_toujours_absentes_ne_font_pas_repeter_lalerte(app, monkeyp
         voice._read(timeout=0.01)
     assert voice._micro_de_repli is True
     assert len(_alertes(evenements)) == 1
+    voice._fermer_flux()
+
+
+# --------------------------------------------------------------- 4 bis. le verrou strict des lunettes
+# Décision de Miguel du 7 septembre 2026 : sans lunettes, IRIS se tait (voix ET chat). Le repli sur
+# le micro du portable — utile quand le verrou n'est PAS en vigueur — devient alors la fuite à
+# corriger : il ferait écouter la pièce pendant qu'IRIS est censée être verrouillée.
+def test_en_mode_strict_ouvrir_flux_refuse_le_micro_par_defaut(app, monkeypatch):
+    """Sous verrou, `_ouvrir_flux` ne doit JAMAIS ouvrir le micro du PC en repli : il lève plutôt."""
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({
+        "audio_input_device": LUNETTES, "require_glasses": True, "demo_sans_lunettes": False,
+        "glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True},
+    })
+    voice.glasses_connected = lambda: False
+    sd = _SdComplet(SANS_LUNETTES)  # les lunettes ne sont plus dans l'énumération
+    _injecter(monkeypatch, sd)
+    voice._stop.clear()
+    with pytest.raises(RuntimeError):
+        voice._ouvrir_flux(sd)
+    assert sd.flux == [], "aucun flux ouvert — surtout pas le micro du portable"
+    assert voice._stream is None
+
+
+def test_en_mode_strict_le_micro_muet_sarrete_au_lieu_de_prendre_le_pc(app, monkeypatch, evenements):
+    """LE contraire du 5 septembre. Les lunettes décrochent en cours d'écoute : au lieu de basculer
+    sur le micro du portable et de continuer, l'écoute s'arrête proprement, avec le message du verrou.
+    Le chien de garde repassera ; start() restera fermé tant que les lunettes ne sont pas revenues."""
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({
+        "audio_input_device": LUNETTES, "require_glasses": True, "demo_sans_lunettes": False,
+        "glasses": {"name": "M01 Pro_F444", "address": "65:A2:9F:5C:F4:44", "auto_connect": True},
+    })
+    voice.glasses_connected = lambda: False
+    sd = _SdComplet(SANS_LUNETTES)
+    _injecter(monkeypatch, sd)
+    voice._stop.clear()
+    voice._stream = _Flux()  # un flux tournait sur les lunettes avant qu'elles décrochent
+    voice._reouvertures = 0
+    voice.device_name = LUNETTES
+    _muet(voice)
+    assert voice._micro_perdu() is True, "l'écoute doit se dénouer, pas continuer sur le PC"
+    assert voice._stop.is_set()
+    assert not voice.stopped_by_user, "le chien de garde doit pouvoir réessayer quand elles reviennent"
+    assert sd.flux == [], "aucun micro de repli ouvert sous verrou"
+    assert "lunettes" in (voice.error or "").lower()
+    assert _alertes(evenements, "voice.glasses_required"), "l'interface doit pouvoir expliquer le silence"
+
+
+def test_le_mode_demonstration_redonne_le_repli(app, monkeypatch):
+    """L'échappatoire de Miguel : en mode démonstration, les lunettes absentes n'arrêtent plus rien,
+    le micro du portable reprend le relais comme avant le verrou strict."""
+    voice = app.state.ctx.voice
+    app.state.ctx.settings.update({
+        "audio_input_device": LUNETTES, "require_glasses": True, "demo_sans_lunettes": True,
+        "glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True},
+    })
+    voice.glasses_connected = lambda: False
+    sd = _SdComplet(SANS_LUNETTES)
+    _injecter(monkeypatch, sd)
+    voice._stop.clear()
+    voice._ouvrir_flux(sd)  # ne lève pas : le verrou est levé par la démo
+    assert sd.flux[-1].kw["device"] is None and sd.flux[-1].actif
+    assert voice._micro_de_repli is True
     voice._fermer_flux()
 
 

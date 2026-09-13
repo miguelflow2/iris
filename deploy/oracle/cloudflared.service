@@ -1,0 +1,27 @@
+# Service systemd du tunnel Cloudflare de VELA sur la VM Oracle.
+# À déposer dans : /etc/systemd/system/cloudflared.service
+#
+# C'est ce service qui rend relais.velaglass.ca et licences.velaglass.ca joignables depuis
+# Internet, SANS ouvrir de port entrant : cloudflared établit une connexion SORTANTE vers
+# Cloudflare. C'est pour ça que ça marchera sur la VM alors que ça échouait sur le WiFi filtré.
+#
+# Chemin du binaire : /usr/bin/cloudflared si installé via le paquet .deb (recommandé).
+# Si tu as installé le binaire à la main dans /usr/local/bin, change la ligne ExecStart.
+
+[Unit]
+Description=Cloudflare Tunnel VELA (relais + licences)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vela
+# On lance SANS nommer le tunnel : l'id est déjà dans config.yml (clé « tunnel: »).
+# Ça évite d'avoir besoin de cert.pem sur la VM — seul le fichier <id>.json est requis.
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --config /home/vela/.cloudflared/config.yml run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

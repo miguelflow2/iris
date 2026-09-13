@@ -24,6 +24,10 @@ for pkg in (
     "playwright",
     "rapidocr_onnxruntime",
     "onnxruntime",
+    # Voix française LOCALE (mode indépendant). collect_all embarque le paquet piper, sa passerelle
+    # native espeakbridge.pyd ET ses données de phonèmes piper/espeak-ng-data — sans elles, la
+    # synthèse lève au premier mot chez le client. Le modèle de voix lui-même est ajouté plus bas.
+    "piper",
     "bleak",
     "winrt",
     "certifi",
@@ -48,6 +52,17 @@ hiddenimports += ["PIL.Image", "PIL.JpegImagePlugin", "PIL.PngImagePlugin", "psu
 
 # Icônes de l'application téléphone : sans elles, Android ne propose pas l'installation.
 datas += [("iris/assets/icone-192.png", "iris/assets"), ("iris/assets/icone-512.png", "iris/assets")]
+
+# Modèle de voix française locale Piper. Déposé dans piper_voices/ à la racine du bundle : c'est là
+# que iris/voice/piper.py::_dossiers_voix le cherche via sys._MEIPASS. Sans ce fichier embarqué, une
+# install fraîche n'a pas de voix française hors-ligne (elle retomberait sur l'accent Windows).
+import os as _os  # local au .spec, n'affecte pas le runtime empaqueté
+for _f in ("fr_FR-siwis-medium.onnx", "fr_FR-siwis-medium.onnx.json"):
+    _src = _os.path.join("piper_voices", _f)
+    if _os.path.isfile(_src):
+        datas += [(_src, "piper_voices")]
+    else:
+        print(f"[spec] ATTENTION voix Piper absente : {_src} — la voix française locale ne sera pas empaquetée")
 
 a = Analysis(
     ["run_backend.py"],

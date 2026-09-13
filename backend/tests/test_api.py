@@ -332,3 +332,78 @@ def test_plan_api_and_quota_error(client, fake_claude):
             if ev["type"] == "chat.error":
                 break
     assert ("chat.error", "quota") in kinds and fake_claude.calls == []
+
+
+# --------------------------------------------------------------- le verrou des lunettes (chat écrit)
+# Décision de Miguel du 7 septembre 2026 : sans lunettes VELA, IRIS se tait — voix ET chat écrit —,
+# avec une seule échappatoire, le mode démonstration. Le chat est verrouillé à un point d'étranglement
+# unique dans ChatService._run.
+def _lunettes_configurees_absentes(app, monkeypatch, demo: bool = False):
+    app.state.ctx.settings.update({
+        "require_glasses": True, "demo_sans_lunettes": demo,
+        "glasses": {"name": "M01 Pro_F444", "address": "65:A2:9F:5C:F4:44", "auto_connect": False},
+    })
+    # Présence déterministe : les lunettes sont connues de l'appareil mais hors de portée.
+    monkeypatch.setattr(app.state.ctx.voice, "lunettes_presentes", lambda: False)
+
+
+def test_le_chat_ecrit_exige_les_lunettes_en_mode_strict(client, app, fake_claude, monkeypatch):
+    """Sans lunettes, une demande humaine est refusée AVANT tout appel au modèle, et le refus
+    explique le mode démonstration."""
+    _setup_ready(client)
+    _lunettes_configurees_absentes(app, monkeypatch)
+    conv = client.post("/api/conversations", json={}).json()
+    with client.websocket_connect("/ws?token=test-token") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "chat.send", "conversation_id": conv["id"], "text": "bonjour"})
+        done = None
+        for _ in range(10):
+            ev = ws.receive_json()
+            if ev["type"] == "chat.done":
+                done = ev
+                break
+    assert done is not None
+    assert done["message"]["meta"].get("glasses_required") is True
+    texte = done["message"]["text"].lower()
+    assert "lunettes" in texte and "démonstration" in texte
+    assert fake_claude.calls == [], "rien ne doit partir au modèle sans lunettes"
+
+
+def test_le_mode_demonstration_rouvre_le_chat_ecrit(client, app, fake_claude, monkeypatch):
+    """L'échappatoire de Miguel : le mode démonstration débloque le chat écrit sans lunettes."""
+    _setup_ready(client)
+    _lunettes_configurees_absentes(app, monkeypatch, demo=True)
+    conv = client.post("/api/conversations", json={}).json()
+    with client.websocket_connect("/ws?token=test-token") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "chat.send", "conversation_id": conv["id"], "text": "bonjour"})
+        done = None
+        for _ in range(40):
+            ev = ws.receive_json()
+            if ev["type"] == "chat.done":
+                done = ev
+                break
+    assert done is not None and done["message"]["text"] == "Bonjour Miguel !"
+    assert fake_claude.calls, "le modèle doit répondre en mode démonstration"
+
+
+def test_le_verrou_du_chat_ne_touche_que_les_sources_humaines(app, monkeypatch):
+    """La porte des lunettes ne bloque que voix/texte/commande/routine. Les sources de fond (tâche,
+    résumé, veille, canal distant) doivent continuer même sans lunettes. Fail-open aussi quand aucune
+    paire n'a jamais été configurée (l'app doit se montrer) et quand la démo est active."""
+    chat = app.state.ctx.chat
+    _lunettes_configurees_absentes(app, monkeypatch)
+    for humaine in ("voice", "text", "quick", "routine"):
+        assert chat._verrou_lunettes_chat(humaine), humaine
+    for fond in ("task", "daily_summary", "veille", "resume", "distant"):
+        assert chat._verrou_lunettes_chat(fond) is None, fond
+    # Lunettes présentes : plus de verrou, même pour une source humaine.
+    monkeypatch.setattr(app.state.ctx.voice, "lunettes_presentes", lambda: True)
+    assert chat._verrou_lunettes_chat("text") is None
+    # Aucune paire jamais configurée : présence indéterminable → on laisse passer.
+    monkeypatch.setattr(app.state.ctx.voice, "lunettes_presentes", lambda: False)
+    app.state.ctx.settings.update({"glasses": {"name": "", "address": ""}})
+    assert chat._verrou_lunettes_chat("text") is None
+    # L'échappatoire démo débloque tout.
+    app.state.ctx.settings.update({"demo_sans_lunettes": True, "glasses": {"name": "M01 Pro_F444", "address": "x"}})
+    assert chat._verrou_lunettes_chat("text") is None

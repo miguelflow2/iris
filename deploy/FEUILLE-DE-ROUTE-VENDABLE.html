@@ -1,0 +1,231 @@
+<title>Lancement VELA</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;600&display=swap');
+  :root{
+    --bg:#f5f7f5; --surface:#ffffff; --surface-2:#eef2ef; --ink:#161f1b; --muted:#5b6a63;
+    --line:#dde4df; --accent:#0e7c86; --accent-2:#0a5f67; --accent-ink:#ffffff;
+    --red-ink:#a32017; --red-bg:#fdecea; --red-line:#f2b8b2;
+    --orange-ink:#8a4b06; --orange-bg:#fdf2e0; --orange-line:#f0cd93;
+    --yellow-ink:#7a6a12; --yellow-bg:#fbf7e3; --yellow-line:#e6dca0;
+    --ok:#15803d; --ok-bg:#e9f6ee;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+    --disp:'Bricolage Grotesque',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --body:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0d1411; --surface:#131c18; --surface-2:#1a2420; --ink:#e6ece8; --muted:#93a59c;
+    --line:#26332d; --accent:#2dd4bf; --accent-2:#5eead4; --accent-ink:#06201d;
+    --red-ink:#f79389; --red-bg:#271513; --red-line:#4d2621;
+    --orange-ink:#f2b95c; --orange-bg:#251d10; --orange-line:#4a3a1a;
+    --yellow-ink:#d9cf7e; --yellow-bg:#20200f; --yellow-line:#3e3a1c;
+    --ok:#4ade80; --ok-bg:#12241a;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0d1411; --surface:#131c18; --surface-2:#1a2420; --ink:#e6ece8; --muted:#93a59c;
+    --line:#26332d; --accent:#2dd4bf; --accent-2:#5eead4; --accent-ink:#06201d;
+    --red-ink:#f79389; --red-bg:#271513; --red-line:#4d2621;
+    --orange-ink:#f2b95c; --orange-bg:#251d10; --orange-line:#4a3a1a;
+    --yellow-ink:#d9cf7e; --yellow-bg:#20200f; --yellow-line:#3e3a1c;
+    --ok:#4ade80; --ok-bg:#12241a;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 90px}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2);font-weight:600}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(1.8rem,5vw,2.7rem);line-height:1.04;margin:.28em 0 .32em;letter-spacing:-.01em;text-wrap:balance}
+  .lede{color:var(--muted);font-size:1.02rem;max-width:64ch}
+  h2{font-family:var(--disp);font-weight:700;font-size:1.28rem;margin:34px 0 6px;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+  h2 .dot{width:12px;height:12px;border-radius:50%}
+  .sub2{color:var(--muted);font-size:.9rem;margin:0 0 12px}
+  .progress{display:flex;align-items:center;gap:12px;margin:22px 0 4px;font-size:.9rem;color:var(--muted)}
+  .bar{flex:1;height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+  .call{border-radius:12px;padding:14px 16px;margin:16px 0;border:1px solid;font-size:.95rem}
+  .call b{font-family:var(--disp)}
+  .call.key{background:var(--surface);border-color:var(--accent);border-left:4px solid var(--accent)}
+  .call.ok{background:var(--ok-bg);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+  .call p{margin:.4em 0}
+  .task{display:flex;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin:9px 0;align-items:flex-start}
+  .task.on{opacity:.58}
+  .task.on .tt{text-decoration:line-through}
+  .cbx{flex:none;margin-top:2px}
+  .cbx input{width:19px;height:19px;accent-color:var(--accent);cursor:pointer}
+  .tnum{flex:none;font-family:var(--disp);font-weight:700;color:var(--accent-2);min-width:1.4em;font-size:1.02rem}
+  .tbody{flex:1;min-width:0}
+  .tt{font-weight:600;font-family:var(--disp);letter-spacing:-.01em}
+  .tw{color:var(--muted);font-size:.9rem;margin-top:2px}
+  .pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .pill{font-family:var(--mono);font-size:.68rem;padding:3px 8px;border-radius:6px;border:1px solid var(--line);white-space:nowrap}
+  .pill.b{background:var(--red-bg);border-color:var(--red-line);color:var(--red-ink)}
+  .pill.l{background:var(--orange-bg);border-color:var(--orange-line);color:var(--orange-ink)}
+  .pill.toi{background:var(--surface-2);color:var(--ink);font-weight:600}
+  .pill.moi{background:var(--surface-2);color:var(--accent-2);font-weight:600}
+  .pill.nous{background:var(--surface-2);color:var(--muted);font-weight:600}
+  ul.mini{list-style:none;padding:0;margin:8px 0}
+  ul.mini li{display:flex;gap:10px;padding:9px 13px;background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:7px 0;font-size:.93rem;align-items:flex-start}
+  ul.mini li .who{flex:none;font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:2px}
+  a{color:var(--accent-2);text-underline-offset:2px}
+  footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.82rem}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.8rem;color:var(--muted);margin-top:10px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">VELA · de l'échantillon à la vente</div>
+  <h1>Ce qui reste pour vendre IRIS</h1>
+  <p class="lede">Audit honnête du vrai code, dimension par dimension. Bonne nouvelle : le <b>logiciel
+    est avancé</b> (voix française locale, boucle vocale, chaîne d'installeur). Ce qui manque, ce n'est
+    presque jamais du code — c'est la <b>preuve en conditions réelles</b> et le <b>cadre business/légal</b>.</p>
+
+  <div class="call key">
+    <p><b>Le verdict franc :</b> réalistement à <b>quelques semaines</b> de « vendable ». Aucun maillon
+      décisif n'est encore prouvé en vrai : le relais n'a jamais été confirmé en ligne, la voix jamais
+      testée sur les vraies lunettes, l'installeur jamais lancé sur une machine propre, le parcours
+      achat→livraison jamais éprouvé.</p>
+  </div>
+
+  <div class="call key">
+    <p><b>🎯 La décision qui raccourcit tout.</b> Pour le pilote, ne vends <b>que les lunettes (250 $,
+      paiement unique) avec l'IA gratuite</b>. Encaisse par <b>Interac</b> (virement, aucun KYC/pièce
+      d'identité) ou Stripe si ton KYC est déjà fait. <b>Désactive les boutons d'abonnement.</b> Ça retire
+      d'un coup toute la chaîne cassée « paiement → licence → modèles payants » et le mur du KYC. Tu peux
+      vendre le produit sans elle.</p>
+  </div>
+
+  <div class="progress">
+    <span id="pcount">0 / 12</span>
+    <div class="bar"><i id="pbar"></i></div>
+    <span style="font-size:.8rem">chemin vers la 1ʳᵉ vente</span>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--red-ink)"></i>bloquant</span>
+    <span><i style="background:var(--orange-ink)"></i>lancement</span>
+    <span>Toi = à toi · Moi = à moi (Claude) · Nous = ensemble</span>
+  </div>
+
+  <h2><span class="dot" style="background:var(--accent)"></span>Le chemin le plus court vers la 1ʳᵉ vente</h2>
+  <p class="sub2">Dans l'ordre. Coche au fur et à mesure — ta progression est mémorisée.</p>
+
+  <div id="steps">
+    <!-- steps injected below as static markup -->
+    <div class="task" data-id="s1"><label class="cbx"><input type="checkbox"></label><div class="tnum">1</div><div class="tbody">
+      <div class="tt">Choisir le pilote : lunettes 250 $ seules + IA gratuite</div>
+      <div class="tw">Désactive les boutons d'abonnement ; encaisse par Interac (zéro KYC) ou Stripe si KYC fait. Enlève du chemin toute la chaîne paiement/licences cassée.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : petit</span></div></div></div>
+
+    <div class="task" data-id="s2"><label class="cbx"><input type="checkbox"></label><div class="tnum">2</div><div class="tbody">
+      <div class="tt">Entité + argent : immatriculer au REQ (NEQ) et l'inscrire dans les mentions légales</div>
+      <div class="tw">Vendre sous le nom « VELA » (≠ ton nom) exige normalement l'immatriculation au Registraire des entreprises du Québec. Ouvre/relie un compte pour les versements.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s3"><label class="cbx"><input type="checkbox"></label><div class="tnum">3</div><div class="tbody">
+      <div class="tt">Vérifier la certification radio ISED / IC des lunettes</div>
+      <div class="tw">Vendre au Canada un appareil qui émet du Bluetooth exige normalement une certification ISED (numéro IC). Demande au fabricant s'il en a une — sinon la revente du matériel est un risque légal réel.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : petit à confirmer</span></div></div></div>
+
+    <div class="task" data-id="s4"><label class="cbx"><input type="checkbox"></label><div class="tnum">4</div><div class="tbody">
+      <div class="tt">Trancher la fiscalité TPS/TVQ avec un comptable</div>
+      <div class="tw">Le code ne calcule AUCUNE taxe alors que le site affiche « taxes en sus ». Seuil du petit fournisseur = 30 000 $. Si perception requise : active-la + reçu détaillé. Sinon : retire « taxes en sus » pour ne pas induire en erreur.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill nous">Toi + comptable</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s5"><label class="cbx"><input type="checkbox"></label><div class="tnum">5</div><div class="tbody">
+      <div class="tt">Légal minimum : Conditions de vente + garantie/retour + disclaimer IA</div>
+      <div class="tw">Contrat à distance (LPC) : prix total, taxes, livraison, annulation. Politique de garantie/retour du matériel. Avis « l'IA peut se tromper, pas d'avis médical/juridique ». Un seul prestataire nommé partout (fini « Square »). Puis faire relire par un juriste et retirer l'avertissement « rédigé sans avis juridique ».</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill nous">Nous + juriste</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s6"><label class="cbx"><input type="checkbox"></label><div class="tnum">6</div><div class="tbody">
+      <div class="tt">Mettre le relais RÉELLEMENT en ligne (Render, verrouillé en gratuit) et le confirmer de l'extérieur</div>
+      <div class="tw">Sans lui, aucune IA : un client neuf voit « Aucune IA n'est prête ». Testé injoignable actuellement. Déploie, colle les clés, fais le CNAME Cloudflare, coupe l'ancien tunnel, vérifie /sante depuis ton téléphone (pas le réseau du cégep).</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s7"><label class="cbx"><input type="checkbox"></label><div class="tnum">7</div><div class="tbody">
+      <div class="tt">Reconstruire l'app à jour + embarquer le modèle Vosk + fermer les fuites de marque</div>
+      <div class="tw">L'installeur livré est PÉRIMÉ (le code du 9 sept n'y est pas). Un seul binaire versionné. J'embarque le modèle d'écoute Vosk (sinon IRIS est sourde hors-ligne au 1er lancement) et je masque les « Claude/OpenRouter » qui fuient encore dans Réglages›Test et /v1/models.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill nous">Nous</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s8"><label class="cbx"><input type="checkbox"></label><div class="tnum">8</div><div class="tbody">
+      <div class="tt">Tester l'app sur une machine Windows PROPRE (sans Python)</div>
+      <div class="tw">Jamais fait — et un risque de DLL manquante (msvcp140) est déjà avéré. Vérifie : le backend démarre, la voix FR parle, « Dis-moi Iris » est entendu, aucun crash.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s9"><label class="cbx"><input type="checkbox"></label><div class="tnum">9</div><div class="tbody">
+      <div class="tt">Tester le bout-en-bout sur les VRAIES lunettes + figer le mode audio vendu</div>
+      <div class="tw">Appairage Bluetooth + BLE, « Dis-moi Iris » → réponse parlée FR, chronométrer &lt; 5 s, couper/rallumer (reconnexion). Décide « micro dans les lunettes » vs « micro PC + son lunettes » et aligne code + onboarding + le verrou (aujourd'hui ils se contredisent).</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi (matériel)</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s10"><label class="cbx"><input type="checkbox"></label><div class="tnum">10</div><div class="tbody">
+      <div class="tt">Confirmer que tu peux VRAIMENT livrer les lunettes</div>
+      <div class="tw">Stock réel, montage du module, ajustement de la monture que le client envoie, délai d'expédition, et transport conforme de la pile Li-ion. On ne vend pas ce qu'on ne peut pas fabriquer/expédier.</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s11"><label class="cbx"><input type="checkbox"></label><div class="tnum">11</div><div class="tbody">
+      <div class="tt">Livraison du fichier : bon hébergeur, build à jour en ligne, redirection → merci.html, guide d'appairage</div>
+      <div class="tw">Confirme l'hébergeur du site et que l'installeur (~330 Mo) se télécharge vraiment ; remplace la vieille build servie. Rediriger après paiement vers merci.html (l'étape « envoie ta monture + adresse »). Ajoute un pas-à-pas d'appairage Bluetooth pour non-technicien.</div>
+      <div class="pills"><span class="pill l">lancement</span><span class="pill nous">Nous</span><span class="pill">effort : moyen</span></div></div></div>
+
+    <div class="task" data-id="s12"><label class="cbx"><input type="checkbox"></label><div class="tnum">12</div><div class="tbody">
+      <div class="tt">Répéter un ACHAT RÉEL de bout en bout</div>
+      <div class="tw">Clic → paiement → merci.html → téléchargement → installation → « Dis-moi Iris » répond. Rien n'est « fait » tant que tu n'as pas vu ce parcours complet fonctionner. C'est le contraire du « déploiement menteur ».</div>
+      <div class="pills"><span class="pill b">bloquant</span><span class="pill toi">Toi</span><span class="pill">effort : moyen</span></div></div></div>
+  </div>
+
+  <h2><span class="dot" style="background:var(--yellow-ink)"></span>À faire juste après le lancement</h2>
+  <ul class="mini">
+    <li><span class="who">Toi</span><div><b>Révoquer/roter les clés qui ont circulé</b> (Stripe, Anthropic, OpenRouter, ElevenLabs présentes en clair dans <code>serveur/.env</code>) — n'utilise que des clés fraîches.</div></li>
+    <li><span class="who">Nous</span><div><b>Signer l'installeur</b> (ou fournir un guide « Exécuter quand même » clair) — sinon SmartScreen fait fuir des clients au 1er lancement.</div></li>
+    <li><span class="who">Moi</span><div><b>Préchauffer la voix locale de secours</b> pour que la 1ʳᵉ phrase de repli n'arrive pas avec 5 s de retard.</div></li>
+    <li><span class="who">Nous</span><div><b>Quotas durables + réveil automatique du relais</b> — sur Render, les compteurs anti-facture se remettent à zéro (disque éphémère) et le service s'endort après 15 min.</div></li>
+    <li><span class="who">Moi</span><div><b>Message clair si l'écoute échoue</b> (aujourd'hui l'échec est silencieux → le client croit à une panne).</div></li>
+    <li><span class="who">Moi</span><div><b>Réduire la taille de l'installeur</b> (~330 Mo) en retirant l'OCR caméra inutile au lot audio.</div></li>
+    <li><span class="who">Toi</span><div><b>Confirmer ou masquer l'affichage de la batterie</b> des lunettes (l'interprétation actuelle est une déduction non prouvée).</div></li>
+    <li><span class="who">Nous</span><div><b>Support pro</b> : une seule adresse (pas deux Gmail perso), formulaire de contact fiable (pas seulement un lien mailto).</div></li>
+    <li><span class="who">Nous</span><div><b>Reçu/facture conforme</b> une fois la fiscalité tranchée.</div></li>
+  </ul>
+
+  <h2><span class="dot" style="background:var(--muted)"></span>Plus tard</h2>
+  <ul class="mini">
+    <li><span class="who">Nous</span><div><b>Mise à jour automatique de l'app</b> — sinon chaque correctif = renvoyer 330 Mo à la main à chaque client.</div></li>
+    <li><span class="who">Nous</span><div><b>Toute la chaîne des abonnements payants</b> (paiement → licence → activation → portail d'annulation) — le jour où tu voudras vendre Pro/Premium et que le KYC sera réglé.</div></li>
+    <li><span class="who">Toi</span><div><b>SAV/RMA opérationnel</b> (réparation, remplacement, prêt) + assurance responsabilité produit.</div></li>
+    <li><span class="who">Toi</span><div><b>ÉFVP Loi 25</b> pour le transfert de données hors Québec (fournisseurs IA aux É.-U.).</div></li>
+    <li><span class="who">Moi</span><div><b>Supervision/alerte du relais</b> + sauvegarde de la mémoire client + tests d'intégration Bluetooth.</div></li>
+    <li><span class="who">Toi</span><div><b>Décider du sort de PayPal</b> (code présent mais mort → configurer ou retirer).</div></li>
+  </ul>
+
+  <div class="call ok">
+    <p><b>✅ Ce qui est déjà solide</b> (pour que tu saches sur quoi tu bâtis) :</p>
+    <p>• <b>La voix française locale</b> (Piper) : embarquée, testée, parle sans réseau. Le point le plus abouti.<br>
+       • <b>La boucle vocale complète</b> (« Dis-moi Iris » → écoute → réponse) : branchée de bout en bout, 30+ tests.<br>
+       • <b>La chaîne d'installeur</b> : produit un vrai <code>.exe</code> autonome, sans Python chez le client.<br>
+       • <b>Le code « IA sans clé »</b> du relais : cohérent de bout en bout — il reste à le mettre en ligne.</p>
+    <p>Ce n'est pas un prototype vide. Le socle logiciel est là ; il faut le <b>prouver en vrai</b> et poser le <b>cadre business</b>.</p>
+  </div>
+
+  <footer>
+    <p>Établi à partir d'un audit du code réel (voix, lunettes, cerveau, installeur, paiements, légal,
+      parcours) + une passe critique. Remplace la feuille de route précédente. Ta progression est
+      mémorisée dans ce navigateur.</p>
+  </footer>
+</div>
+
+<script>
+  var tasks=document.querySelectorAll('#steps .task');
+  var pbar=document.getElementById('pbar'), pcount=document.getElementById('pcount');
+  function refresh(){
+    var n=0; tasks.forEach(function(t){ if(t.classList.contains('on')) n++; });
+    if(pbar) pbar.style.width=Math.round(n/tasks.length*100)+'%';
+    if(pcount) pcount.textContent=n+' / '+tasks.length;
+  }
+  tasks.forEach(function(t){
+    var id='vela-vendable-'+t.dataset.id;
+    var cb=t.querySelector('input');
+    try{ if(localStorage.getItem(id)==='1'){ cb.checked=true; t.classList.add('on'); } }catch(e){}
+    cb.addEventListener('change', function(){
+      t.classList.toggle('on', cb.checked);
+      try{ localStorage.setItem(id, cb.checked?'1':'0'); }catch(e){}
+      refresh();
+    });
+  });
+  refresh();
+</script>

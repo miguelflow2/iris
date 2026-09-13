@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1B140E" />
+  <title>Iris — Télécommande</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icone-192.png" />
+  <style>
+    :root{ --encre:#1B140E; --creme:#F8F0E7; --terracotta:#B36B3B; --terracotta-clair:#d18a58;
+           --brume:rgba(248,240,231,.62); --carte:#241a12; --bord:rgba(248,240,231,.14); }
+    *{ box-sizing:border-box; }
+    body{ margin:0; background:var(--encre); color:var(--creme);
+          font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+          padding:20px 18px 40px; -webkit-font-smoothing:antialiased; }
+    header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:22px; }
+    .logo{ display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.14em; }
+    .voile{ width:26px; height:26px; }
+    .marque{ color:var(--brume); font-size:12px; letter-spacing:.16em; }
+    h1{ font-size:26px; margin:0 0 6px; }
+    p.intro{ color:var(--brume); margin:0 0 22px; }
+    .carte{ background:var(--carte); border:1px solid var(--bord); border-radius:16px; padding:16px; margin-bottom:16px; }
+    .carte h2{ font-size:15px; margin:0 0 12px; letter-spacing:.02em; }
+    label{ display:block; font-size:12px; color:var(--brume); margin:10px 0 4px; }
+    input,textarea{ width:100%; background:#0f0b07; color:var(--creme); border:1px solid var(--bord);
+                    border-radius:10px; padding:11px 12px; font-size:15px; }
+    textarea{ resize:vertical; min-height:64px; }
+    button{ appearance:none; border:0; border-radius:999px; background:var(--terracotta); color:#fff;
+            font-size:15px; font-weight:600; padding:12px 18px; margin-top:14px; width:100%; }
+    button:active{ background:var(--terracotta-clair); }
+    button:disabled{ opacity:.4; }
+    .etat{ display:flex; align-items:center; gap:8px; font-size:14px; margin-top:12px; }
+    .point{ width:10px; height:10px; border-radius:50%; background:#8a8078; flex:none; }
+    .point.on{ background:#4caf72; } .point.off{ background:#c15b4b; }
+    .fil{ display:flex; flex-direction:column; gap:10px; }
+    .bulle{ padding:10px 13px; border-radius:12px; max-width:88%; font-size:15px; white-space:pre-wrap; }
+    .moi{ align-self:flex-end; background:var(--terracotta); color:#fff; border-bottom-right-radius:4px; }
+    .iris{ align-self:flex-start; background:#0f0b07; border:1px solid var(--bord); border-bottom-left-radius:4px; }
+    .sys{ align-self:center; color:var(--brume); font-size:13px; }
+    .accord{ border-color:var(--terracotta); }
+    .accord .duo{ display:flex; gap:10px; margin-top:10px; }
+    .accord button{ margin:0; }
+    .non{ background:#0f0b07; border:1px solid var(--bord); }
+    a.retour{ color:var(--terracotta-clair); font-size:14px; text-decoration:none; display:inline-block; margin-top:8px; }
+    .avert{ font-size:12.5px; color:var(--brume); margin-top:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo">
+      <svg class="voile" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21 L12 3 L12 21 Z" fill="#B36B3B"/><path d="M12 21 L12 6 L19 21 Z" fill="#F8F0E7"/></svg>
+      IRIS
+    </span>
+    <span class="marque">PAR VELA</span>
+  </header>
+
+  <h1>Télécommande</h1>
+  <p class="intro">Pilote ton ordinateur à distance. Iris exécute la commande chez elle et te
+    demande ton accord avant tout envoi ou toute action irréversible.</p>
+
+  <section class="carte" id="carte-connexion">
+    <h2>Connexion</h2>
+    <label for="relais">Adresse du relais</label>
+    <input id="relais" inputmode="url" autocomplete="off" placeholder="https://…trycloudflare.com" />
+    <label for="courriel">Ton courriel VELA</label>
+    <input id="courriel" inputmode="email" autocomplete="off" placeholder="toi@exemple.com" />
+    <label for="pairing">Code d'appairage (affiché par ton ordinateur)</label>
+    <input id="pairing" autocomplete="off" placeholder="ex. 3f9a1c22" />
+    <button id="btn-connecter">Connecter</button>
+    <div class="etat"><span class="point" id="point"></span><span id="etat-texte">Non connecté</span></div>
+    <p class="avert">Ton ordinateur doit tourner, avec la télécommande activée dans ses réglages.</p>
+  </section>
+
+  <section class="carte" id="carte-commande" hidden>
+    <h2>Commander</h2>
+    <textarea id="commande" placeholder="Ex. : ouvre le bloc-notes, cherche le fichier budget, lance ma musique…"></textarea>
+    <button id="btn-envoyer" disabled>Envoyer à Iris</button>
+  </section>
+
+  <section class="carte" id="carte-accord" hidden>
+    <div class="bulle accord">
+      <strong id="accord-titre"></strong>
+      <div id="accord-detail" class="avert"></div>
+      <div class="duo">
+        <button id="btn-oui">Oui, vas-y</button>
+        <button id="btn-non" class="non">Non</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="carte">
+    <h2>Échanges</h2>
+    <div class="fil" id="fil"><div class="bulle sys">Connecte-toi pour commencer.</div></div>
+  </section>
+
+  <a class="retour" href="index.html">← Revenir à la voix</a>
+
+  <script src="telecommande.js"></script>
+</body>
+</html>

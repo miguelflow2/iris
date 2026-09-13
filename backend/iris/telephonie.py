@@ -73,6 +73,8 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
+from . import twilio_ligne
+
 log = logging.getLogger("iris.telephonie")
 
 # Clé du coffre : username = Account SID, password = Auth Token. Même forme que les comptes web.
@@ -93,8 +95,14 @@ TAILLE_SEGMENT = 160
 
 URL_TWILIO = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 
-FOURNISSEURS_CONNUS = ("iphone", "twilio", "aucun")
+FOURNISSEURS_CONNUS = ("iphone", "twilio_ligne", "twilio", "aucun")
 FOURNISSEUR_DEFAUT = "iphone"
+# « twilio_ligne » (décision du 7 septembre 2026) : la vraie ligne d'IRIS, identifiants dans
+# l'environnement, clé d'API, SMS + appels sortants et entrants. Voir twilio_ligne.py.
+# « twilio » (ancienne voie, dormante) : identifiants dans le coffre, Auth Token, SMS seulement,
+# aucun appel. Conservée telle quelle pour ne pas casser ce qui la teste.
+FOURNISSEUR_LIGNE = twilio_ligne.FOURNISSEUR  # "twilio_ligne"
+MESSAGE_APPEL_DEFAUT = twilio_ligne.MESSAGE_APPEL_DEFAUT
 
 _CONTROLE = re.compile(r"[\r\n\x00]")
 _LETTRES = re.compile(r"[A-Za-z]")
@@ -419,16 +427,28 @@ class Brouillon:
             return 0
         return (len(self.texte) - 1) // TAILLE_SEGMENT + 1
 
+    @property
+    def par_la_ligne(self) -> bool:
+        """L'accord porte-t-il sur un envoi qu'IRIS fait ELLE-MÊME (Twilio), et non un brouillon ?"""
+        return self.voie in (FOURNISSEUR_LIGNE, "twilio")
+
     def titre(self) -> str:
         """Titre de la demande de confirmation : il contient à QUI, c'est ce qui se vérifie d'abord."""
         qui = numero_lisible(self.numero)
-        return f"Préparer un SMS pour {qui}" if self.genre == "sms" else f"Appeler {qui}"
+        if self.genre == "sms":
+            return f"Envoyer un SMS à {qui}" if self.par_la_ligne else f"Préparer un SMS pour {qui}"
+        return f"Appeler {qui}"
 
     def apercu(self) -> str:
         """Le message entier, tel qu'il partira. Rien d'abrégé : on ne confirme pas un résumé."""
         lignes = [f"À : {numero_lisible(self.numero)} ({self.numero})"]
         if self.genre == "sms":
             lignes += [f"Longueur : {len(self.texte)} caractères ({self.segments} segment(s) facturé(s))", "", self.texte]
+        elif self.voie == FOURNISSEUR_LIGNE:
+            # Appel passé par la ligne d'IRIS : le correspondant décroche et entend CE message. On
+            # le relit donc en entier, comme un SMS — c'est lui qu'on approuve, pas seulement le numéro.
+            lignes.append("IRIS appellera depuis sa propre ligne et dira, au décroché :")
+            lignes += ["", self.texte or MESSAGE_APPEL_DEFAUT]
         else:
             lignes.append("Le composeur de ton téléphone s'ouvrira avec ce numéro ; c'est toi qui lances l'appel.")
         return "\n".join(lignes)
@@ -553,6 +573,7 @@ class Telephoniste:
         registre: Any = None,  # ConsentGate : trace chaque envoi ET chaque refus
         hub: Any = None,  # EventHub : réveille le bureau et /m sans attendre le sondage
         horloge: Callable[[], float] = time.monotonic,
+        config_ligne: twilio_ligne.ConfigLigne | None = None,  # injecté par les tests ; sinon, lu dans l'environnement
     ):
         self.settings = settings
         self.secrets = secrets
@@ -562,6 +583,15 @@ class Telephoniste:
         self._horloge = horloge
         self.compteur = Compteur(horloge=horloge)
         self._attente: dict[str, EnAttente] = {}
+        self._config_ligne_injectee = config_ligne
+
+    def _config_ligne(self) -> twilio_ligne.ConfigLigne:
+        """Les identifiants de la ligne Twilio. Relus dans l'environnement à chaque fois : un
+        redémarrage ou un `.env` corrigé doit prendre effet sans reconstruire le service. Les tests
+        en injectent une pour rester hors réseau et hors environnement réel."""
+        if self._config_ligne_injectee is not None:
+            return self._config_ligne_injectee
+        return twilio_ligne.ConfigLigne.depuis_environnement()
 
     # ------------------------------------------------------------------ état
     @property
@@ -607,6 +637,8 @@ class Telephoniste:
         fournisseur = self.fournisseur
         if fournisseur == "iphone":
             return True
+        if fournisseur == FOURNISSEUR_LIGNE:
+            return self._config_ligne().sortant_pret and not self.mode_local
         if fournisseur == "twilio":
             sid, token = self._identifiants()
             return bool(sid and token and self._numero_expediteur()) and not self.mode_local
@@ -625,6 +657,21 @@ class Telephoniste:
                 f"Le fournisseur de téléphonie « {fournisseur} » ne me dit rien. "
                 f"Les valeurs que je connais sont : {', '.join(FOURNISSEURS_CONNUS)}."
             )
+        if fournisseur == FOURNISSEUR_LIGNE:
+            if self.mode_local:
+                return (
+                    "Le mode local est actif : un SMS ou un appel passé par ma ligne Twilio quitterait "
+                    "cet ordinateur vers un service américain, et c'est exactement ce que le mode local "
+                    "interdit. Je peux en revanche préparer le message sur ton téléphone."
+                )
+            config = self._config_ligne()
+            if not config.sortant_pret:
+                return (
+                    "Ma ligne téléphonique n'est pas encore complète. Il me manque : "
+                    + ", ".join(config.manquant_sortant())
+                    + ". " + twilio_ligne.MODE_EMPLOI
+                )
+            return ""
         if fournisseur == "twilio":
             if self.mode_local:
                 return (
@@ -644,6 +691,8 @@ class Telephoniste:
 
     def etat(self) -> dict:
         """État affichable. Ne renvoie jamais l'Auth Token, même partiellement côté serveur."""
+        if self.fournisseur == FOURNISSEUR_LIGNE:
+            return self._etat_ligne()
         sid, token = self._identifiants()
         r = self.reglages()
         masque = getattr(self.secrets, "mask", lambda v: "••••" if v else "")
@@ -660,6 +709,36 @@ class Telephoniste:
             "envois_restants_cette_heure": self.compteur.restant,
             "en_attente": len(self.en_attente()),
             "explication": self.pourquoi_pas_pret() or (EXPLICATION_IPHONE if r.fournisseur == "iphone" else ""),
+        }
+
+    def _etat_ligne(self) -> dict:
+        """État de la ligne Twilio d'IRIS. Ni le secret de la clé ni l'Auth Token n'en sortent :
+        seuls des identifiants masqués, comme l'interface les montre déjà pour l'ancienne voie."""
+        r = self.reglages()
+        config = self._config_ligne()
+        masque = getattr(self.secrets, "mask", lambda v: "••••" if v else "")
+        pret = config.sortant_pret and not self.mode_local
+        return {
+            "fournisseur": r.fournisseur,
+            "configure": self.configure,
+            "voie": "ligne Twilio d'IRIS (elle envoie et appelle elle-même, après ton accord)",
+            "peut_envoyer_seule": pret,
+            "peut_appeler": pret,
+            # Le SID de la clé (SK…) et l'Account SID (AC…) ne sont pas des secrets ; on les masque
+            # quand même à l'affichage, par cohérence avec le reste. Le SECRET de la clé, lui, ne
+            # sert qu'à dire s'il est présent — jamais sa valeur, même tronquée.
+            "identifiant": masque(config.api_key_sid) if config.api_key_sid else "",
+            "compte": masque(config.account_sid) if config.account_sid else "",
+            "secret": "présent" if config.api_key_secret else "",
+            "numero_ligne": config.numero,
+            "numero_par_defaut": r.numero_par_defaut,
+            "entrant_pret": config.entrant_pret,
+            "manquant": config.manquant_sortant(),
+            "mode_local": self.mode_local,
+            "envois_restants_cette_heure": self.compteur.restant,
+            "en_attente": len(self.en_attente()),
+            "explication": self.pourquoi_pas_pret()
+            or "Ma ligne Twilio est prête : je peux envoyer un SMS et passer un appel, toujours après ton accord.",
         }
 
     # ------------------------------------------------------------------ configuration
@@ -716,19 +795,32 @@ class Telephoniste:
             )
         return Brouillon(genre="sms", numero=numero, texte=texte, voie=self.fournisseur)
 
-    def preparer_appel(self, numero: str) -> Brouillon:
-        """Construit l'appel et ne compose RIEN."""
+    def preparer_appel(self, numero: str, message: str = "") -> Brouillon:
+        """Construit l'appel et ne compose RIEN.
+
+        `message` : ce qu'IRIS dira au décroché quand l'appel part de SA ligne (twilio_ligne). Sur la
+        voie iPhone, il n'y a rien à dire — c'est Miguel qui parle — donc le message est ignoré.
+        """
         self._garde()
+        numero = normaliser_numero(numero, self.reglages().indicatif_pays)
         if self.fournisseur == "twilio":
-            # Un appel parti d'un numéro loué s'affiche comme un inconnu chez le correspondant, qui
-            # ne peut pas rappeler la vraie ligne — et IRIS n'aurait rien à dire une fois décroché.
+            # L'ancienne voie « twilio » (Auth Token, coffre) n'appelle pas : un appel parti d'un
+            # numéro loué s'afficherait comme un inconnu, et cette voie n'a pas de TwiML à dire une
+            # fois décroché. La ligne « twilio_ligne », elle, sait quoi dire (le message ci-dessous).
             raise TelephonieNonConfiguree(
                 "Je ne passe pas d'appel par un service Internet : ton correspondant verrait un numéro "
                 "inconnu et ne pourrait pas te rappeler. Je prépare le numéro sur ton téléphone, "
                 "et c'est ta ligne qui appelle."
             )
-        return Brouillon(genre="appel", numero=normaliser_numero(numero, self.reglages().indicatif_pays),
-                         voie=self.fournisseur)
+        texte = ""
+        if self.fournisseur == FOURNISSEUR_LIGNE:
+            texte = (message or "").replace("\r\n", "\n").strip()
+            if len(texte) > MAX_CARACTERES:
+                raise ErreurTelephonie(
+                    f"Ce que tu veux faire dire à l'appel fait {len(texte)} caractères. Je m'arrête à "
+                    f"{MAX_CARACTERES} : au-delà, c'est un monologue au téléphone, pas un message."
+                )
+        return Brouillon(genre="appel", numero=numero, texte=texte, voie=self.fournisseur)
 
     # ------------------------------------------------------------------ accord
     async def demander_accord(self, brouillon: Brouillon, confirmer: ConfirmFn) -> Autorisation | None:
@@ -765,6 +857,8 @@ class Telephoniste:
         # pas s'il a été facturé. Compter une tentative de trop vaut mieux que d'en oublier dix.
         self.compteur.enregistrer()
 
+        if self.fournisseur == FOURNISSEUR_LIGNE:
+            return self._agir_par_ligne(brouillon)
         if self.fournisseur == "twilio":
             return self._envoyer_par_twilio(brouillon)
         return self._deposer_sur_le_telephone(brouillon)
@@ -870,11 +964,77 @@ class Telephoniste:
             "message": f"SMS envoyé à {numero_lisible(brouillon.numero)}.",
         }
 
+    # --- voie 3 : la ligne d'IRIS (twilio_ligne), SMS ET appels ---
+    def _agir_par_ligne(self, brouillon: Brouillon) -> dict:
+        """Envoie un SMS ou passe un appel par la ligne Twilio d'IRIS, authentifiée par clé d'API.
+
+        Même forme que `_envoyer_par_twilio`, deux différences : l'authentification est un couple
+        (SID de clé, secret) au lieu de (Account SID, Auth Token), et un appel est possible — il dit
+        un message via TwiML. La revérification des identifiants ici est décisive : l'environnement a
+        pu changer entre l'accord et l'action, et on ne prétend jamais avoir agi si ce n'est pas le cas.
+        """
+        config = self._config_ligne()
+        if not config.sortant_pret:
+            raise TelephonieNonConfiguree("Ma ligne a perdu ses identifiants entre-temps. " + twilio_ligne.MODE_EMPLOI)
+        secrets = config.secrets_a_masquer
+
+        if brouillon.genre == "sms":
+            url = config.url_messages()
+            donnees = {"To": brouillon.numero, "From": config.numero, "Body": brouillon.texte}
+            tiers, evenement = "twilio_ligne (sms)", "SMS remis à l'opérateur"
+        else:
+            url = config.url_calls()
+            donnees = {
+                "To": brouillon.numero,
+                "From": config.numero,
+                "Twiml": twilio_ligne.twiml_dire(brouillon.texte or twilio_ligne.MESSAGE_APPEL_DEFAUT),
+            }
+            tiers, evenement = "twilio_ligne (appel)", "Appel remis à l'opérateur"
+
+        envoyer = self._http or twilio_ligne.client_http_par_defaut
+        try:
+            reponse = envoyer(url, donnees, config.auth(), DELAI_HTTP)
+        except Exception as erreur:
+            log.error("Action Twilio impossible : %s", _sans_secret(str(erreur), *secrets))
+            raise EnvoiEchoue(
+                "Je n'ai pas réussi à joindre l'opérateur, et rien n'est parti. "
+                "À vérifier : la connexion internet, puis le pare-feu. Détail : "
+                f"{_sans_secret(str(erreur), *secrets) or type(erreur).__name__}"
+            ) from None
+
+        statut = int(getattr(reponse, "status_code", 0) or 0)
+        corps: dict = {}
+        try:
+            corps = reponse.json() or {}
+        except Exception:
+            corps = {}
+        if not 200 <= statut < 300:
+            raise EnvoiEchoue(self._expliquer_twilio(statut, corps, *secrets))
+
+        self._tracer("telephonie_envoye", brouillon, tiers=tiers)
+        log.info("%s.", evenement)
+        if brouillon.genre == "sms":
+            return {
+                "ok": True, "envoye": True, "en_attente": False,
+                "id": brouillon.identifiant, "numero": brouillon.numero, "genre": "sms",
+                "segments": brouillon.segments, "reference": str(corps.get("sid") or ""),
+                "message": f"SMS envoyé à {numero_lisible(brouillon.numero)} depuis ta ligne IRIS.",
+            }
+        return {
+            "ok": True, "envoye": True, "en_attente": False,
+            "id": brouillon.identifiant, "numero": brouillon.numero, "genre": "appel",
+            "reference": str(corps.get("sid") or ""),
+            "message": f"J'appelle {numero_lisible(brouillon.numero)} depuis ta ligne IRIS.",
+        }
+
     @staticmethod
-    def _expliquer_twilio(statut: int, corps: dict, token: str, sid: str) -> str:
-        """Transforme un code d'erreur en phrase qui dit quoi faire. Jamais d'identifiant dedans."""
+    def _expliquer_twilio(statut: int, corps: dict, *secrets: str) -> str:
+        """Transforme un code d'erreur en phrase qui dit quoi faire. Jamais d'identifiant dedans.
+
+        `secrets` : tout ce qui doit être effacé de la réponse de l'opérateur avant de la montrer —
+        l'Auth Token pour l'ancienne voie, le secret de la clé d'API pour la ligne."""
         code = corps.get("code")
-        detail = _sans_secret(str(corps.get("message") or ""), token, sid) or f"réponse HTTP {statut}"
+        detail = _sans_secret(str(corps.get("message") or ""), *secrets) or f"réponse HTTP {statut}"
         explications = {
             20003: "L'opérateur a refusé mes identifiants. Rien n'est parti. L'Auth Token a probablement été "
                    "régénéré depuis le tableau de bord : il faut me redonner le nouveau.",
@@ -915,8 +1075,8 @@ class Telephoniste:
         brouillon = self.preparer_sms(destinataire, message)
         return await self._apres_accord(brouillon, confirmer)
 
-    async def appeler_apres_accord(self, numero: str, confirmer: ConfirmFn) -> dict:
-        brouillon = self.preparer_appel(numero)
+    async def appeler_apres_accord(self, numero: str, confirmer: ConfirmFn, message: str = "") -> dict:
+        brouillon = self.preparer_appel(numero, message)
         return await self._apres_accord(brouillon, confirmer)
 
     async def _apres_accord(self, brouillon: Brouillon, confirmer: ConfirmFn) -> dict:
@@ -931,7 +1091,7 @@ class Telephoniste:
                 "message": "Je n'ai rien fait : ça n'a pas été confirmé.",
             }
         # Twilio ouvre une connexion : hors de la boucle, sinon la voix se fige le temps de l'aller-retour.
-        if self.fournisseur == "twilio":
+        if self.fournisseur in ("twilio", FOURNISSEUR_LIGNE):
             return await asyncio.to_thread(self.executer, accord)
         return self.executer(accord)
 

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>IRIS — ouverture</title>
+<style>
+  :root{
+    --encre:#120d08; --encre2:#1d140d; --creme:#F8F0E7; --terracotta:#C57B4A;
+    --terracotta2:#B36B3B; --or:#e6b483; --brume:rgba(248,240,231,.55);
+  }
+  *{margin:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--encre); color:var(--creme); overflow:hidden;
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,sans-serif;
+    display:grid; place-items:center;
+  }
+  /* halo qui respire */
+  .halo{
+    position:fixed; inset:-20%;
+    background:radial-gradient(60% 55% at 50% 42%, rgba(197,123,74,.22), rgba(18,13,8,0) 62%);
+    opacity:0; animation:halo 4.6s ease-in-out infinite;
+  }
+  @keyframes halo{0%{opacity:0;transform:scale(.9)}22%{opacity:1}55%{opacity:.85;transform:scale(1.04)}100%{opacity:0;transform:scale(.92)}}
+
+  .scene{ position:relative; width:min(90vw,560px); text-align:center; }
+
+  /* la voile */
+  .voile{ width:132px; height:132px; margin:0 auto 26px; display:block; filter:drop-shadow(0 10px 40px rgba(197,123,74,.35)); }
+  .voile .trait{ fill:none; stroke:var(--creme); stroke-width:1.4; stroke-linejoin:round;
+    stroke-dasharray:120; stroke-dashoffset:120; animation:trace 1.15s cubic-bezier(.7,0,.3,1) .15s forwards; }
+  .voile .plein-t{ fill:var(--terracotta2); opacity:0; transform-origin:50% 100%; animation:remplir 1s cubic-bezier(.2,.7,.2,1) 1.0s forwards; }
+  .voile .plein-c{ fill:var(--creme); opacity:0; transform-origin:50% 100%; animation:remplir 1s cubic-bezier(.2,.7,.2,1) 1.18s forwards; }
+  @keyframes trace{to{stroke-dashoffset:0}}
+  @keyframes remplir{0%{opacity:0;transform:translateY(8px) scaleY(.6)}100%{opacity:1;transform:none}}
+
+  /* balayage de lumière sur la voile */
+  .voile-wrap{ position:relative; width:132px; height:132px; margin:0 auto; }
+  .sweep{ position:absolute; inset:0; overflow:hidden; border-radius:50%; pointer-events:none; }
+  .sweep::before{ content:""; position:absolute; top:-40%; left:-60%; width:60%; height:180%;
+    background:linear-gradient(105deg, transparent, rgba(255,255,255,.55), transparent);
+    transform:skewX(-18deg); opacity:0; animation:sweep 1.1s ease-in 1.35s forwards; }
+  @keyframes sweep{0%{left:-60%;opacity:0}18%{opacity:.9}100%{left:160%;opacity:0}}
+
+  /* le mot IRIS */
+  .mot{ font-size:74px; font-weight:800; letter-spacing:.5em; padding-left:.5em;
+    background:linear-gradient(180deg,var(--creme),#e9d9c6); -webkit-background-clip:text; background-clip:text; color:transparent;
+    opacity:0; transform:translateY(14px); animation:monte .9s cubic-bezier(.2,.7,.2,1) 1.7s forwards, serre 1.1s ease 1.7s forwards; }
+  @keyframes monte{to{opacity:1;transform:none}}
+  @keyframes serre{from{letter-spacing:.7em}to{letter-spacing:.34em}}
+
+  .marque{ margin-top:6px; font-size:13px; letter-spacing:.42em; color:var(--terracotta); opacity:0;
+    animation:fade .8s ease 2.0s forwards; }
+  .slogan{ margin-top:22px; font-size:16px; color:var(--brume); letter-spacing:.02em; opacity:0;
+    animation:fade 1s ease 2.35s forwards; }
+  .slogan b{ color:var(--creme); font-weight:600; }
+  @keyframes fade{to{opacity:1}}
+
+  /* fine ligne dorée qui s'ouvre */
+  .ligne{ height:1px; width:0; margin:20px auto 0;
+    background:linear-gradient(90deg,transparent,var(--or),transparent);
+    animation:ouvre 1s ease 2.2s forwards; }
+  @keyframes ouvre{to{width:220px}}
+
+  .rejouer{ position:fixed; bottom:22px; left:0; right:0; text-align:center; color:var(--brume); font-size:12px;
+    letter-spacing:.12em; opacity:0; animation:fade .6s ease 3.2s forwards; cursor:pointer; }
+  .rejouer:hover{ color:var(--creme); }
+</style>
+</head>
+<body>
+  <div class="halo"></div>
+  <div class="scene" id="scene">
+    <div class="voile-wrap">
+      <svg class="voile" viewBox="0 0 24 26" aria-hidden="true">
+        <path class="plein-t" d="M4 22 L12 3 L12 22 Z"/>
+        <path class="plein-c" d="M12 22 L12 6.5 L19.5 22 Z"/>
+        <path class="trait" d="M4 22 L12 3 L12 22 M12 22 L12 6.5 L19.5 22 Z"/>
+      </svg>
+      <div class="sweep"></div>
+    </div>
+    <div class="mot">IRIS</div>
+    <div class="marque">PAR VELA</div>
+    <div class="ligne"></div>
+    <div class="slogan"><b>Parlez.</b> Elle agit. <b>Vous vérifiez.</b></div>
+  </div>
+  <div class="rejouer" onclick="rejouer()">↺ rejouer</div>
+<script>
+  function rejouer(){
+    const s = document.getElementById('scene');
+    const clone = s.cloneNode(true);
+    s.parentNode.replaceChild(clone, s);
+  }
+  // pour la maquette : rejoue en boucle douce toutes les ~5,5 s
+  setInterval(rejouer, 5500);
+</script>
+</body>
+</html>

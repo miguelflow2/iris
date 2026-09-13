@@ -42,7 +42,8 @@ $cloudflared  = Join-Path $outils "cloudflared.exe"
 $journalTunnel = Join-Path $racine "serveur\journaux\tunnel.log"
 $adresseFichier = Join-Path $racine "serveur\donnees\adresse-publique.txt"
 $PORT_RELAIS  = 8100
-$SANTE_LOCALE = "http://127.0.0.1:$PORT_RELAIS/sante"
+$ORIGINE_LOCALE = "http://127.0.0.1:$PORT_RELAIS"
+$SANTE_LOCALE = "$ORIGINE_LOCALE/sante"
 $TACHE_TUNNEL = "VelaTunnel"
 
 function Titre($t)     { Write-Host ""; Write-Host $t -ForegroundColor Cyan }
@@ -144,10 +145,20 @@ if (-not (Test-Path $cloudflared)) {
 New-Item -ItemType Directory -Force -Path (Split-Path $journalTunnel) | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path $adresseFichier) | Out-Null
 
+$modeNomme = $false
 if ($Domaine -and $Jeton) {
     # ---- mode NOMME : adresse stable ----
-    Titre "   Mode nomme (adresse stable) : $Domaine"
+    $modeNomme = $true
+    # On accepte « relais.mondomaine.com », « https://relais.mondomaine.com » ou une barre finale, et on
+    # ne garde que le nom d'hote : sinon l'adresse deviendrait « https://https://... ». Le nom d'hote
+    # passe ici DOIT etre exactement celui route en Public Hostname cote Cloudflare (voir DOMAINE-CERVEAU.md).
+    $hote = $Domaine.Trim() -replace '^(?i)https?://', '' -replace '/.*$', ''
+    if ($hote -ne $Domaine.Trim()) { Attention "Domaine normalise : « $($Domaine.Trim()) » -> « $hote »." }
+    Titre "   Mode nomme (adresse stable) : $hote"
     Write-Host "  Le jeton fourni fait tourner un tunnel Cloudflare deja configure dans votre compte." -ForegroundColor DarkGray
+    if ($Jeton -notmatch '^(?i)eyJ') {
+        Attention "Le jeton ne ressemble pas a un jeton de tunnel Cloudflare (attendu : une longue chaine commencant par « eyJ »). Verifiez d'avoir copie le JETON du tunnel, pas son identifiant."
+    }
     $action = New-ScheduledTaskAction -Execute $cloudflared -Argument "tunnel run --token $Jeton"
     $decl   = New-ScheduledTaskTrigger -AtStartup
     $princ  = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
@@ -160,8 +171,10 @@ if ($Domaine -and $Jeton) {
         Start-ScheduledTask -TaskName $TACHE_TUNNEL
         Ok "Tunnel nomme enregistre au demarrage."
     }
-    $adresse = "https://$Domaine"
-    Set-Content -Path $adresseFichier -Value $adresse -Encoding utf8
+    $adresse = "https://$hote"
+    # UTF-8 SANS BOM : le fichier est relu par d'autres outils et parfois copie tel quel ; une marque
+    # d'octets en tete collerait a l'URL (« ...txt : ﻿https://... ») et la rendrait inutilisable.
+    [System.IO.File]::WriteAllText($adresseFichier, $adresse, (New-Object System.Text.UTF8Encoding($false)))
     Start-Sleep -Seconds 6
 } else {
     # ---- mode RAPIDE : adresse d'essai, ephemere ----
@@ -169,7 +182,7 @@ if ($Domaine -and $Jeton) {
     Attention "Cette adresse CHANGERA a chaque redemarrage du tunnel : parfaite pour essayer, a NE PAS figer dans une app livree a des clients. Pour une adresse stable, relancez avec -Domaine et -Jeton."
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     if (Test-Path $journalTunnel) { Remove-Item $journalTunnel -Force -ErrorAction SilentlyContinue }
-    Start-Process $cloudflared -ArgumentList "tunnel --url $SANTE_LOCALE --logfile `"$journalTunnel`" --loglevel info" -WindowStyle Hidden
+    Start-Process $cloudflared -ArgumentList "tunnel --url $ORIGINE_LOCALE --logfile `"$journalTunnel`" --loglevel info" -WindowStyle Hidden
     Write-Host "  Ouverture du tunnel..." -ForegroundColor DarkGray
     $adresse = ""
     for ($i = 0; $i -lt 20; $i++) {
@@ -188,17 +201,55 @@ if ($Domaine -and $Jeton) {
 }
 
 # ---------------------------------------------------------------- 3. verification a travers le tunnel
-Titre "3. Verification"
-$adresse = (Get-Content $adresseFichier -Raw).Trim()
+Titre "3. Verification (a travers le domaine public, pas seulement en local)"
+$adresse = (Get-Content $adresseFichier -Raw).Trim().TrimStart([char]0xFEFF)
 $ok = $false
+$derniereErreur = ""
+$dernierCode = $null
 for ($i = 0; $i -lt 10; $i++) {
     try {
         $r = Invoke-WebRequest "$adresse/sante" -UseBasicParsing -TimeoutSec 8
         if ($r.Content -match '"ok"\s*:\s*true') { $ok = $true; break }
-    } catch { Start-Sleep -Seconds 3 }
+        $derniereErreur = "reponse inattendue (code $($r.StatusCode))"
+    } catch {
+        $derniereErreur = $_.Exception.Message
+        $dernierCode = $null
+        if ($_.Exception.Response) { try { $dernierCode = [int]$_.Exception.Response.StatusCode } catch {} }
+        Start-Sleep -Seconds 3
+    }
 }
-if ($ok) { Ok "Le relais repond a travers Internet : $adresse/sante" }
-else { Attention "Le tunnel est ouvert mais /sante ne repond pas encore a travers lui. Reessayez -Etat dans une minute." }
+if ($ok) {
+    Ok "Le relais repond a travers Internet : $adresse/sante"
+} elseif ($modeNomme) {
+    # En mode nomme, le relais a ete verifie sain EN LOCAL a l'etape 1 : un echec ici vient presque
+    # toujours du routage Cloudflare, pas du relais. On distingue les causes pour ne pas envoyer
+    # l'utilisateur attendre dans le vide alors qu'il manque un Public Hostname.
+    $hoteSeul = $adresse -replace '^(?i)https?://', ''
+    $tunnelVivant = [bool](Get-Process cloudflared -ErrorAction SilentlyContinue)
+    $tache = Get-ScheduledTask -TaskName $TACHE_TUNNEL -ErrorAction SilentlyContinue
+    if ($tache -and $tache.State -eq 'Running') { $tunnelVivant = $true }
+
+    Attention "Le relais est sain en local, mais ne repond pas encore a travers $adresse."
+    if (-not $tunnelVivant) {
+        Bloquant "Le connecteur cloudflared ne tourne pas : le tunnel n'a pas demarre."
+        Write-Host "     Cause probable : jeton invalide, ou droits insuffisants pour enregistrer le service."
+        Write-Host "     - Verifiez le jeton (Zero Trust > Networks > Tunnels > votre tunnel > Configure)."
+        Write-Host "     - Relancez ce script depuis un PowerShell OUVERT EN ADMINISTRATEUR (service permanent)."
+    } elseif ($dernierCode -eq 530 -or $derniereErreur -match '(?i)530|1033|1016|could not be resolved|no such host|remote name|résolu|resolu') {
+        Bloquant "Le tunnel tourne, mais le nom d'hote « $hoteSeul » n'est pas (encore) route cote Cloudflare."
+        Write-Host "     A verifier dans Zero Trust > Networks > Tunnels > votre tunnel > Public Hostname :"
+        Write-Host "       - un Public Hostname « $hoteSeul » existe ;"
+        Write-Host "       - son Service pointe sur  http://localhost:$PORT_RELAIS  ;"
+        Write-Host "       - le domaine est bien gere par Cloudflare (nameservers a jour, zone « Active »)."
+        Write-Host "     La propagation DNS peut demander quelques minutes apres la creation du hostname."
+    } else {
+        Attention "Reponse inattendue a travers le tunnel : $derniereErreur"
+        Write-Host "     Le tunnel tourne. Reessayez dans une minute : .\scripts\deployer-serveur.ps1 -Etat"
+        Write-Host "     Si l'echec persiste, verifiez le Public Hostname (-> http://localhost:$PORT_RELAIS) cote Cloudflare."
+    }
+} else {
+    Attention "Le tunnel est ouvert mais /sante ne repond pas encore a travers lui. Reessayez -Etat dans une minute."
+}
 
 Write-Host ""
 Write-Host "====================================================================" -ForegroundColor Green

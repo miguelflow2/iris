@@ -1,0 +1,42 @@
+# En-têtes Netlify pour l'app web téléphone d'IRIS (format : chemin, puis en-têtes indentés).
+#
+# ── Pourquoi PAS de Content-Security-Policy stricte ici (contrairement au site vitrine) ──
+# Le cœur de cette app est le widget vocal ElevenLabs : il charge un script depuis elevenlabs.io,
+# puis ouvre des connexions temps réel (WebRTC/WebSocket) vers des serveurs média dont la liste
+# n'est ni fixe ni publiée. Une CSP trop serrée casserait la voix SANS message visible — exactement
+# le « déploiement menteur » que ce projet s'interdit. On garde donc les autres protections, et on
+# laisse la CSP ouverte tant qu'on n'a pas vérifié en direct la liste exacte des domaines à autoriser.
+# Pour la durcir plus tard : ouvrir l'app, parler à Iris, relever dans l'onglet Réseau du navigateur
+# les origines réellement contactées, puis composer script-src / connect-src / media-src en
+# conséquence et tester que la voix marche encore avant de livrer.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Le micro est autorisé pour cette origine ET pour elevenlabs.io — selon sa version, le widget
+  # vocal tourne en page ou dans un cadre elevenlabs.io ; autoriser les deux évite un micro bloqué
+  # en silence. Tout le reste est fermé.
+  Permissions-Policy: microphone=(self "https://elevenlabs.io"), camera=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# L'agent de service ne doit JAMAIS être servi depuis le cache du navigateur : sinon une nouvelle
+# version de l'app ne serait jamais prise en compte. On force la revalidation à chaque visite.
+/sw.js
+  Cache-Control: no-cache
+
+# Le manifeste et le HTML : revalidation à chaque visite, pour que les mises à jour arrivent vite.
+/manifest.webmanifest
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Les icônes changent rarement : une journée de cache.
+/icone-192.png
+  Cache-Control: public, max-age=86400
+/icone-512.png
+  Cache-Control: public, max-age=86400
+
+# Style et script : cache court. Incrémenter ?v= dans index.html reste la protection principale
+# si un jour on veut forcer un rafraîchissement immédiat après un correctif.
+/assets/*
+  Cache-Control: public, max-age=3600

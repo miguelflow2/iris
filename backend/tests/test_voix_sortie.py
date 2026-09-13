@@ -250,6 +250,7 @@ def test_quand_elevenlabs_repond_cest_sa_sortie_qui_est_prechauffee(app, monkeyp
     va parler qu'on préchauffe : ElevenLabs ouvre sa sortie, la file SAPI n'est pas touchée.
     """
     tts = app.state.ctx.tts
+    monkeypatch.setattr(tts, "_audio_enabled", True)  # TTS active (le fixture la crée désactivée, sans audio)
     monkeypatch.setattr(tts, "_use_elevenlabs", lambda: True)
     prechauffes = []
     monkeypatch.setattr(tts.eleven, "prechauffer", lambda: prechauffes.append("elevenlabs"))
@@ -261,17 +262,40 @@ def test_quand_elevenlabs_repond_cest_sa_sortie_qui_est_prechauffee(app, monkeyp
 
 
 def test_quand_windows_parle_cest_la_file_sapi_qui_est_prechauffee(app, monkeypatch):
-    """Le chemin Windows garde son préchauffage : la sentinelle part dans la file SAPI, pas ailleurs."""
+    """Le chemin Windows garde son préchauffage : la sentinelle part dans la file SAPI, pas ailleurs.
+
+    Windows n'est plus que le PLANCHER : quand ni ElevenLabs ni Piper ne parlent (les deux forcés
+    hors-jeu ici), c'est la file SAPI qui se préchauffe."""
     from iris.voice.tts import PRECHAUFFAGE
 
     tts = app.state.ctx.tts
+    monkeypatch.setattr(tts, "_audio_enabled", True)  # TTS active (le fixture la crée désactivée)
     monkeypatch.setattr(tts, "_use_elevenlabs", lambda: False)
+    monkeypatch.setattr(tts, "_use_piper", lambda: False)
     monkeypatch.setattr(tts, "available", True)
     monkeypatch.setattr(tts, "_ensure_started", lambda: None)  # aucun thread, aucun moteur réel
     prechauffes = []
     monkeypatch.setattr(tts.eleven, "prechauffer", lambda: prechauffes.append("elevenlabs"))
+    monkeypatch.setattr(tts.piper, "prechauffer", lambda: prechauffes.append("piper"))
     mis = []
     monkeypatch.setattr(tts._queue, "put", lambda x: mis.append(x))
     tts.prechauffer()
     assert mis == [PRECHAUFFAGE]
     assert prechauffes == []
+
+
+def test_quand_piper_parle_cest_sa_sortie_qui_est_prechauffee(app, monkeypatch):
+    """Sans ElevenLabs mais avec Piper (français local), c'est le chemin Piper qui se préchauffe —
+    son propre périphérique, pas la file SAPI. On fausse Piper pour ne pas charger l'ONNX ici."""
+    tts = app.state.ctx.tts
+    monkeypatch.setattr(tts, "_audio_enabled", True)  # TTS active (le fixture la crée désactivée, sans audio)
+    monkeypatch.setattr(tts, "_use_elevenlabs", lambda: False)
+    monkeypatch.setattr(tts, "_use_piper", lambda: True)
+    prechauffes = []
+    monkeypatch.setattr(tts.eleven, "prechauffer", lambda: prechauffes.append("elevenlabs"))
+    monkeypatch.setattr(tts.piper, "prechauffer", lambda: prechauffes.append("piper"))
+    mis = []
+    monkeypatch.setattr(tts._queue, "put", lambda x: mis.append(x))  # la file SAPI ne doit pas bouger
+    tts.prechauffer()
+    assert prechauffes == ["piper"]
+    assert mis == []

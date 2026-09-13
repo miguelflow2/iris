@@ -106,6 +106,27 @@ dans des fichiers `.env` ignorés par git.
 - **Voix (ElevenLabs)** : `backend/.env` avec `ELEVENLABS_API_KEY=…`, ou Paramètres › Voix.
 - **Cerveau (clé du modèle)** : saisi dans Paramètres › Moteurs IA (rangé dans le trousseau).
 - **Relais** : `serveur/.env` (voir `installer-relais.ps1`).
+- **Ligne téléphonique IRIS (Twilio)** : `backend/.env`. IRIS envoie/reçoit SMS et appels depuis un
+  vrai numéro loué, mais toujours **après confirmation** — rien ne part seul. Mettre
+  `telephonie.fournisseur` à `twilio_ligne` dans les réglages, puis renseigner :
+  - `TWILIO_API_KEY_SID` — **fourni** (le SID `SK…` de la clé d'API). Déjà dans `backend/.env`.
+  - `TWILIO_API_KEY_SECRET` — **à fournir** : le secret de cette clé, montré **une seule fois** à sa
+    création dans la console Twilio (irrécupérable ensuite ; sinon, créer une nouvelle clé).
+  - `TWILIO_ACCOUNT_SID` — **à fournir** : l'Account SID `AC…`, en haut du tableau de bord Twilio.
+  - `TWILIO_NUMBER` — **à fournir** : le numéro loué, au format `+1…` (E.164).
+
+  **Pour RECEVOIR** (SMS et appels entrants), il faut en plus exposer le backend sur une **URL
+  publique** — le tunnel Cloudflare existant (`scripts/deployer-serveur.ps1`,
+  `scripts/installer-tunnel.ps1`) — et la déclarer à Twilio (console du numéro → *A message comes
+  in* / *A call comes in*, pointant vers `/twilio/entrant/sms` et `/twilio/entrant/appel`), puis :
+  - `TWILIO_AUTH_TOKEN` — l'Auth Token du compte. **Twilio signe** chaque webhook avec lui (jamais
+    avec le secret de la clé d'API) : sans lui, l'entrant est **refusé** (échec fermé, jamais ouvert).
+  - `TWILIO_PUBLIC_BASE` — l'URL publique du tunnel, ex. `https://iris.exemple.app`, pour recalculer
+    la signature à l'identique derrière le proxy.
+
+  Créer une clé d'API et louer un numéro exigent une carte de crédit et une pièce d'identité : ces
+  gestes ne peuvent être faits que par le titulaire du compte. Tant que les valeurs manquent, l'outil
+  se signale « non configuré » en français et propose de préparer le message sur le téléphone.
 
 > **Dépôt privé.** Ce code contient le secret qui signe les clés d'abonnement
 > (`LICENSE_SECRET`). Tant que le dépôt reste privé, c'est sans danger. **Avant de le rendre public

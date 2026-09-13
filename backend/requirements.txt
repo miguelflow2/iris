@@ -13,13 +13,14 @@ numpy>=1.26
 onnxruntime>=1.29,<1.30  # exige msvcp140 >= 14.40 : voir le filtre winrt dans iris-backend.spec
 openai>=1.50
 pillow>=10
+piper-tts>=1.8,<2  # voix française LOCALE (hors-ligne, mode indépendant) ; embarque espeak-ng + espeakbridge, s'appuie sur onnxruntime ci-dessus
 psutil>=6
 pyautogui>=0.9.54
 pydantic>=2.7
 pypdf>=6
 pyttsx3>=2.98
 rapidocr-onnxruntime>=1.2.3,<1.3
-requests>=2.32
+requests>=2.32  # aussi la ligne Twilio (twilio_ligne.py) : appels HTTP directs, PAS le SDK twilio — deux points d'API et un HMAC de stdlib ne justifient pas une dépendance de plus dans l'exécutable
 sounddevice>=0.5
 tzdata  # fuseaux horaires : Windows n'en fournit aucun, zoneinfo est vide sans ce paquet
 uvicorn[standard]>=0.30

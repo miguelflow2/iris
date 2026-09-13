@@ -1,0 +1,371 @@
+<title>Déploiement Oracle VELA</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root{
+    --bg:#f5f7f5; --surface:#ffffff; --surface-2:#eef2ef; --ink:#161f1b; --muted:#5b6a63;
+    --line:#dde4df; --accent:#0e7c86; --accent-2:#0a5f67; --accent-ink:#ffffff;
+    --warn-ink:#8a4b06; --warn-bg:#fdf2e0; --warn-line:#f0cd93;
+    --danger-ink:#a32017; --danger-bg:#fdecea; --danger-line:#f2b8b2;
+    --ok:#15803d;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --disp:'Bricolage Grotesque',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --body:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d1411; --surface:#131c18; --surface-2:#1a2420; --ink:#e6ece8; --muted:#93a59c;
+      --line:#26332d; --accent:#2dd4bf; --accent-2:#5eead4; --accent-ink:#06201d;
+      --warn-ink:#f2b95c; --warn-bg:#251d10; --warn-line:#4a3a1a;
+      --danger-ink:#f79389; --danger-bg:#271513; --danger-line:#4d2621;
+      --ok:#4ade80;
+    }
+  }
+  :root[data-theme="dark"]{
+      --bg:#0d1411; --surface:#131c18; --surface-2:#1a2420; --ink:#e6ece8; --muted:#93a59c;
+      --line:#26332d; --accent:#2dd4bf; --accent-2:#5eead4; --accent-ink:#06201d;
+      --warn-ink:#f2b95c; --warn-bg:#251d10; --warn-line:#4a3a1a;
+      --danger-ink:#f79389; --danger-bg:#271513; --danger-line:#4d2621;
+      --ok:#4ade80;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.6;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:820px;margin:0 auto;padding:28px 20px 80px}
+
+  header.top{margin:8px 0 26px}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent-2);font-weight:600}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(1.7rem,4.6vw,2.5rem);line-height:1.05;
+    margin:.28em 0 .3em;letter-spacing:-.01em;text-wrap:balance}
+  .lede{color:var(--muted);font-size:1.02rem;max-width:60ch}
+
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:18px 0 4px;
+    font-family:var(--mono);font-size:.78rem}
+  .flow span{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  .flow b{color:var(--accent-2)}
+  .flow i{color:var(--muted);font-style:normal}
+
+  .progress{display:flex;align-items:center;gap:12px;margin:20px 0 6px;font-size:.9rem;color:var(--muted)}
+  .bar{flex:1;height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
+
+  section.phase{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:18px 18px 6px;margin:14px 0;box-shadow:0 1px 0 rgba(0,0,0,.02)}
+  .ph-head{display:flex;align-items:flex-start;gap:12px}
+  .num{flex:none;width:30px;height:30px;border-radius:9px;background:var(--accent);color:var(--accent-ink);
+    font-family:var(--disp);font-weight:700;display:grid;place-items:center;font-size:.98rem;margin-top:1px}
+  .ph-head h2{font-family:var(--disp);font-weight:600;font-size:1.18rem;margin:0;flex:1;letter-spacing:-.01em}
+  .ph-head .sub{color:var(--muted);font-size:.86rem;display:block;font-family:var(--body);font-weight:400;margin-top:1px}
+  .done{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted);
+    cursor:pointer;user-select:none;white-space:nowrap;margin-top:3px}
+  .done input{accent-color:var(--accent);width:16px;height:16px}
+  section.phase.ok{border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+  section.phase.ok .num{background:var(--ok)}
+
+  .body{padding:6px 2px 12px 42px}
+  @media (max-width:540px){.body{padding-left:4px}}
+  .body p{margin:.5em 0}
+  .body ol,.body ul{margin:.4em 0;padding-left:1.2em}
+  .body li{margin:.28em 0}
+  a{color:var(--accent-2);text-decoration:underline;text-underline-offset:2px}
+  code.inl{font-family:var(--mono);font-size:.86em;background:var(--surface-2);padding:.08em .38em;
+    border-radius:5px;border:1px solid var(--line)}
+
+  .cmd{position:relative;margin:12px 0}
+  .cmd pre{margin:0;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+    padding:13px 15px;overflow-x:auto;font-family:var(--mono);font-size:.82rem;line-height:1.55}
+  .cmd pre code{white-space:pre}
+  .cmd .copy{position:absolute;top:8px;right:8px;font-family:var(--body);font-size:.72rem;
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:7px;
+    padding:4px 9px;cursor:pointer;opacity:.85;transition:.15s}
+  .cmd .copy:hover{opacity:1;color:var(--ink);border-color:var(--accent)}
+  .cmd .copy.done{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+  .cap{font-size:.78rem;color:var(--muted);margin:2px 2px 0;font-family:var(--mono)}
+
+  .call{border-radius:11px;padding:12px 14px;margin:13px 0;font-size:.92rem;border:1px solid}
+  .call b{font-family:var(--disp)}
+  .call.warn{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn-ink)}
+  .call.danger{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger-ink)}
+  .call.info{background:var(--surface-2);border-color:var(--line);color:var(--ink)}
+  .call p{margin:.35em 0}
+  .call a{color:inherit}
+
+  footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);
+    font-size:.82rem}
+  .src{font-size:.76rem}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">VELA · cerveau 24/7</div>
+    <h1>Mettre le relais IA en ligne, gratuitement</h1>
+    <p class="lede">On déménage ton tunnel Cloudflare existant sur une VM Oracle « Always Free ». Le
+      réseau de la VM n'est pas filtré comme ton WiFi&nbsp;: le tunnel tiendra enfin, en permanence,
+      et <b>sans ouvrir un seul port entrant</b>.</p>
+
+    <div class="flow" aria-hidden="true">
+      <span>📱 App client</span><i>→</i>
+      <span><b>relais.velaglass.ca</b></span><i>→</i>
+      <span>☁️ tunnel</span><i>→</i>
+      <span>🖥️ VM Oracle</span><i>→</i>
+      <span>uvicorn <b>:8100</b></span>
+    </div>
+
+    <div class="progress">
+      <span id="pcount">0 / 6 phases</span>
+      <div class="bar"><i id="pbar"></i></div>
+    </div>
+  </header>
+
+  <!-- PHASE 0 -->
+  <section class="phase" data-ph="0">
+    <div class="ph-head">
+      <div class="num">0</div>
+      <h2>Avant de commencer <span class="sub">sur ton PC — carte, secrets frais, clé SSH, paquet de code</span></h2>
+      <label class="done"><input type="checkbox"> fait</label>
+    </div>
+    <div class="body">
+      <ol>
+        <li><b>Une carte</b> (crédit ou débit). Oracle fait une empreinte temporaire de ~1&nbsp;$ pour
+          vérifier l'identité&nbsp;; <b>rien n'est débité</b> tant que tu ne passes pas volontairement en payant.</li>
+        <li><b>Rafraîchis les secrets qui ont pu fuiter.</b> Si une clé a déjà été collée dans une
+          conversation (ex. la clé Stripe <code class="inl">sk_live</code>), révoque-la dans Stripe
+          (Développeurs › Clés API › « Roll key ») et crée-en une neuve — idéalement <b>restreinte</b>
+          (<code class="inl">rk_live</code>). Seules des clés fraîches iront sur la VM.</li>
+        <li>Génère une clé SSH, puis affiche la clé <b>publique</b> à copier&nbsp;:</li>
+      </ol>
+      <div class="cmd"><pre><code>ssh-keygen -t ed25519 -C "iris-vm"</code></pre></div>
+      <div class="cmd"><pre><code>Get-Content $HOME\.ssh\id_ed25519.pub</code></pre></div>
+      <p>Fabrique le paquet de code à envoyer (sans secrets ni venvs)&nbsp;:</p>
+      <div class="cmd"><pre><code>powershell -ExecutionPolicy Bypass -File C:\Users\migue\Downloads\startup\iris\deploy\oracle\faire-bundle.ps1</code></pre></div>
+      <p class="cap">→ crée C:\Users\migue\Downloads\vela-vm-bundle.zip</p>
+    </div>
+  </section>
+
+  <!-- PHASE 1 -->
+  <section class="phase" data-ph="1">
+    <div class="ph-head">
+      <div class="num">1</div>
+      <h2>Créer le compte Oracle + la VM <span class="sub">Always Free · Ubuntu · ARM</span></h2>
+      <label class="done"><input type="checkbox"> fait</label>
+    </div>
+    <div class="body">
+      <ol>
+        <li><a href="https://www.oracle.com/cloud/free/" target="_blank" rel="noopener">oracle.com/cloud/free</a>
+          › <b>Start for free</b>. Courriel, vérification, carte (empreinte ~1&nbsp;$).</li>
+        <li><b>Région d'accueil</b>&nbsp;: choisis une région <b>canadienne</b> — <i>Canada Southeast
+          (Montreal)</i> ou <i>Canada Central (Toronto)</i>. ⚠️ Ce choix est <b>définitif</b>.</li>
+        <li>Console › ☰ › <b>Compute › Instances › Create instance</b>&nbsp;:
+          <ul>
+            <li><b>Image</b>&nbsp;: Canonical <b>Ubuntu 24.04</b> (ou 22.04).</li>
+            <li><b>Shape</b>&nbsp;: <i>Change shape</i> › <b>Ampere (ARM)</b> › <code class="inl">VM.Standard.A1.Flex</code>
+              › <b>1 OCPU / 6 Go</b>. Assez pour tes deux serveurs, et une petite VM est <b>moins
+              susceptible d'être jugée « inactive »</b> (voir ci-dessous). Max gratuit&nbsp;: 2 OCPU / 12 Go.</li>
+            <li><b>Clé SSH</b>&nbsp;: <i>Paste public keys</i> › colle le contenu de <code class="inl">id_ed25519.pub</code>.</li>
+            <li>Laisse le réseau par défaut. <b>Create</b>.</li>
+          </ul>
+        </li>
+        <li>Note l'<b>IP publique</b> de l'instance.</li>
+      </ol>
+      <div class="call warn">
+        <p><b>⚠️ « Out of host capacity »</b> — l'ARM gratuit est souvent indisponible. Réessaie plus
+          tard, change d'<i>Availability Domain</i>, ou prends en secours une micro AMD
+          <code class="inl">VM.Standard.E2.1.Micro</code> (x86, 1&nbsp;Go — marche aussi).</p>
+        <p><b>⚠️ Récupération des instances inactives</b> — Oracle peut arrêter une VM ARM dont l'usage
+          reste &lt; 20&nbsp;% sur 7 jours. Parades&nbsp;: garder une <b>petite</b> VM <b>+</b> le ping de
+          la Phase&nbsp;5 (génère du trafic). En dernier recours, passer en <i>Pay As You Go</i> (reste
+          gratuit dans les limites, plus aucune récupération) — avec une <b>alerte de budget</b>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASE 2 -->
+  <section class="phase" data-ph="2">
+    <div class="ph-head">
+      <div class="num">2</div>
+      <h2>Connexion + utilisateur de service + sécurité <span class="sub">l'utilisateur Ubuntu par défaut est « ubuntu »</span></h2>
+      <label class="done"><input type="checkbox"> fait</label>
+    </div>
+    <div class="body">
+      <p>Connecte-toi (remplace <code class="inl">IP_PUBLIQUE</code>)&nbsp;:</p>
+      <div class="cmd"><pre><code>ssh -i $HOME\.ssh\id_ed25519 ubuntu@IP_PUBLIQUE</code></pre></div>
+      <p>Sur la VM — mises à jour, outils, utilisateur de service, sécurité automatique&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo apt update &amp;&amp; sudo apt -y upgrade
+sudo apt -y install python3-venv python3-pip curl unattended-upgrades fail2ban
+sudo adduser --system --group --home /home/vela --shell /bin/bash vela
+sudo dpkg-reconfigure --priority=low unattended-upgrades   # répondre « Oui »
+sudo systemctl enable --now fail2ban</code></pre></div>
+      <div class="call warn">
+        <p><b>Durcir SSH — garde une 2ᵉ fenêtre SSH ouverte</b> et teste une nouvelle connexion
+          avant de fermer celle-ci, sinon tu risques de te verrouiller dehors. Sur Ubuntu 24.04 il
+          faut modifier <b>deux</b> fichiers (le second réactive le mot de passe en douce).</p>
+      </div>
+      <div class="cmd"><pre><code>sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config.d/50-cloud-init.conf 2&gt;/dev/null || true
+sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sudo sshd -t &amp;&amp; sudo systemctl restart ssh</code></pre></div>
+      <div class="call info">
+        <p><b>On n'ouvre aucun port entrant</b> (ni 80/443, ni 8100/8110)&nbsp;: le tunnel <b>sort</b> de
+          la VM. On ne touche ni les <i>Security Lists</i> du VCN, ni <code class="inl">iptables</code>.
+          <b>N'installe pas UFW</b> (conflit avec l'iptables d'Oracle → risque de couper SSH).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASE 3 -->
+  <section class="phase" data-ph="3">
+    <div class="ph-head">
+      <div class="num">3</div>
+      <h2>Envoyer le code + les secrets <span class="sub">clés fraîches uniquement</span></h2>
+      <label class="done"><input type="checkbox"> fait</label>
+    </div>
+    <div class="body">
+      <p><b>Le code</b> — depuis PowerShell (PC)&nbsp;:</p>
+      <div class="cmd"><pre><code>scp -i $HOME\.ssh\id_ed25519 "$HOME\Downloads\vela-vm-bundle.zip" ubuntu@IP_PUBLIQUE:/tmp/</code></pre></div>
+      <p>Sur la VM&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo mkdir -p /home/vela/iris
+sudo unzip /tmp/vela-vm-bundle.zip -d /home/vela/iris
+sudo chown -R vela:vela /home/vela/iris</code></pre></div>
+      <p><b>Les secrets du relais</b> — <code class="inl">/home/vela/iris/serveur/.env</code>, format strict
+        <code class="inl">CLE=valeur</code> (pas de guillemets, pas d'espace autour du <code class="inl">=</code>)&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo -u vela nano /home/vela/iris/serveur/.env</code></pre></div>
+      <div class="cmd"><pre><code>VELA_OPENROUTER_KEY=sk-or-...
+VELA_ANTHROPIC_KEY=sk-ant-...
+VELA_SECRET=un-secret-long-au-hasard
+VELA_ELEVENLABS_KEY=...
+VELA_LICENCES_URL=http://127.0.0.1:8110</code></pre></div>
+      <p><b>Les secrets des licences</b> — <code class="inl">/home/vela/iris/server/.env</code>, repars de
+        <code class="inl">server/.env.exemple</code> avec la clé Stripe <b>restreinte fraîche</b> et/ou PayPal.
+        Puis verrouille&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo chown vela:vela /home/vela/iris/serveur/.env /home/vela/iris/server/.env
+sudo chmod 600      /home/vela/iris/serveur/.env /home/vela/iris/server/.env</code></pre></div>
+      <div class="call danger"><p><b>Jamais</b> l'ancienne clé <code class="inl">sk_live</code> compromise, même « juste pour tester ».</p></div>
+    </div>
+  </section>
+
+  <!-- PHASE 4 -->
+  <section class="phase" data-ph="4">
+    <div class="ph-head">
+      <div class="num">4</div>
+      <h2>Installer + l'identité du tunnel <span class="sub">installer.sh fait le gros du travail</span></h2>
+      <label class="done"><input type="checkbox"> fait</label>
+    </div>
+    <div class="body">
+      <p><b>Lance l'installateur</b> (en tant que <code class="inl">ubuntu</code>)&nbsp;: Python, venvs, cloudflared, services systemd&nbsp;:</p>
+      <div class="cmd"><pre><code>chmod +x /home/vela/iris/deploy/oracle/installer.sh
+/home/vela/iris/deploy/oracle/installer.sh</code></pre></div>
+      <p><b>Dépose l'identité du tunnel</b> — depuis le PC, envoie <b>seulement</b> le fichier <code class="inl">&lt;id&gt;.json</code>&nbsp;:</p>
+      <div class="cmd"><pre><code>scp -i $HOME\.ssh\id_ed25519 "$HOME\.cloudflared\3b543fb7-c1cc-4967-a9c4-a76b9afb246b.json" ubuntu@IP_PUBLIQUE:/tmp/</code></pre></div>
+      <p>Sur la VM&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo -u vela mkdir -p /home/vela/.cloudflared
+sudo cp /home/vela/iris/deploy/oracle/config.yml /home/vela/.cloudflared/config.yml
+sudo mv /tmp/3b543fb7-c1cc-4967-a9c4-a76b9afb246b.json /home/vela/.cloudflared/
+sudo chown -R vela:vela /home/vela/.cloudflared
+sudo chmod 600 /home/vela/.cloudflared/*</code></pre></div>
+      <div class="call danger">
+        <p><b>N'envoie JAMAIS <code class="inl">cert.pem</code> sur la VM.</b> Il contrôle <b>tous</b> tes
+          tunnels (valable ~10 ans). Le <code class="inl">&lt;id&gt;.json</code> suffit à faire tourner
+          celui-ci. Garde <code class="inl">cert.pem</code> sur ton PC uniquement.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASE 5 -->
+  <section class="phase" data-ph="5">
+    <div class="ph-head">
+      <div class="num">5</div>
+      <h2>Bascule, démarrage, vérification <span class="sub">un seul tunnel actif à la fois</span></h2>
+      <label class="done"><input type="checkbox"> fait</label>
+    </div>
+    <div class="body">
+      <div class="call warn">
+        <p><b>1. Coupe d'abord le tunnel du PC</b> — sinon Cloudflare répartit le trafic au hasard entre
+          PC et VM. Sur le PC (PowerShell)&nbsp;:</p>
+      </div>
+      <div class="cmd"><pre><code>Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force
+Remove-Item "$HOME\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\lancer-tunnel.vbs" -ErrorAction SilentlyContinue</code></pre></div>
+      <p><b>2. Démarre tout sur la VM</b>&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo systemctl enable --now vela-relais vela-licences cloudflared</code></pre></div>
+      <p><b>3. Vérifie pour de vrai</b> (le local qui répond ne prouve pas que le public marche)&nbsp;:</p>
+      <div class="cmd"><pre><code>systemctl status vela-relais vela-licences cloudflared --no-pager
+curl -s http://127.0.0.1:8100/sante ; echo
+journalctl -u cloudflared -e --no-pager | tail</code></pre></div>
+      <p>Puis <b>depuis ton téléphone / un autre réseau</b>, ouvre&nbsp;:</p>
+      <div class="cmd"><pre><code>https://relais.velaglass.ca/sante
+https://licences.velaglass.ca/sante</code></pre></div>
+      <div class="call info">
+        <p>Erreur DNS/502 alors que le local répond&nbsp;? Les routes du tunnel manquent. Depuis le
+          <b>PC</b> (il a <code class="inl">cert.pem</code>)&nbsp;:</p>
+      </div>
+      <div class="cmd"><pre><code>cloudflared tunnel route dns vela-relais relais.velaglass.ca
+cloudflared tunnel route dns vela-relais licences.velaglass.ca</code></pre></div>
+      <p><b>4. Preuve du 24/7</b> — redémarre la VM et vérifie que tout remonte seul&nbsp;:</p>
+      <div class="cmd"><pre><code>sudo reboot
+# reconnecte-toi ~1 min plus tard, puis :
+systemctl is-active vela-relais vela-licences cloudflared</code></pre></div>
+      <div class="call info">
+        <p><b>5. Garde la VM éveillée</b> — crée un moniteur gratuit
+          <a href="https://uptimerobot.com" target="_blank" rel="noopener">UptimeRobot</a> qui frappe
+          <code class="inl">https://relais.velaglass.ca/sante</code> toutes les 5 min. Ça évite la mise
+          en veille <i>et</i> ça confirme que le brain est vivant.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="call info">
+    <p><b>Priorité = le relais.</b> C'est lui que l'app des clients appelle pour l'IA. Le serveur de
+      licences ne sert vraiment qu'une fois les paiements configurés — quand ce sera le cas, mets
+      <code class="inl">IRIS_ENV=production</code> dans <code class="inl">server/.env</code> (en production, PayPal
+      doit être configuré pour que le serveur démarre).</p>
+  </div>
+
+  <footer>
+    <p>Référence complète et scripts&nbsp;: <code class="inl">deploy/oracle/</code> dans le dépôt IRIS
+      (<code class="inl">GUIDE-ORACLE.md</code>, <code class="inl">installer.sh</code>, <code class="inl">faire-bundle.ps1</code>,
+      les 3 <code class="inl">.service</code>, <code class="inl">config.yml</code>).</p>
+    <p class="src">Sources&nbsp;: docs Oracle Free Tier · docs Cloudflare Tunnel · vérifié sept. 2026.
+      Ta progression est mémorisée dans ce navigateur.</p>
+  </footer>
+</div>
+
+<script>
+  // Boutons « Copier » sur chaque bloc de commandes
+  document.querySelectorAll('.cmd').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy'; btn.type = 'button'; btn.textContent = 'Copier';
+    btn.addEventListener('click', function(){
+      var txt = pre.innerText;
+      navigator.clipboard.writeText(txt).then(function(){
+        btn.textContent = '✓ copié'; btn.classList.add('done');
+        setTimeout(function(){ btn.textContent = 'Copier'; btn.classList.remove('done'); }, 1400);
+      }).catch(function(){ btn.textContent = 'Ctrl+C'; });
+    });
+    box.appendChild(btn);
+  });
+
+  // Cases « fait » par phase, mémorisées localement
+  var phases = document.querySelectorAll('section.phase');
+  var pbar = document.getElementById('pbar'), pcount = document.getElementById('pcount');
+  function refresh(){
+    var n = 0;
+    phases.forEach(function(s){ if(s.classList.contains('ok')) n++; });
+    var pct = Math.round(n/phases.length*100);
+    if(pbar) pbar.style.width = pct + '%';
+    if(pcount) pcount.textContent = n + ' / ' + phases.length + ' phases';
+  }
+  phases.forEach(function(s){
+    var id = 'vela-oracle-ph' + s.dataset.ph;
+    var cb = s.querySelector('.done input');
+    try{ if(localStorage.getItem(id) === '1'){ cb.checked = true; s.classList.add('ok'); } }catch(e){}
+    cb.addEventListener('change', function(){
+      s.classList.toggle('ok', cb.checked);
+      try{ localStorage.setItem(id, cb.checked ? '1' : '0'); }catch(e){}
+      refresh();
+    });
+  });
+  refresh();
+</script>

@@ -1,0 +1,28 @@
+# Service systemd du relais IA de VELA sur la VM Oracle.
+# À déposer dans : /etc/systemd/system/vela-relais.service
+#
+# Le relais lit ses clés (VELA_OPENROUTER_KEY, VELA_ANTHROPIC_KEY, VELA_SECRET, ...) UNIQUEMENT
+# dans l'environnement du processus : c'est EnvironmentFile qui les charge depuis serveur/.env.
+# Il n'écoute que sur 127.0.0.1 : c'est cloudflared (même VM) qui l'expose vers l'extérieur.
+
+[Unit]
+Description=VELA - relais IA (uvicorn 127.0.0.1:8100)
+After=network-online.target
+Wants=network-online.target
+# Un uvicorn qui se termine seul est une panne : on relance, mais pas en boucle folle.
+# (Ces deux directives vont dans [Unit] sur systemd moderne — Ubuntu 22.04/24.04.)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=vela
+WorkingDirectory=/home/vela/iris/serveur
+EnvironmentFile=/home/vela/iris/serveur/.env
+ExecStart=/home/vela/iris/serveur/.venv/bin/uvicorn relais:app --host 127.0.0.1 --port 8100 --workers 1
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

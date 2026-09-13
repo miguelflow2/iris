@@ -18,7 +18,9 @@ import logging
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
-from . import __version__, cles
+import httpx
+
+from . import __version__, cles, stripe_paiement
 from .base import Base, normaliser
 from .config import Config, charger
 from .courriel import Facteur
@@ -37,7 +39,8 @@ log = logging.getLogger("licences.app")
 
 
 def creer_app(cfg: Config | None = None, base: Base | None = None,
-              client_paypal: ClientPaypal | None = None, facteur: Facteur | None = None) -> FastAPI:
+              client_paypal: ClientPaypal | None = None, facteur: Facteur | None = None,
+              transport_stripe: httpx.BaseTransport | None = None) -> FastAPI:
     cfg = cfg or charger()
     base = base or Base(cfg.base_donnees)
     service = Service(cfg, base, facteur)
@@ -54,6 +57,7 @@ def creer_app(cfg: Config | None = None, base: Base | None = None,
     app.state.limiteur_general = limiteur_general
     app.state.limiteur_licence = limiteur_licence
     app.state.client_paypal = client_paypal
+    app.state.transport_stripe = transport_stripe  # injecté par les tests, None (vrai réseau) en production
 
     # ================================================================== santé
     @app.get("/sante")
@@ -67,6 +71,12 @@ def creer_app(cfg: Config | None = None, base: Base | None = None,
                 "configure": cfg.paypal_configure,
                 "environnement": cfg.paypal_environnement,
                 "verification_signature": not cfg.mode_dev_sans_verification,
+            },
+            "stripe": {
+                # Uniquement des booléens : aucune clé, aucun identifiant ne transparaît ici.
+                "configure": cfg.stripe_configure,
+                "verification_signature": not cfg.mode_dev_sans_verification,
+                "prix_configures": sorted(cfg.correspondance_prix_stripe.values()),
             },
             "courriel": "smtp" if cfg.smtp_configure else "fichier",
             "administration": bool(cfg.jeton_admin),
@@ -120,6 +130,91 @@ def creer_app(cfg: Config | None = None, base: Base | None = None,
         # La clé n'est jamais renvoyée à PayPal.
         public = {c: v for c, v in resultat.items() if c != "cle"}
         return JSONResponse({"recu": True, **public}, status_code=200)
+
+    # ================================================================== webhook Stripe
+    @app.post("/stripe/webhook")
+    async def webhook_stripe(requete: Request):
+        # CRITIQUE : lire le corps BRUT. La signature Stripe porte sur ces octets exacts ;
+        # relire via un modèle Pydantic re-sérialiserait le JSON et casserait la vérification.
+        corps_brut = await requete.body()
+        try:
+            evenement = json.loads(corps_brut.decode("utf-8"))
+            if not isinstance(evenement, dict):
+                raise ValueError("le corps n'est pas un objet JSON")
+        except Exception as erreur:
+            log.warning("Webhook Stripe illisible (%s) depuis %s.", erreur, adresse_client(requete))
+            return JSONResponse({"erreur": "corps JSON invalide"}, status_code=400)
+
+        type_evenement = evenement.get("type") or "(sans type)"
+
+        # --- authentification de l'appel ------------------------------------
+        if cfg.mode_dev_sans_verification and not cfg.production:
+            log.warning("MODE DÉVELOPPEMENT : signature Stripe non vérifiée pour %s.", type_evenement)
+        else:
+            if not cfg.stripe_webhook_secret:
+                # Sans secret, impossible d'authentifier : on refuse plutôt que de croire l'appelant.
+                log.error("Webhook Stripe %s refusé : STRIPE_WEBHOOK_SECRET absent (aucune vérification possible).",
+                          type_evenement)
+                return JSONResponse({"erreur": "vérification indisponible"}, status_code=400)
+            entete = requete.headers.get("stripe-signature") or ""
+            if not stripe_paiement.verifier_signature(entete, corps_brut, cfg.stripe_webhook_secret):
+                log.warning("Signature Stripe invalide refusée : %s depuis %s (aucune écriture en base).",
+                            type_evenement, adresse_client(requete))
+                return JSONResponse({"erreur": "signature invalide"}, status_code=400)
+
+        # --- traitement ------------------------------------------------------
+        # On répond 200 vite, même pour un événement ignoré. On ne renvoie 500 que sur une vraie
+        # erreur interne : Stripe réessaiera, et l'idempotence protège contre un double crédit.
+        try:
+            resultat = service.traiter_stripe(evenement)
+        except Exception:
+            log.exception("Erreur inattendue en traitant l'événement Stripe %s.", type_evenement)
+            return JSONResponse({"erreur": "erreur interne"}, status_code=500)
+
+        public = {c: v for c, v in resultat.items() if c != "cle"}
+        return JSONResponse({"recu": True, **public}, status_code=200)
+
+    # ================================================================== création de session Checkout
+    @app.post("/stripe/checkout")
+    async def checkout_stripe(requete: Request):
+        """Crée une session Stripe Checkout pour {plan, courriel} et renvoie {url}.
+
+        Endpoint léger, rate-limité, appelé par le site VELA pour démarrer un abonnement.
+        """
+        ip = adresse_client(requete)
+        if not limiteur_general.autoriser(ip):
+            return JSONResponse({"erreur": "trop de requêtes"}, status_code=429,
+                                headers={"Retry-After": str(cfg.limite_fenetre)})
+        try:
+            donnees = json.loads((await requete.body()).decode("utf-8") or "{}")
+        except Exception:
+            return JSONResponse({"erreur": "corps JSON invalide"}, status_code=400)
+        if not isinstance(donnees, dict):
+            donnees = {}
+
+        plan = str(donnees.get("plan") or "").strip().lower()
+        courriel = normaliser(str(donnees.get("courriel") or donnees.get("email") or ""))
+        if plan not in cles.PLANS_PAYANTS:
+            return JSONResponse({"erreur": "plan inconnu"}, status_code=400)
+        if not courriel or "@" not in courriel:
+            return JSONResponse({"erreur": "courriel invalide"}, status_code=400)
+        if not cfg.stripe_secret_key:
+            return JSONResponse({"erreur": "Stripe non configuré"}, status_code=503)
+        prix = cfg.prix_stripe_du_plan(plan)
+        if not prix:
+            return JSONResponse({"erreur": f"aucun prix Stripe configuré pour le plan {plan}"}, status_code=503)
+
+        try:
+            url = stripe_paiement.creer_session_checkout(
+                secret_key=cfg.stripe_secret_key, prix=prix, courriel=courriel,
+                success_url="https://velaglass.ca/merci.html",
+                cancel_url="https://velaglass.ca/plans.html",
+                transport=app.state.transport_stripe,
+            )
+        except stripe_paiement.ErreurStripe as erreur:
+            log.error("Échec de création de session Checkout Stripe : %s", erreur)
+            return JSONResponse({"erreur": "création de session impossible"}, status_code=502)
+        return JSONResponse({"url": url}, status_code=200)
 
     # ================================================================== licence (IRIS)
     @app.post("/api/licence")

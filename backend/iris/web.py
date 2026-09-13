@@ -123,9 +123,33 @@ class WebAgent:
     def search(self, query: str, max_chars: int = 4000, visible: bool = False) -> dict:
         """Cherche sur le web et rend le texte des résultats. Aucune fenêtre ne s'ouvre.
 
+        D'ABORD une API de recherche officielle (Tavily/Brave) si une clé est configurée : accès
+        sanctionné, aucun CAPTCHA, aucun navigateur ouvert — donc rien à bloquer côté anti-robot.
+        SANS clé : repli sur le navigateur piloté (comportement historique), fragile parce que les
+        moteurs bloquent les robots. IRIS ne triche jamais avec un moteur ; la fiabilité vient de
+        l'API. Voir docs/RECHERCHE-WEB.md.
+
         Personne n'a envie de voir défiler les recherches d'IRIS : on veut la réponse. Le
-        navigateur travaille en arrière-plan, et seul le résultat remonte."""
+        navigateur (repli) travaille en arrière-plan, et seul le résultat remonte."""
         from urllib.parse import quote_plus
+
+        from . import recherche_web
+
+        client = recherche_web.ClientRecherche(self.secrets)
+        actif = client.fournisseur_actif()
+        if actif is not None:
+            fournisseur, _ = actif
+            try:
+                res = client.rechercher(query, max_chars=max_chars)
+                return {"query": query, "url": res.url, "text": res.text}
+            except recherche_web.RechercheError as exc:
+                # Erreur d'API : on remonte un message clair au lieu d'une exception crue, et on ne
+                # bascule PAS en douce sur le grattage de moteur (ce serait rouvrir la porte du
+                # blocage anti-robot qu'on vient de fermer).
+                log.warning("recherche API (%s) a échoué : %s", fournisseur, exc)
+                return {"query": query, "url": "", "text": f"[Recherche indisponible] {exc}"}
+
+        log.warning("recherche API non configurée, repli navigateur (peut être bloqué par anti-robot)")
 
         def job():
             page = self._browser(visible)
@@ -151,6 +175,31 @@ class WebAgent:
         self.hub.publish("web.navigated", **result)
         return result
 
+    # Un site peut dresser un mur anti-robot / CAPTCHA. IRIS ne le résout JAMAIS et ne le contourne
+    # jamais : elle le DIT honnêtement et propose que l'utilisateur fasse la vérification lui-même.
+    # (La recherche, elle, ne rencontre plus ce mur : elle passe par une API officielle — voir search.)
+    _MOTS_MUR = (
+        "verify you are human", "vérifiez que vous êtes humain", "i'm not a robot",
+        "je ne suis pas un robot", "unusual traffic", "trafic inhabituel",
+        "verify you are a human", "checking your browser", "vérification de votre navigateur",
+        "prouvez que vous êtes humain", "confirmez que vous êtes",
+    )
+
+    @classmethod
+    def _mur_verification(cls, page) -> bool:
+        """Détecte un mur de vérification humaine (CAPTCHA, contrôle anti-robot). Ne lève jamais."""
+        try:
+            if page.locator("iframe[src*='recaptcha'], iframe[src*='captcha'], iframe[src*='hcaptcha'], "
+                            "iframe[title*='challenge'], #captcha, .g-recaptcha, .h-captcha, .cf-turnstile").count() > 0:
+                return True
+        except Exception:
+            pass
+        try:
+            bas = (page.inner_text("body") or "").lower()[:4000]
+            return any(m in bas for m in cls._MOTS_MUR)
+        except Exception:
+            return False
+
     def read(self, max_chars: int = MAX_TEXT) -> dict:
         def job():
             page = self._browser()
@@ -166,7 +215,13 @@ class WebAgent:
                 except Exception:
                     continue
             self.last_url = page.url
-            return {"url": page.url, "title": page.title(), "text": text[:max_chars] + ("…" if len(text) > max_chars else ""), "clickable": list(dict.fromkeys(links))[:60]}
+            result = {"url": page.url, "title": page.title(), "text": text[:max_chars] + ("…" if len(text) > max_chars else ""), "clickable": list(dict.fromkeys(links))[:60]}
+            if self._mur_verification(page):
+                result["verification_humaine"] = (
+                    "Ce site demande une vérification humaine (CAPTCHA / contrôle anti-robot). "
+                    "Je ne la résous pas moi-même : ouvre la page et fais la vérification, je continue ensuite."
+                )
+            return result
 
         return self._run(job)
 

@@ -475,3 +475,57 @@ def test_un_prechauffage_qui_echoue_ne_casse_rien(data_dir, monkeypatch, caplog)
     sp, _hub, _session = _voix(data_dir, monkeypatch, sd, sortie=STEREO)
     sp._prechauffer_maintenant()  # ne doit rien lever
     assert "préchauffage de la sortie ElevenLabs impossible" in caplog.text
+
+
+# --------------------------------------------------------------------------- la course PortAudio
+def test_le_prechauffage_verrouille_portaudio_contre_la_reenumeration(data_dir, monkeypatch):
+    """La course qui plantait IRIS lunettes Bluetooth éteintes.
+
+    Le préchauffage ouvre un flux de SORTIE sans jamais poser l'état « en train de parler ». Pendant
+    ce temps, le fil du micro (lunettes éteintes, il cherche à les retrouver) pouvait fermer PortAudio
+    pour ré-énumérer — `Pa_Terminate`, qui ferme d'autorité TOUT flux resté ouvert, y compris ce
+    flux-là, ouvert depuis un AUTRE thread → corruption du tas natif.
+
+    Le verrou partagé VERROU_PORTAUDIO referme la fenêtre : tant qu'un flux de sortie est ouvert, la
+    ré-énumération est refusée (le fil vocal retentera) ; une fois le flux fermé, elle redevient
+    possible. On simule ici, dans un seul thread, le fil du micro qui tente sa ré-énumération pile
+    pendant que le flux de préchauffage est ouvert (`write`)."""
+    from iris.voice.listener import rafraichir_peripheriques
+
+    tentatives: list[bool] = []
+
+    class FluxQuiReenumere(FauxFlux):
+        """Pendant qu'il est ouvert, il fait ce que ferait le fil du micro : tenter une ré-énumération."""
+
+        def write(self, data) -> None:
+            tentatives.append(rafraichir_peripheriques(sd))
+            super().write(data)
+
+    class FauxSounddeviceReinit(FauxSounddevice):
+        """Un sounddevice qui, lui, SAIT fermer/rouvrir PortAudio (contrairement au faux de base)."""
+
+        def __init__(self, peripheriques):
+            super().__init__(peripheriques)
+            self.terminate_appels = 0
+
+        def _terminate(self):
+            self.terminate_appels += 1
+
+        def _initialize(self):
+            pass
+
+        def RawOutputStream(self, samplerate, channels, dtype, blocksize, device=None):  # noqa: N802
+            cle = "defaut" if device is None else device
+            if cle in self.injouables:
+                raise RuntimeError(f"Error opening RawOutputStream: périphérique {cle} indisponible")
+            return FluxQuiReenumere(self.flux, samplerate, device)
+
+    sd = FauxSounddeviceReinit(_lunettes_allumees())
+    sp, _hub, _session = _voix(data_dir, monkeypatch, sd, sortie=STEREO, micro=MAINS_LIBRES_MME)
+    sp._prechauffer_maintenant()
+
+    assert tentatives == [False], "la ré-énumération est refusée tant que le flux de préchauffage est ouvert"
+    assert sd.terminate_appels == 0, "PortAudio n'a jamais été fermé sous les pieds du préchauffage"
+    # Le flux refermé, le verrou est libre : la ré-énumération redevient possible et ferme PortAudio.
+    assert rafraichir_peripheriques(sd) is True
+    assert sd.terminate_appels == 1

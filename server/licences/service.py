@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from . import cles, montants, paypal
+from . import cles, montants, paypal, stripe_paiement
 from .base import Base, normaliser
 from .config import Config
 from .courriel import Facteur
@@ -38,6 +38,21 @@ STATUTS = {
     "BILLING.SUBSCRIPTION.PAYMENT.FAILED": (
         "paiement_echoue",
         "Échec du prélèvement PayPal ; l'accès reste ouvert jusqu'à l'échéance déjà payée.",
+    ),
+}
+
+# Statut de l'abonnement selon l'action interne déduite d'un événement Stripe de fin de vie.
+# Les libellés parlent de Stripe, mais les statuts eux-mêmes ("annule", "paiement_echoue") sont
+# IDENTIQUES à ceux de PayPal : le reste du système (statut d'une licence) ne voit aucune différence.
+STATUTS_STRIPE = {
+    "annule": (
+        "annule",
+        "Abonnement annulé chez Stripe ; la clé en cours reste valable jusqu'à son échéance, "
+        "mais elle ne sera plus renouvelée.",
+    ),
+    "paiement_echoue": (
+        "paiement_echoue",
+        "Échec du prélèvement Stripe ; l'accès reste ouvert jusqu'à l'échéance déjà payée.",
     ),
 }
 
@@ -83,26 +98,117 @@ class Service:
             )
             return {"resultat": "ignore", "type": type_evenement}
 
+        ressource = (evenement or {}).get("resource") or {}
         if type_evenement in ("PAYMENT.CAPTURE.COMPLETED", "BILLING.SUBSCRIPTION.ACTIVATED"):
-            return self._crediter(reservation, evenement, type_evenement, transaction_id,
-                                  courriel, montant, devise)
+            # L'identifiant d'abonnement PayPal n'existe que pour un abonnement, pas pour une capture.
+            abonnement_externe = ressource.get("id") if type_evenement == "BILLING.SUBSCRIPTION.ACTIVATED" else None
+            return self._crediter(reservation, type_evenement, transaction_id,
+                                  courriel, montant, devise, abonnement_externe=abonnement_externe)
 
         statut, note = STATUTS[type_evenement]
-        return self._changer_statut(reservation, evenement, type_evenement, courriel, statut, note)
+        return self._changer_statut(reservation, type_evenement, courriel, statut, note,
+                                    abonnement_externe=str(ressource.get("id") or ""))
+
+    # ================================================================== webhooks Stripe
+    def traiter_stripe(self, evenement: dict) -> dict:
+        """Traite un événement Stripe **déjà authentifié**. Miroir de traiter() pour PayPal.
+
+        Même discipline : idempotence posée AVANT tout crédit, aucune exception pour un contenu
+        inattendu (on préfère un dossier manuel à une erreur 500 qui ferait boucler Stripe).
+        """
+        type_evenement = (evenement or {}).get("type") or ""
+        evenement_id = (evenement or {}).get("id") or ""
+        transaction_id = stripe_paiement.identifiant_transaction(evenement)
+
+        # --- idempotence : l'identifiant d'événement Stripe (evt_...) sert des deux côtés ----------
+        reservation = self.base.reserver_evenement(evenement_id or None, transaction_id or None, type_evenement)
+        if reservation is None:
+            return {"resultat": "deja_traite", "type": type_evenement}
+
+        try:
+            return self._traiter_reserve_stripe(reservation, evenement, type_evenement, transaction_id)
+        except Exception:
+            self.base.liberer_evenement(reservation)
+            raise
+
+    def _traiter_reserve_stripe(self, reservation: int, evenement: dict, type_evenement: str,
+                                transaction_id: str) -> dict:
+        action = stripe_paiement.TYPE_VERS_INTERNE.get(type_evenement)
+        courriel = stripe_paiement.courriel_du_payeur(evenement)
+        montant, devise = stripe_paiement.montant_de(evenement)
+        abonnement_externe = stripe_paiement.abonnement_externe(evenement) or None
+
+        if action is None:
+            self.base.conclure_evenement(
+                reservation, courriel=courriel or None, montant=montant, devise=devise,
+                resultat="ignore", detail="Type d'événement Stripe non traité par ce service.",
+            )
+            return {"resultat": "ignore", "type": type_evenement}
+
+        if action == "crediter":
+            # Une session Checkout « completed » mais non payée (paiement asynchrone en attente)
+            # ne doit rien créditer : on attend l'événement de paiement effectif.
+            if type_evenement == "checkout.session.completed":
+                statut = stripe_paiement.statut_paiement(evenement).lower()
+                if statut != "paid":
+                    self.base.conclure_evenement(
+                        reservation, courriel=courriel or None, montant=montant, devise=devise,
+                        resultat="ignore", detail=f"Session Checkout non payée (payment_status={statut or 'inconnu'}).",
+                    )
+                    return {"resultat": "ignore", "type": type_evenement}
+            tarif = self._tarif_stripe(evenement, montant, devise)
+            return self._crediter(reservation, type_evenement, transaction_id,
+                                  courriel, montant, devise, tarif=tarif, abonnement_externe=abonnement_externe)
+
+        statut, note = STATUTS_STRIPE[action]
+        return self._changer_statut(reservation, type_evenement, courriel, statut, note,
+                                    abonnement_externe=abonnement_externe or "")
+
+    def _tarif_stripe(self, evenement: dict, montant, devise):
+        """Détermine le tarif d'un paiement Stripe.
+
+        On PRÉFÈRE l'identifiant de prix Stripe (price_...) mappé vers un plan par la configuration :
+        c'est la source de vérité, indépendante du montant. À défaut (prix absent ou inconnu), on se
+        rabat sur la reconnaissance par montant, exactement comme PayPal.
+        """
+        plan = stripe_paiement.plan_depuis_prix(
+            stripe_paiement.id_prix(evenement), self.cfg.correspondance_prix_stripe,
+        )
+        if plan:
+            etiquette = cles.ETIQUETTES.get(plan, plan)
+            return montants.Tarif(
+                plan=plan, mois=1, libelle=f"{etiquette} — 1 mois (Stripe)",
+                montant_attendu=float(montant) if montant is not None else 0.0,
+            )
+        return montants.reconnaitre(
+            montant, devise,
+            devises_acceptees=self.cfg.devises_acceptees,
+            tolerance=self.cfg.tolerance_montant,
+        )
 
     # ------------------------------------------------------------------ paiement reçu
-    def _crediter(self, reservation, evenement, type_evenement, transaction_id,
-                  courriel, montant, devise) -> dict:
+    def _crediter(self, reservation, type_evenement, transaction_id,
+                  courriel, montant, devise, tarif=None, abonnement_externe=None) -> dict:
+        """Cœur de l'argent, partagé par PayPal et Stripe.
+
+        `tarif` : si None, il est reconnu à partir du montant (comportement PayPal historique) ;
+                  s'il est fourni (cas Stripe, où l'ID de prix a déjà déterminé le plan), il est
+                  utilisé tel quel.
+        `abonnement_externe` : identifiant d'abonnement du fournisseur (PayPal I-... ou Stripe sub_...),
+                  stocké pour pouvoir retrouver l'abonnement lors d'une annulation. Rangé dans la
+                  colonne historique `abonnement_paypal`, qui sert désormais d'« abonnement externe ».
+        """
         # Le courriel est indispensable : sans lui, on ne sait pas qui créditer.
         if not courriel:
             return self._vers_manuel(reservation, type_evenement, transaction_id, courriel, montant, devise,
                                      "Paiement reçu sans adresse courriel exploitable.")
 
-        tarif = montants.reconnaitre(
-            montant, devise,
-            devises_acceptees=self.cfg.devises_acceptees,
-            tolerance=self.cfg.tolerance_montant,
-        )
+        if tarif is None:
+            tarif = montants.reconnaitre(
+                montant, devise,
+                devises_acceptees=self.cfg.devises_acceptees,
+                tolerance=self.cfg.tolerance_montant,
+            )
         if tarif is None:
             return self._vers_manuel(reservation, type_evenement, transaction_id, courriel, montant, devise,
                                      f"Montant non reconnu : {montant} {devise}. Aucun plan activé.")
@@ -120,12 +226,9 @@ class Service:
             return self._vers_manuel(reservation, type_evenement, transaction_id, courriel,
                                      montant, devise, str(erreur))
 
-        ressource = (evenement or {}).get("resource") or {}
-        abonnement_paypal = ressource.get("id") if type_evenement == "BILLING.SUBSCRIPTION.ACTIVATED" else None
-
         self.base.enregistrer_abonnement(
             courriel=courriel, plan=tarif.plan, expire_le=expiration, statut="actif",
-            abonnement_paypal=abonnement_paypal, derniere_cle=cle, note=note,
+            abonnement_paypal=abonnement_externe, derniere_cle=cle, note=note,
         )
         resultat = "prolonge" if existant else "active"
         self.base.conclure_evenement(
@@ -140,13 +243,13 @@ class Service:
                 "expire_le": expiration, "cle": cle, "courriel_envoi": envoi.get("mode")}
 
     # ------------------------------------------------------------------ annulation / expiration / échec
-    def _changer_statut(self, reservation, evenement, type_evenement, courriel, statut, note) -> dict:
-        ressource = (evenement or {}).get("resource") or {}
-        abonnement_paypal = str(ressource.get("id") or "")
-
+    def _changer_statut(self, reservation, type_evenement, courriel, statut, note,
+                        abonnement_externe="") -> dict:
         ligne = self.base.abonnement(courriel) if courriel else None
         if ligne is None:
-            ligne = self.base.abonnement_par_paypal(abonnement_paypal)
+            # Repli : retrouver l'abonnement par son identifiant externe (PayPal I-... ou Stripe sub_...),
+            # car un événement d'annulation ne porte pas toujours le courriel.
+            ligne = self.base.abonnement_par_paypal(abonnement_externe)
         if ligne is None:
             self.base.conclure_evenement(
                 reservation, courriel=courriel or None, resultat="ignore",

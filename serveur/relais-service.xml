@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuration du service du relais IA de VELA, lue par WinSW (relais-service.exe).
+  Regeneree a chaque passage de scripts\installer-relais.ps1 : ne la modifiez pas a la main.
+
+  Aucun secret ici, volontairement. Ce fichier, les arguments du service et le registre se lisent
+  tous en clair : les cles sont dans serveur\.env, charge par -Executer dans le seul processus fils.
+-->
+<service>
+  <id>VelaRelais</id>
+  <name>VELA - relais IA</name>
+  <description>Donne a IRIS son acces a l'intelligence artificielle, avec la cle de VELA. Ecoute sur 127.0.0.1:8100.</description>
+
+  <executable>C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe</executable>
+  <arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Users\migue\Downloads\startup\iris\scripts\installer-relais.ps1" -Executer</arguments>
+  <workingdirectory>C:\Users\migue\Downloads\startup\iris\serveur</workingdirectory>
+
+  <startmode>Automatic</startmode>
+
+  <!-- Relance apres une chute. Le delai evite qu'une panne permanente (disque plein, cle
+       illisible) ne se transforme en boucle de redemarrage qui remplit le journal. -->
+  <onfailure action="restart" delay="15 sec"/>
+  <resetfailure>1 hour</resetfailure>
+
+  <!-- Journal borne. Avec le peu d'espace libre sur ce disque, un journal qui grossit sans limite
+       n'est pas un risque theorique : c'est la prochaine panne. 5 Mo x 4 fichiers = 20 Mo au plus,
+       par flux. -->
+  <logpath>C:\Users\migue\Downloads\startup\iris\serveur\journaux</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>5120</sizeThreshold>
+    <keepFiles>4</keepFiles>
+  </log>
+
+  <!-- On tue d'abord Python, ensuite le PowerShell qui le porte : dans l'autre sens, uvicorn
+       resterait orphelin en gardant le port 8100, et le service suivant ne demarrerait pas. -->
+  <stopparentprocessfirst>false</stopparentprocessfirst>
+  <stoptimeout>15 sec</stoptimeout>
+</service>

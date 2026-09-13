@@ -853,6 +853,55 @@ def click_text(text: str, button: str = "left", clicks: int = 1, occurrence: int
     return mouse_click(hit["x"], hit["y"], button=button, clicks=clicks) + f" (sur « {hit['text']} »)"
 
 
+def order_ocr_lines(items: list[dict]) -> str:
+    """Range des fragments OCR (avec top/left/bottom/right) dans l'ordre de lecture humain :
+    de haut en bas, puis de gauche à droite, en regroupant sur une même ligne les fragments à la
+    même hauteur. Renvoie le texte VERBATIM, un retour à la ligne par ligne visuelle.
+
+    Aucune reformulation, aucun modèle : c'est cet ordre-là, et seulement lui, qui sépare cette
+    lecture d'écran (fiable pour un malvoyant) d'un résumé de modèle de vision qui peut omettre,
+    réordonner ou inventer. Les colonnes côte à côte peuvent se mêler sur une ligne — c'est le prix
+    d'un OCR sans mise en page, et c'est assumé : mieux vaut tout dire que trier à tort."""
+    frags = [it for it in (items or []) if (it.get("text") or "").strip()]
+    if not frags:
+        return ""
+    # Hauteur médiane des fragments : sert de tolérance pour décider « même ligne ».
+    hauteurs = sorted(max(1, int(it.get("bottom", 0)) - int(it.get("top", 0))) for it in frags)
+    mediane = hauteurs[len(hauteurs) // 2]
+    tol = max(6.0, mediane * 0.6)
+
+    def centre(it: dict) -> float:
+        return (int(it.get("top", 0)) + int(it.get("bottom", 0))) / 2.0
+
+    frags.sort(key=lambda it: (centre(it), int(it.get("left", 0))))
+    lignes: list[list[dict]] = []
+    for it in frags:
+        pose = False
+        for ligne in lignes:
+            ref = sum(centre(w) for w in ligne) / len(ligne)
+            if abs(centre(it) - ref) <= tol:
+                ligne.append(it)
+                pose = True
+                break
+        if not pose:
+            lignes.append([it])
+    lignes.sort(key=lambda ligne: min(centre(w) for w in ligne))
+    sorties = []
+    for ligne in lignes:
+        ligne.sort(key=lambda w: int(w.get("left", 0)))
+        texte = " ".join((w.get("text") or "").strip() for w in ligne).strip()
+        if texte:
+            sorties.append(texte)
+    return "\n".join(sorties)
+
+
+def read_screen_text(max_width: int = 1280) -> str:
+    """Le texte de l'écran, VERBATIM et dans l'ordre de lecture, par OCR hors-ligne (aucun modèle,
+    aucune image envoyée). C'est l'outil « lis-moi l'écran » pour les malvoyants : il restitue les
+    mots exacts au lieu de les faire deviner à un modèle de vision qui peut résumer ou halluciner."""
+    return order_ocr_lines(ocr_screen(max_width=max_width))
+
+
 def press_keys(combo: str) -> str:
     """combo : 'enter', 'ctrl+l', 'alt+tab', 'win+d', 'ctrl+shift+t'…"""
     import pyautogui

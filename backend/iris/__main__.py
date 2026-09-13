@@ -43,6 +43,24 @@ def selftest() -> int:
     check("vosk", lambda: __import__("vosk"))
     check("sounddevice", lambda: __import__("sounddevice"))
 
+    def _piper():
+        # Charge le VRAI modèle et synthétise : vérifie d'un coup que le paquet piper, sa passerelle
+        # native espeakbridge.pyd, ses données espeak-ng ET le modèle de voix sont tous dans le
+        # bundle. Un « module/DLL/donnée absent » découvert au premier mot français chez un client
+        # serait exactement le raté qu'on ne peut plus se permettre.
+        from piper import PiperVoice
+
+        from iris.voice.piper import DEFAULT_VOICE, _espeak_data_dir, trouver_modele
+
+        modele = trouver_modele(DEFAULT_VOICE)
+        assert modele is not None, "modèle de voix Piper absent du bundle (piper_voices/)"
+        espeak = _espeak_data_dir()
+        voix = PiperVoice.load(str(modele), espeak_data_dir=espeak) if espeak is not None else PiperVoice.load(str(modele))
+        produits = sum(len(c.audio_int16_bytes) for c in voix.synthesize("Bonjour, je suis Iris."))
+        assert produits > 0, "Piper n'a produit aucun audio"
+
+    check("voix française locale (Piper + espeak-ng)", _piper)
+
     def _num():
         from num2words import num2words
 

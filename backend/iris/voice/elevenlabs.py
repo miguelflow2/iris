@@ -14,6 +14,7 @@ import time
 
 from ..config import Settings
 from ..events import EventHub
+from .rotation_cles import CODES_BASCULE, etiquette, pool_elevenlabs
 
 log = logging.getLogger("iris.elevenlabs")
 
@@ -40,6 +41,26 @@ QUOTA_CHECK_EVERY = 8  # phrases lues entre deux vérifications du quota
 # voix (ElevenLabs et Windows) préchauffent avec la même sentinelle.
 PRECHAUFFAGE = object()
 
+# Verrou qui SÉRIALISE tout accès à PortAudio entre les fils qui OUVRENT un flux de sortie (les voix
+# ElevenLabs et Piper — y compris pendant le préchauffage) et le fil du micro qui FERME PortAudio
+# pour ré-énumérer les périphériques (listener.rafraichir_peripheriques appelle Pa_Terminate puis
+# Pa_Initialize).
+#
+# La course, observée en plantant IRIS quand les lunettes Bluetooth sont éteintes : `Pa_Terminate`
+# ferme D'AUTORITÉ tout flux resté ouvert, y compris un flux ouvert depuis un AUTRE thread ; appelé
+# pendant qu'un flux de sortie est ouvert, il libère sous les pieds de l'autre thread de la mémoire
+# native encore utilisée → corruption du tas (0xc0000374). Le préchauffage (`_prechauffer_maintenant`)
+# ouvre justement un flux de sortie SANS jamais poser l'état « en train de parler » : le garde-fou
+# `tts.is_speaking` du listener ne voyait donc pas ce flux-là, et rien n'empêchait le fil du micro de
+# fermer PortAudio pile pendant le préchauffage (lunettes éteintes → il cherche activement à
+# ré-énumérer pour retrouver le micro des lunettes).
+#
+# Un `Lock` simple (non ré-entrant) : le speaker le tient tant qu'un flux lui est ouvert ; le listener
+# l'acquiert SANS bloquer avant de fermer PortAudio et renonce à ré-énumérer s'il est pris (au lieu de
+# stopper le fil vocal — il retentera). Le speaker ne prend jamais le verrou du listener, et le
+# listener prend celui-ci en dernier : aucun cycle, donc aucun interblocage possible.
+VERROU_PORTAUDIO = threading.Lock()
+
 # Ce qui, dans le nom d'un périphérique Windows, signe le profil Bluetooth mains libres (HFP).
 # Même liste que le listener (`_narrowband_input`) : un micro reconnu « mains libres » d'un côté
 # doit l'être de l'autre, sinon les deux bouts de la voix ne parlent pas du même casque.
@@ -47,7 +68,9 @@ MARQUES_MAINS_LIBRES = ("hands-free", "mains libres", "hfp")
 
 
 def api_key() -> str:
-    return (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
+    """La clé ElevenLabs du moment. ELEVENLABS_API_KEY peut en contenir plusieurs (séparées par des
+    virgules) : le pool alterne et bascule quand l'une est épuisée (voir rotation_cles)."""
+    return pool_elevenlabs().courante()
 
 
 # --------------------------------------------------------------------------- routage de la sortie
@@ -210,7 +233,7 @@ class ElevenLabsSpeaker:
     # ------------------------------------------------------------------ état
     @property
     def configured(self) -> bool:
-        return bool(api_key())
+        return bool(pool_elevenlabs())
 
     @property
     def available(self) -> bool:
@@ -235,8 +258,8 @@ class ElevenLabsSpeaker:
             self._session = requests.Session()
         return self._session
 
-    def _headers(self) -> dict:
-        return {"xi-api-key": api_key(), "Accept": "audio/pcm"}
+    def _headers(self, cle: str | None = None) -> dict:
+        return {"xi-api-key": cle if cle is not None else api_key(), "Accept": "audio/pcm"}
 
     # ------------------------------------------------------------------ API
     def voices(self, refresh: bool = False) -> list[dict]:
@@ -386,16 +409,21 @@ class ElevenLabsSpeaker:
         """Ouvre la sortie choisie et y écrit un dixième de seconde de silence.
 
         sounddevice n'a pas de volume : le silence, ce sont des zéros. Le périphérique s'ouvre, le
-        casque bascule s'il doit basculer, personne n'entend rien."""
+        casque bascule s'il doit basculer, personne n'entend rien.
+
+        Tout se passe sous VERROU_PORTAUDIO : le préchauffage ne pose pas l'état « en train de
+        parler », donc c'est ce verrou — et non `is_speaking` — qui empêche le fil du micro de fermer
+        PortAudio pendant que ce flux de sortie est ouvert (sinon : corruption du tas natif)."""
         try:
-            sd = self._sounddevice()
-            debut = time.time()
-            device, taux = self._output_device(sd)
-            flux, taux = self._ouvrir_sortie(sd, device, taux)
-            with flux as out:
-                out.write(bytes(2 * max(1, taux // 10)))  # int16 mono : 2 octets par échantillon, 100 ms
-            log.info("sortie ElevenLabs préchauffée en %.2f s (%s)", time.time() - debut,
-                     f"sortie {device} à {taux} Hz" if device is not None else "sortie par défaut")
+            with VERROU_PORTAUDIO:
+                sd = self._sounddevice()
+                debut = time.time()
+                device, taux = self._output_device(sd)
+                flux, taux = self._ouvrir_sortie(sd, device, taux)
+                with flux as out:
+                    out.write(bytes(2 * max(1, taux // 10)))  # int16 mono : 2 octets par échantillon, 100 ms
+                log.info("sortie ElevenLabs préchauffée en %.2f s (%s)", time.time() - debut,
+                         f"sortie {device} à {taux} Hz" if device is not None else "sortie par défaut")
         except Exception as exc:
             log.debug("préchauffage de la sortie ElevenLabs impossible : %s", exc)
 
@@ -606,7 +634,21 @@ class ElevenLabsSpeaker:
         if model in ("eleven_flash_v2_5", "eleven_turbo_v2_5"):
             body["language_code"] = (u.language or "fr")[:2]
         started = time.time()
-        resp = self._http().post(url, headers={**self._headers(), "Content-Type": "application/json"}, json=body, stream=True, timeout=(10, 60))
+        # Rotation : on tente chaque clé du pool ; une clé qui répond « quota atteint » (401/402/429)
+        # est mise en pénalité et on passe à la suivante. À une seule clé, comportement d'avant.
+        pool = pool_elevenlabs()
+        resp = None
+        for _ in range(max(1, len(pool))):
+            cle = pool.courante()
+            resp = self._http().post(url, headers={**self._headers(cle), "Content-Type": "application/json"}, json=body, stream=True, timeout=(10, 60))
+            if resp.status_code in CODES_BASCULE and len(pool) > 1:
+                log.warning("TTS %s clé %s : bascule sur une autre clé", resp.status_code, etiquette(cle))
+                resp.close()
+                pool.marquer_epuisee(cle)
+                continue
+            break
+        if resp.status_code < 400:
+            pool.apres_usage()  # énoncé réussi : alterner pour le prochain
         if resp.status_code >= 400:
             detail = resp.text[:200]
             err = RuntimeError(f"HTTP {resp.status_code} {detail}")
@@ -614,30 +656,35 @@ class ElevenLabsSpeaker:
             raise err
         first = True
         pending = b""
-        device, taux = self._output_device(sd)
-        try:
-            out_stream, taux = self._ouvrir_sortie(sd, device, taux)
-        except Exception:
+        # Sous VERROU_PORTAUDIO du choix du périphérique jusqu'à la fermeture du flux : tant que ce
+        # flux de sortie est ouvert, le fil du micro ne doit pas fermer PortAudio pour ré-énumérer
+        # (Pa_Terminate fermerait ce flux d'autorité et corromprait le tas). `is_speaking` couvre déjà
+        # ce chemin, mais le verrou ferme la micro-fenêtre entre son passage à True et l'ouverture réelle.
+        with VERROU_PORTAUDIO:
+            device, taux = self._output_device(sd)
+            try:
+                out_stream, taux = self._ouvrir_sortie(sd, device, taux)
+            except Exception:
+                resp.close()
+                raise
+            convertisseur = Reechantillonneur(SAMPLE_RATE, taux)
+            with out_stream as out:
+                for chunk in resp.iter_content(chunk_size=4800):
+                    if self._stop_flag.is_set():
+                        break
+                    if not chunk:
+                        continue
+                    if first:
+                        log.info("ElevenLabs : premier audio après %.2f s", time.time() - started)
+                        first = False
+                    pending += chunk
+                    usable = len(pending) - (len(pending) % 2)  # int16 : nombre pair d'octets
+                    if usable:
+                        pret = convertisseur.convertir(pending[:usable])
+                        pending = pending[usable:]
+                        if pret:  # le convertisseur peut garder un morceau trop court pour la suite
+                            out.write(pret)
             resp.close()
-            raise
-        convertisseur = Reechantillonneur(SAMPLE_RATE, taux)
-        with out_stream as out:
-            for chunk in resp.iter_content(chunk_size=4800):
-                if self._stop_flag.is_set():
-                    break
-                if not chunk:
-                    continue
-                if first:
-                    log.info("ElevenLabs : premier audio après %.2f s", time.time() - started)
-                    first = False
-                pending += chunk
-                usable = len(pending) - (len(pending) % 2)  # int16 : nombre pair d'octets
-                if usable:
-                    pret = convertisseur.convertir(pending[:usable])
-                    pending = pending[usable:]
-                    if pret:  # le convertisseur peut garder un morceau trop court pour la suite
-                        out.write(pret)
-        resp.close()
 
     def shutdown(self) -> None:
         self.stop()

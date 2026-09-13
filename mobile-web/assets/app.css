@@ -1,0 +1,173 @@
+/* =========================================================================
+   IRIS — application web téléphone (VELA)
+   Palette et esprit repris de site/assets/style.css et backend/iris/mobile.py,
+   pour que l'app, le site et l'interface de bureau soient une seule et même marque.
+   Fond encre, texte crème, un seul accent : le terracotta du foc.
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* Les quatre couleurs de la marque, tirées du logo (la voile). */
+  --creme: #F8F0E7;
+  --encre: #1B140E;
+  --terracotta: #B36B3B;
+  --terracotta-clair: #D08A55;
+
+  /* Surfaces : des encres chaudes dérivées du #1B140E du logo. */
+  --bg: #0E0A07;
+  --surface: #1E1610;
+  --surface-2: #271D15;
+  --line: #2C211A;
+  --line-2: #3F2F24;
+
+  --text: var(--creme);
+  --text-2: #D6C7B8;
+  --muted: #A2907F;
+
+  /* Accent : terracotta pour les remplissages, version claire pour le PETIT texte. */
+  --accent: var(--terracotta);
+  --accent-clair: var(--terracotta-clair);
+  --accent-soft: rgba(179, 107, 59, 0.16);
+  --accent-line: rgba(208, 138, 85, 0.34);
+  --danger: #E0685A;
+
+  --radius: 16px;
+  --radius-sm: 12px;
+
+  --font: "Inter", "Segoe UI Variable Text", system-ui, -apple-system,
+          "Segoe UI", Roboto, sans-serif;
+
+  /* Repli pour les iOS anciens qui ignorent dvh. */
+  --hauteur: 100vh;
+}
+@supports (height: 100dvh) { :root { --hauteur: 100dvh; } }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: var(--hauteur);
+  background:
+    radial-gradient(900px 520px at 12% -6%, rgba(179, 107, 59, 0.12), transparent 60%),
+    radial-gradient(760px 460px at 100% 104%, rgba(179, 107, 59, 0.06), transparent 60%),
+    var(--bg);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--text);
+  font: 16px/1.6 var(--font);
+  letter-spacing: 0.005em;
+  -webkit-font-smoothing: antialiased;
+  /* Zone sûre iPhone : encoche en haut, barre d'accueil en bas. */
+  padding:
+    env(safe-area-inset-top)
+    calc(18px + env(safe-area-inset-right))
+    calc(150px + env(safe-area-inset-bottom))   /* place pour l'orbe flottant d'Iris */
+    calc(18px + env(safe-area-inset-left));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation: none !important; transition: none !important; }
+}
+
+/* --------------------------------------------------------------- en-tête */
+.tete {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 0 6px;
+}
+.voile { flex: none; display: block; }
+.marque { font-weight: 600; letter-spacing: 0.16em; font-size: 14px; }
+.par { margin-left: auto; font-size: 12px; letter-spacing: 0.12em;
+       color: var(--muted); text-transform: uppercase; }
+
+/* --------------------------------------------------------------- corps */
+.page { max-width: 640px; margin: 0 auto; }
+
+.hero { padding: 22px 2px 8px; }
+.hero h1 {
+  margin: 0 0 10px; font-size: 30px; line-height: 1.15; font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.hero .sous { margin: 0 0 18px; font-size: 16.5px; color: var(--text-2); max-width: 40ch; }
+
+/* Petit indicateur d'état de la voix. */
+.etat {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text-2);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 13px;
+}
+.point { width: 9px; height: 9px; border-radius: 50%; background: var(--muted);
+         flex: none; transition: background 0.3s; }
+.point.ok  { background: var(--accent-clair); box-shadow: 0 0 0 4px var(--accent-soft); }
+.point.err { background: var(--danger); }
+
+.indice {
+  margin: 16px 0 0; font-size: 14px; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+}
+.indice::before {
+  content: "↓"; color: var(--accent-clair); font-weight: 700; font-size: 16px;
+  animation: flotte 1.8s ease-in-out infinite;
+}
+@keyframes flotte { 0%,100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+
+.repli {
+  margin: 16px 0 0; background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--danger); border-radius: var(--radius-sm); padding: 13px 15px;
+}
+.repli p { margin: 0; font-size: 14.5px; color: var(--text-2); }
+
+/* --------------------------------------------------------------- cartes */
+.carte {
+  margin: 22px 0 0; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 20px;
+}
+.carte h2 {
+  margin: 0 0 12px; font-size: 17px; font-weight: 600; letter-spacing: 0.01em;
+}
+.carte p { margin: 0 0 10px; font-size: 15.5px; color: var(--text-2); }
+.carte p:last-child { margin-bottom: 0; }
+.carte b { color: var(--text); font-weight: 600; }
+.carte .note {
+  font-size: 14px; color: var(--muted); border-top: 1px solid var(--line);
+  padding-top: 12px; margin-top: 12px;
+}
+
+.liste { margin: 0 0 4px; padding: 0; list-style: none; display: flex;
+         flex-direction: column; gap: 11px; }
+.liste li { position: relative; padding-left: 24px; font-size: 15.5px; color: var(--text-2); }
+.liste li::before {
+  content: ""; position: absolute; left: 4px; top: 9px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* La carte des limites : cadrée par l'accent, jamais alarmiste. Elle informe, elle ne s'excuse pas. */
+.carte--limite { border-left: 3px solid var(--accent); }
+
+.carte--installer { border-left: 3px solid var(--accent-clair); }
+.lien-plat {
+  margin-top: 6px; border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  background: transparent; color: var(--accent-clair); font: 600 14px/1 var(--font);
+  padding: 10px 15px;
+}
+.lien-plat:active { transform: scale(0.98); }
+
+/* --------------------------------------------------------------- pied */
+.pied {
+  max-width: 640px; margin: 26px auto 0; padding: 18px 2px 0;
+  border-top: 1px solid var(--line); text-align: center;
+  font-size: 12.5px; letter-spacing: 0.06em; color: var(--muted);
+}
+
+/* --------------------------------------------------------------- widget ElevenLabs
+   On laisse le widget gérer son propre positionnement (orbe flottant). On garantit
+   seulement qu'il passe au-dessus du reste et respecte la zone sûre du bas sur iPhone. */
+elevenlabs-convai {
+  z-index: 50;
+}
