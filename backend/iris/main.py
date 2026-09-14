@@ -35,6 +35,7 @@ from .telecommande import Telecommande
 from .events import EventHub
 from .glasses import GlassesService
 from .memory import MemoryService
+from .lunettes_presence import PresenceLunettes
 from .plans import PLANS, PlanService
 from .licence import LicenceSync
 from .comptes import Comptes
@@ -170,6 +171,13 @@ class AppContext:
         self.opencode = construire_opencode(self.settings, self.consent, self.hub)
         # Le verrou du pilotage vocal a besoin de savoir si les lunettes sont là.
         self.voice.glasses_connected = lambda: self.glasses.connected
+        # LUNETTES D'ABORD (2026-09-13) : une seule règle de présence pour la voix, le chat et toutes
+        # les fonctions qui captent ou agissent (voir lunettes_presence.py).
+        self.presence_lunettes = PresenceLunettes(
+            self.settings, self.settings.data_dir, voice=self.voice, glasses=self.glasses, hub=self.hub
+        )
+        self.voice.presence_lunettes = self.presence_lunettes
+        self.chat.presence_lunettes = self.presence_lunettes
         self.routines = RoutineService(self.db, self.hub)
         self.reminders = ReminderService(self.db, self.hub, announce=self._announce)
         self.chat.routines = self.routines
@@ -593,6 +601,23 @@ class GlassesPrefsIn(BaseModel):
     audio_output_device: str | None = None
 
 
+class AttestationLunettesIn(BaseModel):
+    nom: str
+    identifiant: str = ""
+    batterie: int | None = None
+    source: str = "telephone"
+
+
+class DemoIn(BaseModel):
+    mot_de_passe: str
+
+
+# Réglages qui ouvriraient IRIS sans lunettes : jamais modifiables par PATCH /api/settings (un écran
+# client, ou un appel direct, suffirait sinon à contourner la règle « lunettes d'abord »). Le mode
+# démonstration passe par POST /api/demo/activer, avec le mot de passe du propriétaire.
+REGLAGES_PROTEGES = ("require_glasses", "demo_sans_lunettes")
+
+
 class GlassesPhotoIn(BaseModel):
     # reconnaissance : charge utile 01 07 00 (image « à analyser ») plutôt que 01 04 00. L'analyse
     # reste locale dans les deux cas ; ce drapeau ne change que la charge utile envoyée aux lunettes.
@@ -776,6 +801,9 @@ def create_app(
     @app.patch("/api/settings", dependencies=auth)
     def patch_settings(patch: SettingsPatch):
         data = patch.model_dump()
+        proteges = [cle for cle in REGLAGES_PROTEGES if cle in data]
+        if proteges:
+            raise HTTPException(403, "Réglage protégé : il ne se modifie pas depuis l'application.")
         if "persona" in data and data["persona"] not in PERSONAS:
             raise HTTPException(400, "rôle inconnu")
         before = ctx.settings.user
@@ -1514,6 +1542,39 @@ def create_app(
         }
 
     # ------------------------------------------------------------------ lunettes
+    # ------------------------------------------------------------------ présence des lunettes
+    @app.get("/api/lunettes/presence", dependencies=auth)
+    def lunettes_presence():
+        return ctx.presence_lunettes.etat()
+
+    @app.post("/api/lunettes/attestation", dependencies=auth)
+    def lunettes_attestation(body: AttestationLunettesIn):
+        return ctx.presence_lunettes.attester(body.nom, body.identifiant, body.batterie, body.source)
+
+    @app.delete("/api/lunettes/attestation", dependencies=auth)
+    def lunettes_attestation_retirer():
+        return ctx.presence_lunettes.retirer_attestation()
+
+    # Mode démonstration : accès propriétaire CACHÉ (décision de Miguel, 2026-09-13). Jamais affiché
+    # dans un écran client ; exige le mot de passe du propriétaire.
+    @app.post("/api/demo/activer", dependencies=auth)
+    def demo_activer(body: DemoIn):
+        if not ctx.comptes.configure:
+            raise HTTPException(409, "Crée d'abord le mot de passe du propriétaire.")
+        if not ctx.comptes.verifier(body.mot_de_passe):
+            raise HTTPException(403, "Mot de passe incorrect.")
+        user = ctx.settings.update({"demo_sans_lunettes": True})
+        ctx.consent.log("demo_active")
+        ctx.hub.publish("settings.updated", settings=user.model_dump())
+        return ctx.presence_lunettes.etat()
+
+    @app.post("/api/demo/desactiver", dependencies=auth)
+    def demo_desactiver():
+        user = ctx.settings.update({"demo_sans_lunettes": False})
+        ctx.consent.log("demo_desactive")
+        ctx.hub.publish("settings.updated", settings=user.model_dump())
+        return ctx.presence_lunettes.etat()
+
     @app.get("/api/glasses/status", dependencies=auth)
     def glasses_status():
         return ctx.glasses.status()

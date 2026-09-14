@@ -1,0 +1,18 @@
+{
+  "id": "/m",
+  "name": "IRIS",
+  "short_name": "IRIS",
+  "description": "Parlez à IRIS depuis votre téléphone. Elle répond depuis votre ordinateur, qui doit rester allumé et joignable.",
+  "start_url": "/m",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1b1b1d",
+  "theme_color": "#1b1b1d",
+  "lang": "fr-CA",
+  "dir": "ltr",
+  "icons": [
+    {"src": "/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}

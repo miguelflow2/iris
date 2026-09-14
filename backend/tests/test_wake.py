@@ -255,23 +255,21 @@ def test_letat_publie_la_raison_du_verrou(app, monkeypatch):
     assert voice.status()["glasses_required"] is None
 
 
-def test_un_pc_neuf_sans_lunettes_jamais_connues_ne_bloque_pas_la_voix(app, monkeypatch):
-    """Le carve-out, aligné sur le chat écrit (ChatService._verrou_lunettes_chat) : sur un appareil
-    qui n'a JAMAIS connu de lunettes VELA (ni nom ni adresse), la voix ne se verrouille pas — sinon
-    une application fraîchement installée verrait le chat répondre mais la voix exiger des lunettes
-    qu'elle n'a jamais eues. Le verrou ne mord que sur des lunettes CONNUES mais absentes."""
+def test_un_pc_neuf_sans_lunettes_ne_peut_pas_parler_a_iris(app, monkeypatch):
+    """Décision de Miguel du 2026-09-13 (« lunettes d'abord ») : l'ancien passe-droit pour un appareil
+    qui n'avait JAMAIS connu de lunettes est retiré. La voix passe par les lunettes, point : une
+    installation neuve sans lunettes n'ouvre pas le micro de l'ordinateur à la place."""
     voice = app.state.ctx.voice
     voice.glasses_connected = lambda: False  # aucune preuve de présence
     monkeypatch.setattr(voice, "mic_devices", lambda: [])  # et aucune preuve par le micro
-    # Défaut d'une install neuve : require_glasses actif, démo éteinte, aucune paire mémorisée.
     app.state.ctx.settings.update({"require_glasses": True, "demo_sans_lunettes": False,
                                     "glasses": {"name": "", "address": "", "auto_connect": False}})
     assert voice.lunettes_presentes() is False
-    assert voice.lunettes_requises() is None, "aucune paire jamais connue : on laisse passer, comme le chat"
-    assert voice.status()["glasses_required"] is None
-    # Dès qu'une paire est mémorisée mais absente, le verrou reprend.
-    app.state.ctx.settings.update({"glasses": {"name": "M01 Pro_F444", "address": "x", "auto_connect": True}})
-    assert voice.lunettes_requises() is not None
+    assert voice.lunettes_requises() is not None, "sans lunettes, pas de voix, même sur un PC neuf"
+    assert voice.status()["glasses_required"]
+    # Les lunettes attestées par le téléphone suffisent.
+    app.state.ctx.presence_lunettes.attester("M01 Pro_F444")
+    assert voice.lunettes_requises() is None
 
 
 # --------------------------------------------------------------------------- la preuve de presence

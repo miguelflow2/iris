@@ -347,11 +347,17 @@ def _lunettes_configurees_absentes(app, monkeypatch, demo: bool = False):
     monkeypatch.setattr(app.state.ctx.voice, "lunettes_presentes", lambda: False)
 
 
-def test_le_chat_ecrit_exige_les_lunettes_en_mode_strict(client, app, fake_claude, monkeypatch):
-    """Sans lunettes, une demande humaine est refusée AVANT tout appel au modèle, et le refus
-    explique le mode démonstration."""
+def test_le_chat_ecrit_exige_les_lunettes_une_fois_laperçu_epuise(client, app, fake_claude, monkeypatch):
+    """Décision de Miguel du 2026-09-13 (« lunettes d'abord ») : sans lunettes, le chat écrit a droit
+    à un aperçu limité ; une fois épuisé, la demande est refusée AVANT tout appel au modèle, et le
+    refus invite aux lunettes SANS jamais mentionner le mode démonstration (accès propriétaire caché)."""
+    from iris.lunettes_presence import APERCU_MESSAGES
+
     _setup_ready(client)
     _lunettes_configurees_absentes(app, monkeypatch)
+    presence = app.state.ctx.presence_lunettes
+    for _ in range(APERCU_MESSAGES):
+        presence.consommer_apercu()
     conv = client.post("/api/conversations", json={}).json()
     with client.websocket_connect("/ws?token=test-token") as ws:
         ws.receive_json()
@@ -365,7 +371,7 @@ def test_le_chat_ecrit_exige_les_lunettes_en_mode_strict(client, app, fake_claud
     assert done is not None
     assert done["message"]["meta"].get("glasses_required") is True
     texte = done["message"]["text"].lower()
-    assert "lunettes" in texte and "démonstration" in texte
+    assert "lunettes" in texte and "démonstration" not in texte
     assert fake_claude.calls == [], "rien ne doit partir au modèle sans lunettes"
 
 
@@ -388,22 +394,28 @@ def test_le_mode_demonstration_rouvre_le_chat_ecrit(client, app, fake_claude, mo
 
 
 def test_le_verrou_du_chat_ne_touche_que_les_sources_humaines(app, monkeypatch):
-    """La porte des lunettes ne bloque que voix/texte/commande/routine. Les sources de fond (tâche,
-    résumé, veille, canal distant) doivent continuer même sans lunettes. Fail-open aussi quand aucune
-    paire n'a jamais été configurée (l'app doit se montrer) et quand la démo est active."""
+    """Règle du 2026-09-13 : voix, texte, commandes, routines ET téléphone distant exigent les
+    lunettes (l'écrit a son aperçu, la voix n'en a pas) ; les sources de fond passent toujours ; plus
+    de passe-droit pour un appareil qui n'a jamais connu de lunettes ; la démonstration débloque."""
+    from iris.lunettes_presence import APERCU_MESSAGES
+
     chat = app.state.ctx.chat
+    presence = app.state.ctx.presence_lunettes
     _lunettes_configurees_absentes(app, monkeypatch)
-    for humaine in ("voice", "text", "quick", "routine"):
+    for _ in range(APERCU_MESSAGES):
+        presence.consommer_apercu()
+    for humaine in ("voice", "text", "quick", "routine", "distant"):
         assert chat._verrou_lunettes_chat(humaine), humaine
-    for fond in ("task", "daily_summary", "veille", "resume", "distant"):
+    for fond in ("task", "daily_summary", "veille", "resume"):
         assert chat._verrou_lunettes_chat(fond) is None, fond
     # Lunettes présentes : plus de verrou, même pour une source humaine.
     monkeypatch.setattr(app.state.ctx.voice, "lunettes_presentes", lambda: True)
     assert chat._verrou_lunettes_chat("text") is None
-    # Aucune paire jamais configurée : présence indéterminable → on laisse passer.
+    # Aucune paire jamais configurée : ce n'est plus un passe-droit.
     monkeypatch.setattr(app.state.ctx.voice, "lunettes_presentes", lambda: False)
     app.state.ctx.settings.update({"glasses": {"name": "", "address": ""}})
-    assert chat._verrou_lunettes_chat("text") is None
-    # L'échappatoire démo débloque tout.
+    assert chat._verrou_lunettes_chat("text"), "aperçu épuisé : verrouillé même sur un appareil neuf"
+    # L'échappatoire démo (accès propriétaire) débloque tout.
     app.state.ctx.settings.update({"demo_sans_lunettes": True, "glasses": {"name": "M01 Pro_F444", "address": "x"}})
     assert chat._verrou_lunettes_chat("text") is None
+

@@ -449,6 +449,11 @@ class VoiceListener:
         « Connecte tes lunettes VELA », alors que les deux portes doivent s'ouvrir de la même façon.
         On ne verrouille donc que ce qu'on SAIT absent : des lunettes connues de l'appareil (déjà
         appairées ou mémorisées) mais hors de portée."""
+        presence = getattr(self, "presence_lunettes", None)
+        if presence is not None:
+            # Règle « lunettes d'abord » (2026-09-13) : plus de passe-droit pour un appareil qui n'a
+            # jamais connu de lunettes — la voix passe par les lunettes, point.
+            return None if presence.presentes() else "Connecte tes lunettes VELA pour parler à IRIS."
         u = self.settings.user
         if not u.require_glasses or u.demo_sans_lunettes:
             return None

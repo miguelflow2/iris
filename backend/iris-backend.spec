@@ -52,6 +52,10 @@ hiddenimports += ["PIL.Image", "PIL.JpegImagePlugin", "PIL.PngImagePlugin", "psu
 
 # Icônes de l'application téléphone : sans elles, Android ne propose pas l'installation.
 datas += [("iris/assets/icone-192.png", "iris/assets"), ("iris/assets/icone-512.png", "iris/assets")]
+# Coquille de la page téléphone (index.html, app.css, js/*.js, sw.js, manifeste), lue par iris/mobile.py et
+# servie par iris/routes_mobile.py à côté du module (Path(__file__).parent / "mobile_static"). Sans ce
+# dossier, /m afficherait seulement « la page téléphone n'est pas installée correctement ».
+datas += [("iris/mobile_static", "iris/mobile_static")]
 
 # Modèle de voix française locale Piper. Déposé dans piper_voices/ à la racine du bundle : c'est là
 # que iris/voice/piper.py::_dossiers_voix le cherche via sys._MEIPASS. Sans ce fichier embarqué, une

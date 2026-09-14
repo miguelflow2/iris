@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Politique de contenu écrite dans la page elle-même : /m est servie par main.py sans en-têtes.
+     Scripts de cette origine seulement, aucun eval ; mobile.py y ajoute l'empreinte sha256 de la
+     coquille qu'il place en ligne (jamais 'unsafe-inline'). Les connexions restent ouvertes par
+     schéma (https:, wss:) parce que l'hôte du relais vient des réglages et ne peut pas être écrit
+     ici ; routes_mobile.py pose la politique exacte, hôte par hôte. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss: https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#1b1b1d">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IRIS">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icone-192.png">
+<link rel="apple-touch-icon" href="/icone-192.png">
+<link rel="stylesheet" href="/m/app.css">
+<title>IRIS</title>
+</head>
+<body>
+<noscript>
+  <p class="noscript">IRIS a besoin de JavaScript pour parler à votre ordinateur. Activez-le dans les réglages du navigateur.</p>
+</noscript>
+
+<!-- Écran de connexion et de verrouillage : l'adresse seule ne doit jamais suffire à commander
+     l'ordinateur. Rempli et affiché par coeur.js (afficherVerrou). -->
+<div id="verrou" class="verrou" role="dialog" aria-modal="true" aria-labelledby="verrou-titre" aria-describedby="verrou-texte">
+  <!-- La voile VELA. Fond sombre : grand-voile crème, foc terracotta. Jamais l'encre ici. -->
+  <svg class="voile" width="55" height="72" viewBox="0 0 120 158" aria-hidden="true">
+    <path d="M 36.5 46.3 L 36.6 158 L 0 158 Z" fill="#B36B3B"/>
+    <path d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z" fill="#F8F0E7"/>
+  </svg>
+  <h1 id="verrou-titre">IRIS</h1>
+  <p id="verrou-texte">Connexion à votre ordinateur…</p>
+  <form id="verrou-formulaire" class="verrou-formulaire" hidden>
+    <label for="mdp" class="invisible">Mot de passe</label>
+    <input id="mdp" type="password" placeholder="mot de passe" autocomplete="current-password" enterkeyhint="go">
+    <button id="entrer" class="holo" type="submit">Se connecter</button>
+  </form>
+  <button id="verrou-reessayer" class="bouton-contour" type="button" hidden>Réessayer</button>
+  <p id="erreur" class="erreur" role="alert"></p>
+</div>
+
+<div id="app" class="app">
+  <header class="entete">
+    <svg class="voile" width="21" height="28" viewBox="0 0 120 158" aria-hidden="true">
+      <path d="M 36.5 46.3 L 36.6 158 L 0 158 Z" fill="#B36B3B"/>
+      <path d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z" fill="#F8F0E7"/>
+    </svg>
+    <span class="nom">IRIS</span>
+    <p class="etat" role="status"><span class="point" id="point" aria-hidden="true"></span><span id="etat">connexion…</span></p>
+  </header>
+
+  <!-- Bandeau d'installation iOS : discret, une seule fois dans une vie. -->
+  <div id="banniere" class="bandeau" hidden>
+    <p id="banniere-texte"></p>
+    <button id="banniere-ok" class="bouton-contour petit" type="button">Compris</button>
+  </div>
+
+  <!-- Ordinateur injoignable : dit pourquoi, au lieu de laisser croire que la page fonctionne. -->
+  <div id="hors-ligne" class="bandeau bandeau-alerte" role="alert" hidden>
+    <p id="hors-ligne-texte"></p>
+    <button id="hors-ligne-reessayer" class="bouton-contour petit" type="button">Réessayer</button>
+  </div>
+
+  <!-- Liaison en direct coupée alors que l'ordinateur répond : alertes et sous-titres n'arrivent plus. -->
+  <div id="liaison" class="bandeau" role="status" hidden></div>
+
+  <!-- Mode invité ou zone sans mémoire : IRIS ne retient rien, et la page le dit. -->
+  <div id="bandeau-memoire" class="bandeau" role="status" hidden></div>
+
+  <!-- Les textos et appels préparés par IRIS, à faire partir d'un geste. Rempli par sonderBrouillons(). -->
+  <div id="brouillons" class="brouillons" hidden></div>
+
+  <main id="principal" class="principal">
+    <section aria-labelledby="titre-fonctions">
+      <h2 id="titre-fonctions" class="section-titre">Fonctions</h2>
+      <div id="tuiles" class="tuiles"></div>
+    </section>
+    <section aria-labelledby="titre-conversation">
+      <h2 id="titre-conversation" class="section-titre">Conversation</h2>
+      <div id="fil" class="fil" role="log" aria-live="polite">
+        <p class="info" id="accueil">Appuyez sur le bouton et parlez, ou écrivez. IRIS répond depuis votre ordinateur : il doit rester allumé et joignable.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pied">
+    <button id="parler" class="holo parler" type="button"><span id="parler-libelle">Appuyez pour parler</span></button>
+    <div class="ligne">
+      <label for="texte" class="invisible">Message écrit à IRIS</label>
+      <input id="texte" placeholder="ou écrivez ici…" autocomplete="off" enterkeyhint="send">
+      <button id="envoyer" class="bouton-sombre" type="button">Envoyer</button>
+    </div>
+  </footer>
+</div>
+
+<!-- Panneaux des fonctions (ouvrirPanneau), au-dessus de l'application. -->
+<div id="panneaux"></div>
+
+<!-- Alerte sonore plein écran (événement alerte.sonore). -->
+<div id="alerte" class="alerte" role="alertdialog" aria-modal="true" aria-labelledby="alerte-titre" aria-describedby="alerte-detail" hidden>
+  <p class="alerte-surtitre">Alerte sonore</p>
+  <h2 id="alerte-titre"></h2>
+  <p id="alerte-detail" class="alerte-detail"></p>
+  <p id="alerte-note" class="alerte-note"></p>
+  <button id="alerte-ok" class="holo blanc" type="button">J'ai vu</button>
+</div>
+
+<!-- Boîte de confirmation (IRIS.ui.confirmer). -->
+<div id="dialogue" class="dialogue" hidden>
+  <div class="dialogue-boite" role="dialog" aria-modal="true" aria-labelledby="dialogue-texte">
+    <p id="dialogue-texte" class="dialogue-texte"></p>
+    <div class="ligne">
+      <button id="dialogue-non" class="bouton-sombre" type="button">Non</button>
+      <button id="dialogue-oui" class="holo" type="button">Oui</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+<div id="annonce-urgente" class="invisible" role="alert" aria-live="assertive"></div>
+
+<!-- Photo du téléphone pour la vision. Visuellement caché plutôt que display:none : certains iOS
+     refusent d'ouvrir l'appareil photo depuis un champ retiré de la mise en page. -->
+<input id="photo" class="invisible" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+
+<!-- Ordre de chargement du contrat window.IRIS : api.js, coeur.js, puis les modules de fonctions.
+     Chaque module est un script distinct : s'il manque ou plante, seule sa tuile disparaît. -->
+<script type="module" src="/m/js/api.js"></script>
+<script type="module" src="/m/js/coeur.js"></script>
+<script type="module" src="/m/js/guidage.js"></script>
+<script type="module" src="/m/js/zones.js"></script>
+<script type="module" src="/m/js/partage.js"></script>
+<script type="module" src="/m/js/achats.js"></script>
+<script type="module" src="/m/js/invite.js"></script>
+<script type="module" src="/m/js/interprete.js"></script>
+</body>
+</html>

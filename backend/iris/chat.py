@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
+from .lunettes_presence import MESSAGE_APERCU_EPUISE, MESSAGE_REQUISES, MESSAGE_VOIX
 from .capture import CaptureIndicator
 from .config import Settings
 from .connectors import ChatOptions, ConnectorError, build_connector
@@ -1006,49 +1007,49 @@ class ChatService:
 
     # ------------------------------------------------------------------ verrou des lunettes
     def _verrou_lunettes_chat(self, source: str) -> str | None:
-        """Porte des lunettes pour le CHAT ÉCRIT (et toute demande qui finit dans `_run`).
+        """Porte des lunettes pour le CHAT (voix, texte, commandes, routines, téléphone distant).
 
-        Symétrique du verrou vocal (VoiceListener.lunettes_requises), mais posée ici parce que la
-        voix, le texte, les commandes courantes et les routines aboutissent toutes dans `_run` :
-        un seul point d'étranglement. Décision de Miguel du 7 septembre 2026 : IRIS est INUTILISABLE
-        sans les lunettes VELA — voix ET chat écrit — avec une échappatoire « mode démonstration ».
+        Un seul point d'étranglement : toutes les demandes humaines aboutissent dans `_run`. Règle
+        « lunettes d'abord » de Miguel (2026-09-13, voir lunettes_presence.py) :
+        - lunettes présentes (PC ou téléphone attesté), verrou levé ou démonstration : on répond ;
+        - sinon, une demande ÉCRITE consomme un message de l'aperçu (APERCU_MESSAGES) ; l'aperçu
+          épuisé, IRIS invite à connecter ou découvrir les lunettes ;
+        - la voix n'a pas d'aperçu : elle passe par les lunettes par nature.
+        Les sources de fond (task, daily_summary, veille, résumé…) passent toujours : elles font vivre
+        les tâches, résumés et surveillances. Le message de refus ne mentionne JAMAIS le mode
+        démonstration : c'est un accès propriétaire caché.
 
-        Ne verrouille QUE les usages humains ({voice, text, quick, routine}). Les sources de fond
-        (task, daily_summary, veille/analyse, résumé) doivent continuer même sans lunettes : elles
-        n'ont ni écran ni lunettes et font vivre les tâches, les résumés et la surveillance.
-
-        Présence : une SEULE règle, celle du fil vocal (`lunettes_presentes` : lien basse énergie ou
-        micro) ; à défaut, le service BLE. Fail-open volontaire quand la présence est indéterminable :
-        aucun service de présence branché, OU aucune paire de lunettes jamais configurée sur cet
-        appareil. Sans ce fail-open, `require_glasses` (True par défaut) couperait une application
-        fraîchement installée qui n'a encore jamais vu de lunettes — et les tests, qui tournent sans
-        lunettes. On ne bloque donc que ce qu'on SAIT absent : des lunettes connues de l'appareil
-        (déjà appairées ou mémorisées) mais hors de portée."""
-        if source not in ("voice", "text", "quick", "routine"):
+        ATTENTION : un appel qui laisse passer une demande écrite sans lunettes CONSOMME l'aperçu."""
+        if source not in ("voice", "text", "quick", "routine", "distant"):
             return None
+        presence = getattr(self, "presence_lunettes", None)
+        if presence is None:
+            return self._verrou_lunettes_sans_service(source)
+        if presence.presentes():
+            return None
+        if source == "voice":
+            return MESSAGE_VOIX
+        if presence.consommer_apercu():
+            return None
+        return MESSAGE_APERCU_EPUISE
+
+    def _verrou_lunettes_sans_service(self, source: str) -> str | None:
+        """Repli quand aucun service de présence n'est branché (ChatService construit hors de
+        l'application, dans certains tests) : présence lue au fil vocal ou au service BLE."""
         u = self.settings.user
         if not u.require_glasses or u.demo_sans_lunettes:
             return None
-        presentes: bool | None = None
-        if self.voice is not None and hasattr(self.voice, "lunettes_presentes"):
-            try:
+        presentes = False
+        try:
+            if self.voice is not None and hasattr(self.voice, "lunettes_presentes"):
                 presentes = bool(self.voice.lunettes_presentes())
-            except Exception:  # pragma: no cover - la présence ne doit jamais faire échouer une demande
-                presentes = None
-        elif self.glasses is not None:
-            presentes = bool(getattr(self.glasses, "connected", False))
-        if presentes is None:
-            return None  # aucun service de présence : indéterminable → on laisse passer
+            elif self.glasses is not None:
+                presentes = bool(getattr(self.glasses, "connected", False))
+        except Exception:  # pragma: no cover
+            presentes = False
         if presentes:
             return None
-        # Lunettes connues absentes. On ne verrouille que si cet appareil connaît des lunettes VELA :
-        # sans nom ni adresse mémorisés, on ne peut pas distinguer « lunettes retirées » de « appareil
-        # qui n'en a jamais eu », et l'application téléchargée doit pouvoir se montrer.
-        g = u.glasses
-        if not ((g.name or "").strip() or (g.address or "").strip()):
-            return None
-        return ("J'ai besoin de tes lunettes VELA connectées pour répondre. "
-                "Active le mode démonstration dans les réglages si tu en as besoin sans elles.")
+        return MESSAGE_VOIX if source == "voice" else MESSAGE_REQUISES
 
     async def _run(
         self,
