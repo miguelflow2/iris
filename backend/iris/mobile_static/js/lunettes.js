@@ -691,6 +691,7 @@ function garde(ctx, options) {
     if (!err || err.status !== 428) return false;
     const detail = err.detail && typeof err.detail === 'object' ? err.detail : {};
     if (detail.code && detail.code !== 'lunettes_requises') return false;
+    err.geree = true;   // l'invitation est dans la zone du module : la coquille n'ouvre pas la sienne
     const avant = presentes;
     retenirPresence(Object.assign({}, etat.presence || {}, { presentes: false, acheter_url: detail.acheter_url || (etat.presence || {}).acheter_url }));
     clearTimeout(minuterieGrace);        // l'ordinateur vient de trancher : pas de délai de grâce

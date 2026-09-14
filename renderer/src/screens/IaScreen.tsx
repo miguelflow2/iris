@@ -17,8 +17,16 @@ import './IaScreen.css'
      fil vocal, barre vocale, remèdes, masque de marque) ;
    - Favoris : les messages étoilés ;
    - Minuteur : les rappels.
-   Le composeur reste toujours visible : le chat écrit fonctionne sans lunettes.
+
+   Lunettes d'abord (2026-09-13) : sans lunettes présentes (GET /api/lunettes/presence),
+   le chat écrit n'est qu'un APERÇU compté par le service (ChatService._verrou_lunettes_chat).
+   Un bandeau dit combien de messages restent, avec « Connecter » et « Acheter » ; à zéro,
+   le composeur laisse la place à l'invitation au lieu d'envoyer une demande que le service
+   refuserait. La voix, elle, n'a pas d'aperçu (BarreVoix le dit). Le compteur se relit
+   après chaque réponse, car le service ne publie pas sa consommation.
    ========================================================================= */
+
+const URL_ACHAT_DEFAUT = 'https://velaglass.ca/lunettes.html'
 
 type Segment = 'discussion' | 'favoris' | 'minuteur'
 const CLE_SEGMENT = 'iris.ia.segment'
@@ -38,7 +46,7 @@ function lireSegment(): Segment {
 }
 
 export function IaScreen(): JSX.Element {
-  const { nav, settings, updateSettings, personas, toast, agents, consent, status, lunettes } = useStore()
+  const { nav, settings, updateSettings, personas, toast, agents, consent, status, lunettes, presence, rafraichirPresence, exigerLunettes, demanderLunettes } = useStore()
   const [segment, setSegmentEtat] = useState<Segment>(lireSegment)
   const [rolesOuvert, setRolesOuvert] = useState(false)
 
@@ -266,6 +274,9 @@ export function IaScreen(): JSX.Element {
           )
           break
         case 'chat.done':
+          // Une demande écrite sans lunettes a consommé un message de l'aperçu (ou a été refusée) :
+          // le service ne publie pas ce compteur, on le relit.
+          rafraichirPresence().catch(() => undefined)
           setBusy(false)
           setMessages((m) => {
             const exists = m.some((x) => x.id === event.message.id)
@@ -285,7 +296,17 @@ export function IaScreen(): JSX.Element {
           break
       }
     })
-  }, [loadConversations, openVoiceConversation, setSegment, toast])
+  }, [loadConversations, openVoiceConversation, setSegment, toast, rafraichirPresence])
+
+  // Le compteur de l'aperçu est relu à chaque ouverture de l'onglet.
+  useEffect(() => {
+    rafraichirPresence().catch(() => undefined)
+  }, [rafraichirPresence])
+
+  const absentes = presence !== null && !presence.presentes
+  const apercuRestant: number = presence?.apercu_restant ?? 0
+  const apercuEpuise = absentes && apercuRestant <= 0
+  const acheterUrl: string = presence?.acheter_url || URL_ACHAT_DEFAUT
 
   /* ---------------------------------------------------------------- envoi, annulation, pièces */
   /** `override` permet d'envoyer une phrase d'exemple sans passer par l'état `input`
@@ -294,6 +315,11 @@ export function IaScreen(): JSX.Element {
     async (override?: string) => {
       const text = (override ?? input).trim()
       if ((!text && attachments.length === 0) || busy) return
+      if (apercuEpuise) {
+        // Le service refuserait : on montre l'invitation plutôt que d'écrire un message voué au refus.
+        demanderLunettes({ fonction: 'Écrire à IRIS', acheter_url: acheterUrl })
+        return
+      }
       let convId = activeId
       if (!convId) {
         let conv: { id: string }
@@ -327,7 +353,7 @@ export function IaScreen(): JSX.Element {
       setInput('')
       setAttachments([])
     },
-    [activeId, agentChoice, attachments, busy, input, loadConversations, toast]
+    [activeId, agentChoice, attachments, busy, input, loadConversations, toast, apercuEpuise, demanderLunettes, acheterUrl]
   )
 
   const cancel = useCallback(() => {
@@ -344,13 +370,15 @@ export function IaScreen(): JSX.Element {
   }, [toast])
 
   const attachScreenshot = useCallback(async () => {
+    // Capturer l'écran, c'est capter : les lunettes sont exigées (règle « lunettes d'abord »).
+    if (!exigerLunettes('Joindre une capture d’écran')) return
     try {
       const shot = await api.post('/api/system/screenshot')
       setAttachments((a) => [...a, { name: 'capture.jpg', media_type: shot.media_type, data: shot.data }])
     } catch (err) {
       toast(messageErreur(err), 'error')
     }
-  }, [toast])
+  }, [exigerLunettes, toast])
 
   const viderHistoriqueVocal = useCallback(async () => {
     if (!activeId) return
@@ -425,6 +453,22 @@ export function IaScreen(): JSX.Element {
 
       {segment === 'discussion' ? (
         <>
+          {absentes ? (
+            <div
+              className={`bloc-note ${apercuEpuise ? 'attention' : ''}`}
+              role="status"
+              aria-live="polite"
+              style={{ margin: '0 12px 6px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 'none' }}
+            >
+              <span style={{ flex: 1, minWidth: 200 }}>
+                Aperçu : {apercuRestant} message{apercuRestant > 1 ? 's' : ''} restant{apercuRestant > 1 ? 's' : ''} — IRIS s’utilise avec les lunettes VELA
+              </span>
+              <span className="row" style={{ gap: 6 }}>
+                <button type="button" className="btn sm primary" onClick={() => nav.ouvrir('connecter')}>Connecter</button>
+                <button type="button" className="btn sm" onClick={() => window.iris.openExternal(acheterUrl)}>Acheter</button>
+              </span>
+            </div>
+          ) : null}
           <div className="ia-centre" ref={filRef}>
             {showVoiceConv ? (
               <div className="ia-fil-entete">
@@ -458,12 +502,16 @@ export function IaScreen(): JSX.Element {
                     ))}
                     <div className="legende" style={{ marginTop: 4 }}>Les trois premiers, IRIS les exécute elle-même, sans passer par une IA.</div>
                   </div>
-                ) : !lunettesConnectees ? (
+                ) : absentes || (presence === null && !lunettesConnectees) ? (
                   <>
                     <Holo style={{ marginTop: 18 }} onClick={() => nav.ouvrir('connecter')}>
                       Connectez l’appareil
                     </Holo>
-                    <div className="muted" style={{ fontSize: 15, fontWeight: 600 }}>Le chat écrit fonctionne sans les lunettes.</div>
+                    <div className="muted" style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.4 }}>
+                      {presence
+                        ? `IRIS s’utilise avec les lunettes VELA. Sans elles, un aperçu de ${presence.apercu_total} messages écrits.`
+                        : 'IRIS s’utilise avec les lunettes VELA.'}
+                    </div>
                   </>
                 ) : (
                   <div className="exemples bloc" style={{ width: '100%', textAlign: 'left', marginTop: 12 }}>
@@ -508,7 +556,16 @@ export function IaScreen(): JSX.Element {
           <BarreVoix transcript={lastTranscript} latence={lastLatency} />
 
           <div className="composeur">
-            {!showVoiceConv ? (
+            {!showVoiceConv && apercuEpuise ? (
+              <div className="carte col" style={{ gap: 10 }} role="status">
+                <h3 style={{ margin: 0, fontSize: 19 }}>Votre aperçu d’IRIS par écrit est terminé</h3>
+                <div className="desc">IRIS s’utilise avec les lunettes VELA : connectez les vôtres, ou découvrez-les.</div>
+                <div className="row wrap" style={{ gap: 8 }}>
+                  <Holo taille="petit" onClick={() => nav.ouvrir('connecter')}>Connecter mes lunettes</Holo>
+                  <Holo taille="petit" variante="contour" onClick={() => window.iris.openExternal(acheterUrl)}>Acheter les lunettes</Holo>
+                </div>
+              </div>
+            ) : !showVoiceConv ? (
               <>
                 {attachments.length ? (
                   <div className="pieces">
@@ -573,7 +630,7 @@ export function IaScreen(): JSX.Element {
               </>
             ) : (
               <div className="barre">
-                <span>Ce fil enregistre tout ce que vous dites à IRIS.</span>
+                <span>Ce fil garde les commandes vocales adressées à IRIS et ses réponses.</span>
                 <button type="button" className="btn ghost sm" onClick={newConversation}>Écrire à IRIS</button>
                 {plan?.label ? <span className="pill" title={`Le modèle est choisi selon votre forfait ${plan.label}.`}>{plan.label}</span> : null}
               </div>

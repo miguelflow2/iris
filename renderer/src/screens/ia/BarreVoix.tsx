@@ -11,6 +11,13 @@ import { messageErreur } from './commun'
    quand l'écoute est en panne, la latence de la dernière réponse, et les
    quatre commandes (arrêter la lecture, couper/réactiver le micro, pause 10 min
    ou démarrer l'écoute, parler maintenant). Portée de l'ancienne ChatView.
+
+   Lunettes d'abord : la voix n'a pas d'aperçu sans lunettes. Quand la présence est
+   connue comme absente, « Démarrer l'écoute » et « Parler maintenant » ouvrent la
+   feuille « Cette fonction marche avec les lunettes VELA » au lieu d'envoyer la
+   commande, leur infobulle dit qu'ils exigent les lunettes, et le remède proposé
+   est de connecter les lunettes. Couper le micro et arrêter la lecture restent
+   permis : ce sont des gestes de confidentialité.
    ========================================================================= */
 
 /** Pastille d'écoute. Les classes historiques (`listening`, `talking`, `muted`) sont conservées,
@@ -63,12 +70,21 @@ export function LevelMeter({ peak, active }: { peak: number; active: boolean }):
 }
 
 export function BarreVoix({ transcript, latence }: { transcript: string; latence: number | null }): JSX.Element {
-  const { voice, settings, ttsSpeaking, micLevel, updateSettings, toast, nav } = useStore()
+  const { voice, settings, ttsSpeaking, micLevel, updateSettings, toast, nav, presence, exigerLunettes } = useStore()
   const [dlModel, setDlModel] = useState(false)
+
+  const absentes = presence !== null && !presence.presentes
+  const exigeLunettes = ' — exige les lunettes VELA'
 
   const voiceState: string = voice?.state || 'off'
   const voiceLabel: Record<string, string> = {
-    off: voice?.muted ? 'Micro coupé (muet)' : voice?.paused_until ? 'Écoute en pause (reprise automatique)' : 'Écoute arrêtée',
+    off: voice?.muted
+      ? 'Micro coupé (muet)'
+      : voice?.paused_until
+        ? 'Écoute en pause (reprise automatique)'
+        : absentes
+          ? 'Voix : connectez vos lunettes VELA'
+          : 'Écoute arrêtée',
     wake: settings?.wake_word ? `Prête — dites « ${settings.wake_word} »` : 'Prête à vous écouter',
     armed: 'Mot d’activation détecté…',
     command: 'Je vous écoute',
@@ -81,7 +97,9 @@ export function BarreVoix({ transcript, latence }: { transcript: string; latence
   const voiceError: string = voiceState === 'off' && !voice?.paused_until ? voice?.error || '' : ''
   const remede: { label: string; run: () => Promise<void> } | null = !voiceError
     ? null
-    : settings?.privacy_mode
+    : absentes && !settings?.privacy_mode && !voice?.muted
+      ? { label: 'Connecter mes lunettes', run: async () => nav.ouvrir('connecter') }
+      : settings?.privacy_mode
       ? {
           label: 'Quitter le mode confidentiel',
           run: async () => {
@@ -147,14 +165,33 @@ export function BarreVoix({ transcript, latence }: { transcript: string; latence
           {voice?.muted ? <IcoMicro /> : <IcoMicroBarre />}
         </BtnIcone>
         <BtnIcone
-          title={voiceState === 'off' ? (voice?.paused_until ? 'Reprendre l’écoute' : 'Démarrer l’écoute') : 'Pause de 10 minutes, puis l’écoute reprend seule'}
-          aria-label={voiceState === 'off' ? 'Démarrer l’écoute' : 'Pause 10 min'}
-          onClick={() => api.send(voiceState === 'off' ? { type: 'voice.start' } : { type: 'voice.pause', minutes: 10 })}
+          title={
+            voiceState === 'off'
+              ? `${voice?.paused_until ? 'Reprendre l’écoute' : 'Démarrer l’écoute'}${exigeLunettes}`
+              : 'Pause de 10 minutes, puis l’écoute reprend seule'
+          }
+          aria-label={voiceState === 'off' ? `Démarrer l’écoute${exigeLunettes}` : 'Pause 10 min'}
+          onClick={() => {
+            if (voiceState === 'off') {
+              if (!exigerLunettes('Parler à IRIS')) return
+              api.send({ type: 'voice.start' })
+            } else {
+              api.send({ type: 'voice.pause', minutes: 10 })
+            }
+          }}
         >
           {voiceState === 'off' ? <IcoLecture /> : <IcoPause />}
         </BtnIcone>
-        {/* Le geste de secours de la démonstration : il fonctionne même micro coupé ou écoute en pause. */}
-        <BtnIcone plein title="Parler maintenant (Ctrl+Maj+Espace) — fonctionne même micro coupé ou écoute en pause" aria-label="Parler maintenant" onClick={() => api.send({ type: 'voice.push_to_talk' })}>
+        {/* Parler maintenant : fonctionne micro coupé ou écoute en pause, mais pas sans lunettes. */}
+        <BtnIcone
+          plein
+          title={`Parler maintenant (Ctrl+Maj+Espace)${exigeLunettes}. Fonctionne même micro coupé ou écoute en pause.`}
+          aria-label={`Parler maintenant${exigeLunettes}`}
+          onClick={() => {
+            if (!exigerLunettes('Parler à IRIS')) return
+            api.send({ type: 'voice.push_to_talk' })
+          }}
+        >
           <IcoMicro />
         </BtnIcone>
       </div>

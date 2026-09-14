@@ -1,0 +1,27 @@
+/* =========================================================================
+   Zones sans mémoire (équipe interface-confiance, 2026-09-13).
+
+   L'état « dans une zone » doit se voir sans lire : pastille verte, bordure
+   de la même couleur que le bandeau de zone de la coquille (App.tsx).
+   ========================================================================= */
+
+.zn-hero {
+  background: var(--card-feature); border-radius: var(--r-xl); padding: 20px 22px;
+  display: flex; flex-direction: column; gap: 8px; color: #fff;
+}
+.zn-hero h2 { font-size: 24px; line-height: 1.2; font-weight: 800; }
+.zn-hero p { color: rgba(255, 255, 255, 0.8); font-size: 15.5px; font-weight: 600; line-height: 1.45; }
+
+.zn-active { border: 1.5px solid transparent; }
+.zn-active.dedans { border-color: #2f9c80; background: linear-gradient(165deg, rgba(31, 111, 92, 0.35), var(--surface) 70%); }
+
+.zn-etiquette { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.zn-liste { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--r-xl); overflow: hidden; }
+.zn-zone { display: flex; align-items: center; gap: 12px; padding: 14px 16px 14px 20px; min-height: 66px; }
+.zn-zone + .zn-zone { border-top: 1px solid var(--line); }
+.zn-zone.active { background: rgba(31, 111, 92, 0.22); }
+.zn-zone .corps { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.zn-zone .nom { font-size: 19px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; word-break: break-word; }
+.zn-zone .sous { font-size: 14.5px; color: var(--muted); font-weight: 500; }
+.zn-zone .actions { display: flex; align-items: center; gap: 4px; flex: none; }

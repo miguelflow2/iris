@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Field, SettingRow, Toggle, TopBar } from '../components/ui'
+import { Field, Segmente, SettingRow, Toggle, TopBar } from '../components/ui'
 import { api, type IrisEvent } from '../lib/api'
 import { useStore } from '../lib/store'
 
@@ -7,13 +7,37 @@ import { useStore } from '../lib/store'
    « Voix et écoute » : tout le côté voix de l'ancien écran Paramètres.
    Activation (mot, langue, variantes, mots d'arrêt, calibration),
    reconnaissance (modèle hors-ligne, moteur, écoute, dialogue), voix de
-   synthèse (lecture, moteur, voix Windows, débit), voix premium (clé
-   ElevenLabs — écran avancé où le nom du fournisseur est permis), raccourcis.
+   synthèse (lecture, moteur, voix Windows, débit de 0,5× à 3×, longueur des
+   réponses, annonce de capture), voix premium (clé ElevenLabs — écran avancé
+   où le nom du fournisseur est permis), raccourcis.
+   Débit : tts_rate va de 90 à 555 (185 = 1×) ; les trois moteurs l'appliquent,
+   la voix Windows par crans. Aucune promesse de qualité au-delà de 2×.
    Les champs texte suivent le motif brouillon/validation : édition locale,
    envoi au service quand le champ perd le focus.
    ========================================================================= */
 
 type CleListe = 'wake_aliases' | 'stop_words' | 'mute_words'
+type Verbosite = 'concis' | 'normal' | 'descriptif'
+
+// Débit de la voix : 185 = vitesse normale (1×). Bornes affichées 0,5× à 3× (config.py borne à 90..560).
+const TTS_NORMAL = 185
+const TTS_MIN = 90
+const TTS_MAX = 555
+
+function borneDebit(facteur: number): number {
+  return Math.min(TTS_MAX, Math.max(TTS_MIN, Math.round(TTS_NORMAL * facteur)))
+}
+
+/** « 1,0× », « 2,5× » : le multiplicateur que l'utilisateur comprend, jamais la valeur brute. */
+function formatFacteur(rate: number): string {
+  return `${(rate / TTS_NORMAL).toFixed(1).replace('.', ',')}×`
+}
+
+const VERBOSITES: { id: Verbosite; label: string }[] = [
+  { id: 'concis', label: 'Concis' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'descriptif', label: 'Descriptif' }
+]
 
 function joindre(v: unknown): string {
   return Array.isArray(v) ? v.join(', ') : ''
@@ -71,6 +95,8 @@ export function ReglagesVoixScreen({ params: _params }: { params?: Record<string
   const commit = (key: string): void => {
     if (draft[key] !== settings?.[key]) set({ [key]: draft[key] })
   }
+  const debit: number = Math.min(TTS_MAX, Math.max(TTS_MIN, Number(draft.tts_rate) || TTS_NORMAL))
+  const verbosite: Verbosite = draft.verbosite === 'concis' || draft.verbosite === 'descriptif' ? draft.verbosite : 'normal'
   const commitListe = (cle: CleListe): void => {
     const valeur = decouper(listes[cle])
     if (JSON.stringify(valeur) !== JSON.stringify(settings?.[cle] || [])) set({ [cle]: valeur })
@@ -174,7 +200,7 @@ export function ReglagesVoixScreen({ params: _params }: { params?: Record<string
           <Field label="Variantes acceptées du mot d’activation" hint="Séparées par des virgules. Si IRIS n’entend pas votre mot, ajoutez ici ce qu’elle affiche dans « Entendu : … ».">
             <input className="input" value={listes.wake_aliases} onChange={(e) => setListes({ ...listes, wake_aliases: e.target.value })} onBlur={() => commitListe('wake_aliases')} />
           </Field>
-          <Field label="Mots d’arrêt (coupent la parole d’IRIS)" hint="Séparés par des virgules. IRIS écoute pendant qu’elle parle : « stop » l’interrompt immédiatement.">
+          <Field label="Mots d’arrêt (coupent la parole d’IRIS)" hint="Séparés par des virgules. IRIS écoute pendant qu’elle parle : « stop » l’interrompt dès qu’il est reconnu.">
             <input className="input" value={listes.stop_words} onChange={(e) => setListes({ ...listes, stop_words: e.target.value })} onBlur={() => commitListe('stop_words')} />
           </Field>
           <Field label="Mots pour couper le micro" hint="Ex. « muet » : IRIS dit « Micro coupé » puis n’écoute plus jusqu’à réactivation (bouton, Ctrl+Maj+M, barre système).">
@@ -203,7 +229,7 @@ export function ReglagesVoixScreen({ params: _params }: { params?: Record<string
             title="Reconnaissance vocale hors-ligne"
             desc={
               voice?.model_ready
-                ? `Modèle installé : ${voice.model_info?.label || ''}. Tout est traité sur l’appareil.`
+                ? `Modèle installé : ${voice.model_info?.label || ''}. La reconnaissance se fait sur l’appareil.`
                 : `Modèle absent : ${voice?.model_info?.label || ''}. Sans lui, la voix nécessite la reconnaissance en ligne (consentement « audio brut »).`
             }
           >
@@ -239,7 +265,7 @@ export function ReglagesVoixScreen({ params: _params }: { params?: Record<string
           <SettingRow title="Dialogue de suivi" desc="Si IRIS pose une question, elle écoute la réponse sans mot d’activation.">
             <Toggle on={Boolean(draft.voice_followup)} onChange={(v) => set({ voice_followup: v })} titre="Dialogue de suivi" />
           </SettingRow>
-          <SettingRow title="Rapidité des réponses vocales" desc="Effort de raisonnement pour la voix. « Rapide » vise une réponse en moins de 5 secondes.">
+          <SettingRow title="Rapidité des réponses vocales" desc="Effort de raisonnement pour la voix. « Rapide » raccourcit la réflexion pour répondre plus tôt ; le temps réel de chaque réponse est mesuré et affiché dans l’onglet IA, il n’est pas garanti.">
             <select className="select" aria-label="Rapidité des réponses vocales" style={{ width: 160 }} value={draft.voice_effort || 'low'} onChange={(e) => set({ voice_effort: e.target.value })}>
               <option value="low">Rapide</option>
               <option value="medium">Équilibré</option>
@@ -288,27 +314,48 @@ export function ReglagesVoixScreen({ params: _params }: { params?: Record<string
               ))}
             </select>
           </SettingRow>
-          <div style={{ padding: '12px 0 4px' }}>
+          <div style={{ padding: '12px 0 4px', borderBottom: '1px solid var(--line)' }}>
             <div className="row between">
-              <div style={{ fontWeight: 600, fontSize: 16 }}>Débit de parole</div>
-              <span className="small muted">{draft.tts_rate}</span>
+              <label htmlFor="reglages-debit" style={{ fontWeight: 600, fontSize: 16 }}>Débit de parole</label>
+              <output htmlFor="reglages-debit" className="small" style={{ fontWeight: 700 }}>{formatFacteur(debit)}</output>
             </div>
             <input
+              id="reglages-debit"
               type="range"
-              min={120}
-              max={260}
-              aria-label="Débit de parole"
-              value={Number(draft.tts_rate) || 185}
-              onChange={(e) => setDraft({ ...draft, tts_rate: Number(e.target.value) })}
+              min={0.5}
+              max={3}
+              step={0.1}
+              aria-valuetext={formatFacteur(debit)}
+              value={Math.round((debit / TTS_NORMAL) * 10) / 10}
+              onChange={(e) => setDraft({ ...draft, tts_rate: borneDebit(Number(e.target.value)) })}
               onMouseUp={() => commit('tts_rate')}
               onKeyUp={() => commit('tts_rate')}
+              onTouchEnd={() => commit('tts_rate')}
               onBlur={() => commit('tts_rate')}
               style={{ margin: '10px 0' }}
             />
-            <div className="row">
+            <div className="row between small muted" aria-hidden="true">
+              <span>0,5×</span>
+              <span>3×</span>
+            </div>
+            <div className="small muted" style={{ marginTop: 6, lineHeight: 1.4 }}>
+              La voix Windows avance par crans ; au-delà de 2×, la voix reste intelligible mais moins naturelle.
+            </div>
+            <div className="row" style={{ margin: '10px 0 8px' }}>
               <button type="button" className="btn sm" onClick={ecouterExemple} title="Lit une phrase d’exemple avec la voix et le débit actuels.">Écouter un exemple</button>
             </div>
           </div>
+          <div className="col" style={{ gap: 8, padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>Longueur des réponses</div>
+            <Segmente options={VERBOSITES} valeur={verbosite} onChange={(v) => set({ verbosite: v })} />
+            <div className="small muted" style={{ lineHeight: 1.4 }}>
+              « Concis » va à l’essentiel ; « Normal » répond en une ou deux phrases à la voix ; « Descriptif » donne les détails utiles, plus longs à écouter
+              (pensé pour les descriptions à une personne qui ne voit pas).
+            </div>
+          </div>
+          <SettingRow title="Annonce de capture" desc="Un signal vocal court à chaque photo ou enregistrement (« Photo. »), pour savoir quand IRIS capte.">
+            <Toggle on={draft.annonce_capture !== false} onChange={(v) => set({ annonce_capture: v })} titre="Annonce de capture" />
+          </SettingRow>
         </div>
 
         {/* ------------------------------------------------------------ voix premium (clé personnelle) */}

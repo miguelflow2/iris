@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { BtnIcone, Holo, TopBar } from '../components/ui'
-import { IcoPoubelle, IcoRecherche } from '../components/icons'
+import { BtnIcone, Field, Holo, Liste, Rangee, TopBar } from '../components/ui'
+import { IcoJournal, IcoPoubelle, IcoRecherche } from '../components/icons'
 import { api, formatDate, type IrisEvent } from '../lib/api'
 import { useStore } from '../lib/store'
 
@@ -9,6 +9,12 @@ import { useStore } from '../lib/store'
    d'un souvenir, recherche en direct, résumé de journée, export, effacement,
    et la liste des souvenirs avec la phrase d'origine sous chaque ligne.
    Rien n'est inventé : tout vient de GET /api/memory et de l'événement memory.updated.
+
+   Effacer une période (DELETE /api/memory/plage) : bornes AAAA-MM-JJ à l'heure de
+   l'ordinateur, fin incluse (toute la journée) ; les souvenirs épinglés de la
+   période partent aussi. Quand la mémoire est suspendue (mode invité, zone sans
+   mémoire), l'écran le dit : rien de nouveau n'est retenu, consulter et effacer
+   restent possibles. Tout cet écran reste accessible sans lunettes (Loi 25).
    ========================================================================= */
 
 function messageErreur(err: unknown): string {
@@ -23,12 +29,14 @@ function libelleSource(source: string | undefined): string {
 
 export function MemoireScreen({ params }: { params?: Record<string, any> }): JSX.Element {
   void params
-  const { toast, settings, consent } = useStore()
+  const { nav, toast, settings, consent, ecoute, invite, zone } = useStore()
   const [items, setItems] = useState<any[]>([])
   const [count, setCount] = useState(0)
   const [query, setQuery] = useState('')
   const [text, setText] = useState('')
-  const [occupe, setOccupe] = useState<'memoriser' | 'resumer' | 'exporter' | 'effacer' | null>(null)
+  const [occupe, setOccupe] = useState<'memoriser' | 'resumer' | 'exporter' | 'effacer' | 'plage' | null>(null)
+  const [debut, setDebut] = useState('')
+  const [fin, setFin] = useState('')
   const monte = useRef(true)
   useEffect(() => {
     monte.current = true
@@ -114,6 +122,30 @@ export function MemoireScreen({ params }: { params?: Record<string, any> }): JSX
     }
   }
 
+  const effacerPlage = async (): Promise<void> => {
+    if (occupe || (!debut && !fin)) return
+    if (debut && fin && debut > fin) {
+      toast('La date de début doit précéder la date de fin.', 'error')
+      return
+    }
+    const periode = debut && fin ? (debut === fin ? `du ${debut}` : `du ${debut} au ${fin} inclus`) : debut ? `depuis le ${debut}` : `jusqu’au ${fin} inclus`
+    if (!window.confirm(`Effacer tous les souvenirs retenus ${periode}, épinglés compris ? Cette action est définitive.`)) return
+    setOccupe('plage')
+    try {
+      const q = new URLSearchParams()
+      if (debut) q.set('debut', debut)
+      if (fin) q.set('fin', fin)
+      const r = await api.delete(`/api/memory/plage?${q.toString()}`)
+      const n = Number(r?.supprimes) || 0
+      toast(n ? `${n} souvenir${n > 1 ? 's' : ''} effacé${n > 1 ? 's' : ''} ${periode}.` : `Aucun souvenir retenu ${periode}.`, n ? 'success' : 'info')
+      await load(query || undefined)
+    } catch (err) {
+      toast(messageErreur(err), 'error')
+    } finally {
+      if (monte.current) setOccupe(null)
+    }
+  }
+
   const supprimer = async (id: string): Promise<void> => {
     try {
       await api.delete(`/api/memory/${id}`)
@@ -126,11 +158,23 @@ export function MemoireScreen({ params }: { params?: Record<string, any> }): JSX
   const retention: number = Number(settings?.retention_days) || 0
   const motReveil: string = settings?.wake_word || 'Dis-moi Iris'
   const memoirePartagee = Boolean(consent?.memory?.granted)
+  // Mémoire suspendue : la raison exacte du service quand l'écoute la publie, sinon l'état du mode
+  // invité ou de la zone tel que le store le connaît.
+  const suspendue: string | null =
+    ecoute?.memoire_suspendue || (invite?.actif ? 'mode invité' : zone?.dans_zone ? `zone sans mémoire${zone.zone_nom ? ` « ${zone.zone_nom} »` : ''}` : null)
+  const aujourdhui = new Date().toLocaleDateString('en-CA')
 
   return (
     <div className="ecran">
       <TopBar titre="Mémoire" />
       <div className="contenu">
+        {suspendue ? (
+          <div className="bloc-note attention" role="status">
+            Mémoire suspendue ({suspendue}) : IRIS ne retient rien de nouveau pour l’instant, ni souvenir, ni journal, ni cours, ni reçu. Vous pouvez encore
+            consulter, exporter et effacer.
+          </div>
+        ) : null}
+
         {/* carte d'en-tête : compteur, rétention, consentement */}
         <div className="carte">
           <h3>
@@ -170,11 +214,35 @@ export function MemoireScreen({ params }: { params?: Record<string, any> }): JSX
             <span className="small muted" style={{ flex: 1, minWidth: 180, lineHeight: 1.4 }}>
               Ctrl+Entrée pour enregistrer. IRIS peut aussi mémoriser à la voix : « {motReveil}, souviens-toi que… »
             </span>
-            <Holo taille="petit" disabled={!text.trim() || occupe === 'memoriser'} onClick={memoriser}>
+            <Holo taille="petit" disabled={!text.trim() || occupe === 'memoriser' || Boolean(suspendue)} onClick={memoriser}>
               {occupe === 'memoriser' ? 'Enregistrement…' : 'Mémoriser'}
             </Holo>
           </div>
         </div>
+
+        {/* effacer une période */}
+        <div className="carte col" style={{ gap: 12 }}>
+          <h3 style={{ margin: 0 }}>Effacer une période</h3>
+          <div className="desc">Les souvenirs retenus entre ces deux dates, à l’heure de cet ordinateur. Une seule date suffit (« depuis » ou « jusqu’à »).</div>
+          <div className="cartes-2">
+            <Field label="Du">
+              <input className="input" type="date" max={fin || aujourdhui} value={debut} onChange={(e) => setDebut(e.target.value)} />
+            </Field>
+            <Field label="Au (inclus)">
+              <input className="input" type="date" min={debut || undefined} max={aujourdhui} value={fin} onChange={(e) => setFin(e.target.value)} />
+            </Field>
+          </div>
+          <div className="row between wrap" style={{ gap: 10 }}>
+            <span className="small muted" style={{ flex: 1, minWidth: 180, lineHeight: 1.4 }}>Les souvenirs épinglés de la période sont effacés aussi. Le journal d’écoute s’efface à part.</span>
+            <button type="button" className="btn sm danger" disabled={occupe !== null || (!debut && !fin)} onClick={effacerPlage}>
+              {occupe === 'plage' ? 'Effacement…' : 'Effacer la période'}
+            </button>
+          </div>
+        </div>
+
+        <Liste>
+          <Rangee icone={<IcoJournal />} titre="Journal d’écoute" sous="Ce qui a été entendu mot pour mot, si le journal continu est activé : chercher, effacer une plage." onClick={() => nav.ouvrir('journal')} />
+        </Liste>
 
         {/* recherche en direct */}
         <div className="recherche">

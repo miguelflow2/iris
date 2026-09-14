@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Politique de confidentialité — VELA</title>
-<meta name="description" content="Ce qu’IRIS fait de vos données : traitement local par défaut, chiffrement AES-256-GCM, consentement par type, registre vérifiable, et qui reçoit quoi.">
+<meta name="description" content="Ce qu’IRIS fait de vos données : ce qui reste sur l’ordinateur, ce qui part et quand, chiffrement AES-256-GCM, consentement par type, registre vérifiable et ses limites, et qui reçoit quoi.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
 <link rel="canonical" href="https://velaglass.ca/politique-confidentialite.html">
 <link rel="stylesheet" href="assets/style.css?v=10">
@@ -12,7 +12,7 @@
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="fr_CA">
 <meta property="og:title" content="Politique de confidentialité — VELA">
-<meta property="og:description" content="Ce qu’IRIS fait de vos données : traitement local par défaut, chiffrement AES-256-GCM, consentement par type, registre vérifiable, et qui reçoit quoi.">
+<meta property="og:description" content="Ce qu’IRIS fait de vos données : ce qui reste sur l’ordinateur, ce qui part et quand, chiffrement AES-256-GCM, consentement par type, registre vérifiable et ses limites, et qui reçoit quoi.">
 <meta property="og:url" content="https://velaglass.ca/politique-confidentialite.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
@@ -20,7 +20,7 @@
 <meta property="og:image:alt" content="Lunettes VELA">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Politique de confidentialité — VELA">
-<meta name="twitter:description" content="Ce qu’IRIS fait de vos données : traitement local par défaut, chiffrement AES-256-GCM, consentement par type, registre vérifiable, et qui reçoit quoi.">
+<meta name="twitter:description" content="Ce qu’IRIS fait de vos données : ce qui reste sur l’ordinateur, ce qui part et quand, chiffrement AES-256-GCM, consentement par type, registre vérifiable et ses limites, et qui reçoit quoi.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
 <script type="application/ld+json">
@@ -56,6 +56,7 @@
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
       <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
       <a href="plans.html">Plans</a>
       <a href="confidentialite.html">Confidentialité</a>
       <a href="installer.html">Installer</a>
@@ -79,7 +80,7 @@
   <section class="tight">
     <div class="wrap narrow doc">
 
-      <p class="doc-maj">Version 1.0 — 9 septembre 2026, correspondant à IRIS 0.1.0.</p>
+      <p class="doc-maj">Version 1.1 — 14 septembre 2026, correspondant à IRIS 0.1.0. Changements&nbsp;: contact d’IRIS avec le serveur de VELA au démarrage, hors des accords et du registre (sections 1, 4 et 5)&nbsp;; ce qui est chiffré et ce qui ne l’est pas (sections 1 et 3)&nbsp;; accès depuis le téléphone (section 3)&nbsp;; mode confidentiel décrit par ce qu’il fait (section 4)&nbsp;; limites du registre et de la purge (sections 6 et 7)&nbsp;; caméra des lunettes décrite selon son statut, et nom du moteur de voix locale remplacé par «&nbsp;la voix française locale d’IRIS&nbsp;» (sections 5 et 8)&nbsp;; liste d’attente, PayPal, aucun abonnement vendu (sections 10 et 11). Version 1.0&nbsp;: 9 septembre 2026.</p>
 
       <nav class="doc-sommaire" aria-label="Sommaire">
         <h2>Sommaire</h2>
@@ -104,16 +105,24 @@
       <h2 id="principe">1. Le principe</h2>
       <p>
         IRIS s’exécute sur votre ordinateur. Vos conversations, vos souvenirs, votre journal et vos
-        réglages sont enregistrés dans un fichier de base de données local, chiffré, sous
-        <span class="mono">%APPDATA%\IRIS</span>. VELA n’en reçoit aucune copie&nbsp;: l’application ne
-        comporte ni télémétrie, ni statistiques d’usage, ni service d’envoi automatique vers nos serveurs.
+        réglages sont enregistrés sous <span class="mono">%APPDATA%\IRIS</span>&nbsp;: souvenirs et
+        conversations y sont chiffrés&nbsp;; le registre et les réglages y sont en clair (section 3). VELA n’en
+        reçoit aucune copie&nbsp;: l’application ne comporte ni télémétrie, ni statistiques d’usage.
       </p>
       <p>
-        Des données quittent votre ordinateur dans un seul cas&nbsp;: lorsqu’un traitement que vous avez
-        demandé exige un service extérieur — répondre à une question avec un modèle d’intelligence
-        artificielle, lire un texte à voix haute, ou transcrire votre voix quand la reconnaissance hors
-        ligne n’est pas disponible. Chacun de ces envois est soumis à un consentement que vous accordez par
-        type de donnée, et chacun est inscrit dans un registre que vous pouvez vérifier.
+        Vos données quittent votre ordinateur lorsqu’un traitement que vous avez demandé exige un service
+        extérieur — répondre à une question avec un modèle d’intelligence artificielle, lire un texte à voix
+        haute avec une voix en ligne, ou transcrire votre voix quand la reconnaissance hors ligne n’est pas
+        disponible. Ces envois sont soumis à un consentement que vous accordez par type de donnée, et ils sont
+        inscrits dans un registre que vous pouvez vérifier.
+      </p>
+      <p>
+        <strong>Un contact ne passe ni par ces consentements ni par le registre.</strong> Hors mode
+        100&nbsp;% local, IRIS contacte le serveur de VELA au démarrage, avec un identifiant d’appareil (tiré de
+        l’ordinateur) et votre courriel d’achat s’il est renseigné, pour ouvrir l’accès en ligne&nbsp;; tant que
+        cet accès n’est pas obtenu, IRIS réessaie toutes les deux minutes. Si votre courriel d’achat est
+        renseigné, IRIS l’envoie aussi une fois par jour pour vérifier votre forfait. Le mode 100&nbsp;% local
+        bloque ces contacts (section 5).
       </p>
 
       <h2 id="responsable">2. Qui est responsable du traitement</h2>
@@ -147,17 +156,26 @@
         ligne correspondante dans le registre.
       </p>
       <p>
-        Le service local d’IRIS écoute sur l’adresse <span class="mono">127.0.0.1</span>, protégée par un
-        jeton de session régénéré à chaque démarrage&nbsp;: il n’est pas joignable depuis votre réseau, ni
-        depuis Internet.
+        <strong>Ce qui est chiffré.</strong> Vos souvenirs et le contenu de vos conversations sont chiffrés
+        dans la base locale (section 8). Le registre de transparence est enregistré en clair dans cette même
+        base, et il garde, pour chaque demande envoyée en ligne, ses 120 premiers caractères. Vos réglages sont
+        enregistrés en clair dans un fichier <span class="mono">settings.json</span>.
+      </p>
+      <p>
+        Par défaut, le service local d’IRIS écoute sur l’adresse <span class="mono">127.0.0.1</span>, protégée
+        par un jeton de session régénéré à chaque démarrage&nbsp;: il n’est alors joignable ni depuis votre
+        réseau, ni depuis Internet. Si vous activez l’accès depuis le téléphone, il écoute aussi sur votre
+        réseau local, derrière un mot de passe.
       </p>
 
       <h2 id="consentement">4. Le consentement, type par type</h2>
       <p>
-        Rien ne quitte votre ordinateur sans un accord donné pour le type de donnée concerné. Ces
-        interrupteurs se trouvent dans <strong>Confidentialité</strong>, et l’assistant de démarrage vous
-        les présente à la première ouverture. Ils sont tous réversibles à tout moment, et chaque
-        changement est daté dans le registre.
+        Vos demandes, l’audio, les images jointes, les captures d’écran et vos souvenirs ne quittent pas
+        votre ordinateur sans un accord donné pour le type de donnée concerné. Ces interrupteurs, désactivés
+        au départ, se trouvent dans <strong>Confidentialité</strong>, et l’assistant de démarrage vous les
+        présente à la première ouverture. Ils sont tous réversibles à tout moment, et chaque changement est
+        daté dans le registre. Le contact d’IRIS avec le serveur de VELA au démarrage (section 1) ne dépend
+        pas de ces interrupteurs.
       </p>
       <dl>
         <dt>Texte de vos demandes</dt>
@@ -176,10 +194,11 @@
           de ce qu’IRIS sait de vous.</dd>
       </dl>
       <p>
-        Deux réglages priment sur tout le reste. Le <strong>mode 100&nbsp;% local</strong> bloque tout
-        envoi externe&nbsp;: seul un modèle installé sur votre machine peut encore répondre. Le
-        <strong>mode confidentiel</strong> coupe le micro et empêche toute écoute ou capture tant qu’il est
-        actif. Un agent que vous avez déclaré local n’est jamais soumis au consentement d’envoi externe,
+        Deux réglages priment sur ces interrupteurs. Le <strong>mode 100&nbsp;% local</strong> bloque les
+        envois vers les services d’intelligence artificielle en ligne et le serveur de VELA&nbsp;: seules les
+        fonctions traitées sur votre machine répondent. Le <strong>mode confidentiel</strong> coupe le micro et
+        arrête l’écoute tant qu’il est actif&nbsp;; dans IRIS&nbsp;0.1.0, il ne bloque pas une capture d’écran
+        demandée par écrit. Un agent que vous avez déclaré local n’est jamais soumis au consentement d’envoi externe,
         puisque rien ne sort de l’appareil.
       </p>
 
@@ -200,8 +219,8 @@
       <p>
         Deux façons d’éviter cet intermédiaire, si vous préférez. Configurez votre propre clé dans
         <span class="mono">Réglages › Moteurs IA</span>&nbsp;: votre ordinateur parle alors directement au
-        fournisseur, sans passer par nous. Ou activez le <strong>mode 100&nbsp;% local</strong>&nbsp;: plus
-        rien ne sort de l’appareil, ni vers nous ni vers personne.
+        fournisseur, sans passer par nous. Ou activez le <strong>mode 100&nbsp;% local</strong>&nbsp;: IRIS
+        n’envoie plus rien ni au serveur de VELA ni aux services d’intelligence artificielle en ligne.
       </p>
       <dl>
         <dt>VELA — <span class="mono">relais.velaglass.ca</span></dt>
@@ -209,7 +228,8 @@
           selon vos consentements, les images jointes, les captures d’écran et les extraits de mémoire —
           puis les transmet à un fournisseur d’intelligence artificielle tiers (situé hors du Québec) sans
           les garder. Reçoit aussi un identifiant d’appareil et, si
-          vous l’avez renseigné, le courriel de votre achat, pour reconnaître votre forfait.</dd>
+          vous l’avez renseigné, le courriel de votre achat, pour reconnaître votre forfait&nbsp;: au démarrage
+          d’IRIS, hors mode local, sans consentement préalable et sans inscription au registre (section 1).</dd>
         <dt>Fournisseur d’intelligence artificielle tiers (hors Québec)</dt>
         <dd>Destinataire final des demandes acheminées par le serveur de VELA, ou destinataire direct si vous
           utilisez votre propre clé. Achemine vers le modèle choisi. Reçoit les mêmes catégories de données.
@@ -220,12 +240,12 @@
           clé. Reçoivent les mêmes catégories de données que ci-dessus, selon vos consentements.</dd>
         <dt>Service de synthèse vocale en ligne</dt>
         <dd>Reçoit le texte qu’IRIS s’apprête à prononcer, afin d’en produire la voix. Uniquement si une
-          clé de la voix en ligne est configurée. Sans clé, la voix française locale (Piper) est utilisée et
-          rien ne sort de l’appareil.</dd>
+          clé de la voix en ligne est configurée. Sans clé, la voix française locale d’IRIS est utilisée et
+          le texte à prononcer ne sort pas de l’appareil.</dd>
         <dt>Reconnaissance vocale en ligne (renfort)</dt>
         <dd>Reçoit de courts extraits d’audio brut du micro, uniquement en renfort&nbsp;: si le modèle
           hors ligne n’est pas installé et que vous avez accordé le consentement « audio brut du micro ».
-          Chaque envoi est inscrit au registre avec sa durée en millisecondes.</dd>
+          Ces envois sont inscrits au registre avec leur durée en millisecondes.</dd>
         <dt>Téléchargement du modèle de reconnaissance vocale (hors ligne)</dt>
         <dd>Hébergeur du modèle de reconnaissance vocale hors ligne. Un simple téléchargement de fichier,
           une seule fois, à votre demande. Aucune donnée personnelle n’est transmise.</dd>
@@ -245,15 +265,21 @@
 
       <h2 id="registre">6. Le registre de transparence</h2>
       <p>
-        Chaque envoi externe, chaque capture, chaque commande exécutée, chaque fichier écrit et chaque
-        changement de consentement ou de mode est inscrit dans un registre local. Chaque entrée porte une
-        empreinte SHA-256 calculée à partir de son contenu <em>et</em> de l’empreinte de l’entrée
-        précédente&nbsp;: modifier ou retirer une ligne rompt la chaîne, et la vérification le détecte.
+        Les envois de vos données vers les services en ligne, les captures, les commandes exécutées, les
+        fichiers écrits et les changements de consentement ou de mode sont inscrits dans un registre local.
+        Chaque entrée porte une empreinte SHA-256 calculée à partir de son contenu <em>et</em> de l’empreinte
+        de l’entrée précédente&nbsp;: modifier ou retirer une ligne rompt la chaîne, et la vérification le
+        détecte — sauf si quelqu’un recalcule toutes les empreintes suivantes.
+      </p>
+      <p>
+        Ce que le registre ne couvre pas, dans IRIS&nbsp;0.1.0&nbsp;: le contact d’IRIS avec le serveur de VELA au
+        démarrage (section 1). Le registre est enregistré en clair sur votre ordinateur (section 3).
       </p>
       <p>
         Dans <strong>Confidentialité</strong>, le bouton « Vérifier l’intégrité » recalcule toute la chaîne
         devant vous et indique la première entrée fautive s’il y en a une. « Exporter JSON » et « Exporter
-        CSV » vous en remettent une copie complète. « Vider » l’efface. Ce registre vous appartient&nbsp;:
+        CSV » vous en remettent une copie complète. « Vider » l’efface&nbsp;; ce vidage n’est pas lui-même
+        inscrit, et la chaîne qui suit se vérifie comme une chaîne neuve. Ce registre vous appartient&nbsp;:
         il ne nous est jamais transmis. La page <a href="confidentialite.html#demonstration">Confidentialité</a>
         vous laisse en essayer le principe.
       </p>
@@ -269,7 +295,13 @@
         Le bouton « Purger maintenant » déclenche la même opération immédiatement. La suppression est
         physique&nbsp;: les lignes sont retirées de la base, puis celle-ci est compactée pour ne pas
         laisser de résidus récupérables. Le nombre d’éléments supprimés vous est indiqué, et la purge
-        elle-même est inscrite au registre.
+        elle-même est inscrite au registre. La purge ne retire que les données arrivées au terme de la durée
+        choisie&nbsp;; vos souvenirs s’effacent aussi un par un, dans la vue Mémoire.
+      </p>
+      <p>
+        <strong>Limite connue d’IRIS&nbsp;0.1.0.</strong> Si une durée de conservation est réglée, la purge
+        retire aussi les entrées les plus anciennes du registre&nbsp;; la vérification du registre signale
+        alors une chaîne rompue, sans qu’il y ait eu de falsification.
       </p>
       <p>
         Désinstaller IRIS ne supprime pas automatiquement vos données&nbsp;: elles restent dans
@@ -279,7 +311,8 @@
 
       <h2 id="securite">8. Sécurité</h2>
       <ul>
-        <li><strong>Chiffrement au repos&nbsp;: AES-256-GCM.</strong> La clé maîtresse est rangée dans le
+        <li><strong>Chiffrement au repos&nbsp;: AES-256-GCM</strong>, pour vos souvenirs et le contenu de vos
+          conversations (le registre et les réglages ne sont pas chiffrés&nbsp;: section 3). La clé maîtresse est rangée dans le
           gestionnaire d’identifiants de Windows. Si ce coffre est indisponible, elle est écrite dans un
           fichier local à permissions restreintes, et l’application vous indique laquelle des deux sources
           est utilisée.</li>
@@ -293,9 +326,10 @@
           artificielle.</li>
         <li><strong>Indicateur de capture.</strong> Une pastille s’affiche par-dessus toutes les fenêtres
           dès que le micro, l’écran ou une caméra de l’ordinateur sont utilisés. Elle n’est pas
-          désactivable. Les lunettes VELA ont une caméra&nbsp;: un témoin s’allume dès qu’elle filme,
-          rien ne se fait en cachette. Les photos, les vidéos et leur analyse restent sur votre
-          ordinateur&nbsp;; elles ne sont jamais envoyées à un nuage.</li>
+          désactivable. Les lunettes VELA ont une caméra et un témoin lumineux&nbsp;; la photo à la voix avec
+          IRIS est en test et la vidéo est prévue. Ce qui est écrit dans IRIS&nbsp;: l’image est enregistrée sur
+          votre ordinateur et inscrite au registre&nbsp;; elle n’est envoyée à IRIS en ligne que si vous l’y
+          joignez avec votre accord «&nbsp;Images jointes&nbsp;».</li>
         <li><strong>Confirmation des commandes sensibles.</strong> IRIS demande votre accord avant
           d’exécuter une commande jugée dangereuse.</li>
       </ul>
@@ -347,30 +381,37 @@
         Nous ne recevons donc que ce que vous décidez d’envoyer.
       </p>
       <p>
-        Le formulaire «&nbsp;<strong>Prévenez-moi</strong>&nbsp;» (sur l’accueil, la fiche produit et la
-        page des plans) recueille <strong>votre adresse courriel</strong>, et rien d’autre, dans le seul
-        but de vous prévenir au lancement. Il est traité par le service de formulaires de notre hébergeur
-        (Netlify Forms)&nbsp;; vous pouvez à tout moment demander le retrait de votre adresse en nous
-        écrivant. Un lien courriel de secours reste offert si vous préférez ne pas utiliser ce formulaire.
+        Le formulaire «&nbsp;<strong>Liste d’attente de l’Édition fondatrice</strong>&nbsp;» (sur l’accueil et
+        la fiche produit) recueille <strong>votre adresse courriel</strong> et, si vous la choisissez, la
+        version de verres qui vous intéresse, dans le seul but de vous écrire à l’ouverture des paiements et
+        quand une fonction passe à «&nbsp;Disponible&nbsp;». Le formulaire «&nbsp;<strong>Prévenez-moi</strong>&nbsp;»
+        (sur la page des plans) recueille <strong>votre adresse courriel</strong>, et rien d’autre, pour vous
+        prévenir à l’ouverture d’un palier. Ces formulaires sont traités par le service de formulaires de
+        notre hébergeur (Netlify Forms)&nbsp;; vous pouvez à tout moment demander le retrait de votre adresse
+        en nous écrivant. Un lien courriel de secours reste offert si vous préférez ne pas les utiliser.
       </p>
       <p>
-        Deux autres points à signaler. Les boutons de paiement mènent à <strong>Stripe</strong> (Stripe, Inc.), qui applique
-        ses propres règles dès que vous y arrivez. Et notre hébergeur conserve des journaux techniques de
+        Deux autres points à signaler. À l’ouverture des paiements, les boutons de paiement mèneront à
+        <strong>Stripe</strong> (Stripe, Inc.) ou à <strong>PayPal</strong>, qui appliquent leurs propres règles
+        dès que vous y arrivez. Et notre hébergeur conserve des journaux techniques de
         connexion (adresse IP, page demandée), comme tout serveur web&nbsp;; voir les
         <a href="mentions-legales.html">mentions légales</a> pour son identité.
       </p>
 
       <h2 id="paiement">11. Paiement et facturation</h2>
       <p>
-        Les paiements passent par Stripe (Stripe, Inc.) ou par virement Interac. Nous ne voyons ni ne conservons vos coordonnées bancaires&nbsp;:
+        Les paiements passent par Stripe (Stripe, Inc.), par PayPal ou par virement Interac&nbsp;; aujourd’hui,
+        les paiements ne sont pas ouverts. Nous ne voyons ni ne conservons vos coordonnées bancaires&nbsp;:
         nous recevons la confirmation du versement, avec le nom et le courriel associés au
-        compte payeur. Ces informations servent à émettre votre clé d’abonnement et à assurer le suivi de
-        votre compte.
+        compte payeur. Ces informations servent à associer votre paiement à votre commande et à assurer le
+        suivi de votre compte.
       </p>
       <p>
-        La clé d’abonnement contient le nom du plan, sa date d’expiration et le courriel auquel elle a été
-        émise, le tout signé. Elle est vérifiée sur votre appareil&nbsp;: son activation ne nous est pas
-        signalée et ne déclenche aucune connexion.
+        Aucun abonnement n’est vendu aujourd’hui. Si une clé d’abonnement vous est un jour remise, elle
+        contient le nom du plan, sa date d’expiration et le courriel auquel elle a été émise, le tout signé,
+        et elle est vérifiée sur votre appareil. Distinct de cette clé&nbsp;: si votre courriel d’achat est
+        renseigné dans IRIS, IRIS l’envoie une fois par jour au serveur de VELA pour vérifier votre forfait
+        (section 1).
       </p>
 
       <h2 id="enfants">12. Âge minimal</h2>
@@ -434,7 +475,7 @@
         <h3>En savoir plus</h3>
         <ul>
           <li><a href="a-propos.html">À propos</a></li>
-          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="feuille-de-route.html">Ce qui marche aujourd’hui</a></li>
           <li><a href="presse.html">Presse</a></li>
           <li><a href="faq.html">Questions fréquentes</a></li>
           <li><a href="accessibilite.html">Accessibilité</a></li>

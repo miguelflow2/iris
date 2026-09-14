@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Feuille de route — ce qui est fait, en cours, à venir — VELA</title>
-<meta name="description" content="La feuille de route publique d’IRIS et le journal des versions. Version actuelle 0.1.0. Ce qui est fait, ce qui est en cours, ce qui est prévu — sans aucune date qu’on n’est pas sûrs de tenir.">
+<title>Ce qui marche aujourd’hui, et ce qui arrive — VELA</title>
+<meta name="description" content="Est-ce que ça marche vraiment aujourd’hui ? Chaque grande fonction de VELA et d’IRIS 0.1.0 avec son statut : Disponible, En test ou Prévu. Plateformes, engagement Édition fondatrice, journal des versions. Aucune date qu’on n’est pas sûrs de tenir.">
 
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
 
@@ -14,16 +14,16 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="fr_CA">
-<meta property="og:title" content="Feuille de route — ce qui est fait, en cours, à venir — VELA">
-<meta property="og:description" content="La feuille de route publique d’IRIS et le journal des versions. Version actuelle 0.1.0. Ce qui est fait, en cours, prévu — sans dates incertaines.">
+<meta property="og:title" content="Ce qui marche aujourd’hui, et ce qui arrive — VELA">
+<meta property="og:description" content="Chaque grande fonction de VELA et d’IRIS 0.1.0 avec son statut : Disponible, En test ou Prévu. Seules les lignes Disponible font partie de l’engagement Édition fondatrice.">
 <meta property="og:url" content="https://velaglass.ca/feuille-de-route.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
 <meta property="og:image:height" content="900">
 <meta property="og:image:alt" content="Lunettes VELA">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Feuille de route — ce qui est fait, en cours, à venir — VELA">
-<meta name="twitter:description" content="La feuille de route publique d’IRIS et le journal des versions. Version actuelle 0.1.0.">
+<meta name="twitter:title" content="Ce qui marche aujourd’hui, et ce qui arrive — VELA">
+<meta name="twitter:description" content="Chaque grande fonction de VELA et d’IRIS 0.1.0 avec son statut : Disponible, En test ou Prévu.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 
 <!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
@@ -33,7 +33,7 @@
   "@type": "BreadcrumbList",
   "itemListElement": [
     { "@type": "ListItem", "position": 1, "name": "Accueil", "item": "https://velaglass.ca/" },
-    { "@type": "ListItem", "position": 2, "name": "Feuille de route", "item": "https://velaglass.ca/feuille-de-route.html" }
+    { "@type": "ListItem", "position": 2, "name": "Ce qui marche aujourd’hui", "item": "https://velaglass.ca/feuille-de-route.html" }
   ]
 }
 </script>
@@ -102,6 +102,7 @@
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
       <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="feuille-de-route.html" aria-current="page">Ce qui marche aujourd’hui</a>
       <a href="accessibilite.html">Accessibilité</a>
       <a href="plans.html">Plans</a>
       <a href="confidentialite.html">Confidentialité</a>
@@ -119,115 +120,299 @@
       <path class="hv-grand" d="M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z"/>
     </svg>
     <div class="wrap">
-      <p class="eyebrow">Feuille de route</p>
-      <h1>Où on en est, <em>vraiment</em>.</h1>
+      <p class="eyebrow">Ce qui marche aujourd’hui</p>
+      <h1>Ce qui marche <em>aujourd’hui</em>, et ce qui arrive.</h1>
       <p class="lead">
-        IRIS en est à la version <strong>0.1.0</strong>. Voici ce qui fonctionne déjà, ce qu’on
-        construit en ce moment, et ce qui est prévu ensuite. Notre règle est simple&nbsp;:
-        <strong>aucune date qu’on n’est pas sûrs de tenir</strong>. Là où le calendrier n’est pas
-        fixé, c’est écrit «&nbsp;à confirmer&nbsp;».
+        La question qu’on nous pose le plus&nbsp;: «&nbsp;est-ce que ça marche vraiment, ou c’est une
+        vision&nbsp;?&nbsp;». Voici la réponse, fonction par fonction, pour la version publiée
+        d’IRIS&nbsp;<strong>0.1.0</strong> et les lunettes VELA de l’Édition fondatrice.
+        <strong>Aucune date qu’on n’est pas sûrs de tenir.</strong>
+      </p>
+      <p class="actions">
+        <a class="btn primary" href="#tableau">Voir le tableau</a>
+        <a class="btn" href="confidentialite.html#preuve">Vérifier le registre publié</a>
       </p>
     </div>
   </section>
 
-  <!-- ================================================= version actuelle + légende -->
+  <!-- ================================================= version + légende -->
   <section class="tight">
     <div class="wrap narrow">
       <div class="proof">
-        <span class="proof-label">Version actuelle</span>
-        <span class="proof-main">IRIS 0.1.0</span>
-        <span class="proof-hint">Windows 10 et 11 (64&nbsp;bits) · plan Gratuit, sur votre ordinateur</span>
+        <span class="proof-label">Version publiée</span>
+        <span class="proof-main">IRIS 0.1.0 — 13 septembre 2026</span>
+        <span class="proof-hint">Windows 10 et 11 (64&nbsp;bits) · tableau mis à jour le 14 septembre 2026 · <a href="#historique">historique du tableau</a></span>
       </div>
 
       <div class="beta-note" style="margin-top:18px">
-        <b>Comment lire cette page</b>
-        <p>Trois états, et rien d’autre&nbsp;:</p>
-        <ul class="etats" style="margin-top:12px">
-          <li><span class="pill ok">Fait</span> — ce qui tourne aujourd’hui</li>
-          <li><span class="pill warn">En cours</span> — ce sur quoi on travaille</li>
-          <li><span class="pill">Prévu</span> — ce qui viendra ensuite</li>
-        </ul>
-        <p class="small muted" style="margin:12px 0 0">Pour tout ce qui est «&nbsp;Prévu&nbsp;», le
-          trimestre cible reste à confirmer&nbsp;: on ne l’annoncera qu’une fois sûrs de le tenir.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================================================= fait -->
-  <section>
-    <div class="wrap narrow">
-      <p class="section-label">Fait <span class="pill ok">Disponible</span></p>
-      <h2>Ce qui tourne aujourd’hui.</h2>
-      <p class="lead">La version 0.1.0 d’IRIS, sur votre ordinateur, avec le plan Gratuit. Rien de tout
-        ceci n’est une promesse&nbsp;: c’est ce que l’application fait déjà.</p>
-      <ul class="check">
-        <li>Le contrôle de l’ordinateur à la voix&nbsp;: ouvrir, chercher, écrire, lancer, rappeler.</li>
-        <li>Le mot d’éveil «&nbsp;Dis-moi Iris&nbsp;» et le dialogue de suivi, sans avoir à le répéter.</li>
-        <li>Les routines et les rappels.</li>
-        <li>La mémoire gardée sur l’appareil&nbsp;: vos préférences et vos décisions.</li>
-        <li>La voix française locale (Piper), qui fonctionne hors ligne.</li>
-        <li>La reconnaissance vocale locale (Vosk), sur votre ordinateur.</li>
-        <li>La confidentialité&nbsp;: conversations, mémoire et registre restent chez vous, avec un
-          consentement par type de donnée et un indicateur de capture.</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- ================================================= en cours -->
-  <section class="band">
-    <div class="wrap narrow">
-      <p class="section-label">En cours <span class="pill warn">Au travail</span></p>
-      <h2>Ce qu’on construit en ce moment.</h2>
-      <div class="detours">
-        <div class="detour">
-          <h3>L’installateur Windows, avec la voix embarquée</h3>
-          <p>Empaqueter l’application pour qu’elle s’installe d’un seul clic, voix française locale
-            comprise, sans aucune étape technique. <span class="pill warn">En cours</span></p>
-        </div>
-        <div class="detour">
-          <h3>Le service d’IA en ligne</h3>
-          <p>Le service qui distingue les paliers payants (Pro, Premium, Entreprise) et élargit le quota
-            mensuel. C’est lui qui se déploie derrière la mention «&nbsp;Bientôt&nbsp;» des plans.
-            <span class="pill warn">En cours</span></p>
-        </div>
-        <div class="detour">
-          <h3>La première série de lunettes</h3>
-          <p>La préparation des toutes premières unités et de leur livraison, convenue par courriel avec
-            chaque personne. <span class="pill warn">En cours</span></p>
+        <b>Comment lire</b>
+        <div>
+          <p>Trois statuts, les mêmes sur tout le site, et rien d’autre&nbsp;:</p>
+          <ul class="statuts-legende">
+            <li><span class="pill ok">Disponible</span> dans l’installateur publié d’IRIS 0.1.0, et vérifiable</li>
+            <li><span class="pill warn">En test</span> écrit, pas encore prouvé sur les vraies lunettes ou pas encore publié</li>
+            <li><span class="pill">Prévu</span> une intention, sans date garantie</li>
+          </ul>
+          <p class="small" style="margin-top:12px">Dans le doute, on écrit «&nbsp;En test&nbsp;» ou
+            «&nbsp;Prévu&nbsp;», jamais «&nbsp;Disponible&nbsp;». Une fonction qui échoue à nos essais ou à
+            ceux des premiers testeurs redescend d’un statut, et ce tableau est corrigé. Chaque correction
+            est datée dans l’<a href="#historique">historique du tableau</a>, en bas de page.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ================================================= prévu -->
+  <!-- ================================================= les deux encadrés -->
+  <section class="tight">
+    <div class="wrap narrow">
+      <div class="callout warn">
+        <p><strong>Sans ordinateur allumé à portée, les lunettes ne pilotent pas IRIS aujourd’hui.</strong>
+          IRIS tourne sur votre ordinateur Windows&nbsp;: c’est lui qui écoute, répond et agit. Les lunettes
+          sont l’interface. L’application pour téléphone est <span class="pill">Prévu</span>.</p>
+        <p><strong>La règle des lunettes, dans IRIS&nbsp;0.1.0.</strong> Une fois vos lunettes VELA associées à
+          IRIS, IRIS ne répond, à la voix comme par écrit, que lorsqu’elles sont connectées. Or la liaison des
+          lunettes avec IRIS est <span class="pill warn">En test</span>.</p>
+      </div>
+      <div class="callout engagement" id="engagement">
+        <h3>Ce qui fait partie de l’engagement Édition fondatrice&nbsp;: uniquement les lignes «&nbsp;Disponible&nbsp;»</h3>
+        <p>Remboursement intégral si vos lunettes ne sont pas livrées au plus tard à la date de livraison
+          écrite avant votre paiement, ou si une fonction marquée «&nbsp;Disponible&nbsp;» ne fonctionne pas
+          comme décrit. Seules les fonctions marquées «&nbsp;Disponible&nbsp;» font partie de cet
+          engagement&nbsp;; ce qui est marqué «&nbsp;En test&nbsp;» ou «&nbsp;Prévu&nbsp;» est une intention,
+          sans date garantie.</p>
+        <p class="small">Aucun paiement n’est pris aujourd’hui&nbsp;: les paiements n’ouvriront qu’avec une
+          date «&nbsp;Livraison au plus tard le…&nbsp;» écrite juste avant le bouton de paiement. Cet engagement
+          s’ajoute à vos garanties légales&nbsp;; son texte complet (remboursement, délais, retour)&nbsp;:
+          <a href="conditions-vente.html#edition-fondatrice">conditions de vente</a> ·
+          <a href="garantie-retour.html#edition-fondatrice">garantie et retours</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================= le tableau -->
+  <section class="band" id="tableau">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="section-label">Fonction par fonction</p>
+        <h2>Le tableau complet.</h2>
+        <p>Trois niveaux&nbsp;: VELA (les lunettes, votre interface) → IRIS (l’intelligence, sur votre
+          ordinateur) → IRIS en ligne (optionnel).</p>
+      </div>
+
+      <div class="table-scroll">
+        <table class="statut-table">
+          <caption>Statut de chaque grande fonction pour IRIS 0.1.0 et les lunettes de l’Édition fondatrice, au 13 septembre 2026.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Fonction</th>
+              <th scope="col">Ce qu’il en est</th>
+              <th scope="col">Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="statut-groupe"><th scope="rowgroup" colspan="3">IRIS, sur votre ordinateur</th></tr>
+            <tr>
+              <th scope="row">Installer IRIS</th>
+              <td>Un installateur pour Windows 10 et 11 (64&nbsp;bits).
+                <span class="small muted">Pas encore signé&nbsp;: Windows affiche un avertissement à l’installation.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">«&nbsp;Dis-moi Iris&nbsp;» et la voix</th>
+              <td>«&nbsp;Dis-moi Iris&nbsp;»&nbsp;: le mot d’activation est reconnu sur l’ordinateur, sans Internet,
+                mais une fois vos lunettes VELA associées, IRIS&nbsp;0.1.0 ne vous écoute que lorsqu’elles sont
+                connectées, et cette liaison est en test.
+                <span class="small muted">Liaison et micro des lunettes&nbsp;: voir plus bas. Sans lunettes, l’application IRIS n’est qu’un aperçu.</span></td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Voix française d’IRIS</th>
+              <td>Produite sur l’ordinateur, sans Internet&nbsp;: elle annonce vos rappels et s’essaie dans les
+                réglages.
+                <span class="small muted">Les réponses dites à voix haute après «&nbsp;Dis-moi Iris&nbsp;» suivent le statut de la ligne précédente&nbsp;: En test.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Chat écrit&nbsp;: commandes courantes</th>
+              <td>Traitées sur l’ordinateur, sans passer par IRIS en ligne&nbsp;: ouvrir une application installée ou
+                un site courant, lancer une vidéo, donner l’heure et la date.
+                <span class="small muted">Règle des lunettes&nbsp;: une fois vos lunettes associées, IRIS 0.1.0 ne répond aussi par écrit que lorsqu’elles sont connectées. Les mêmes commandes à la voix&nbsp;: En test, comme «&nbsp;Dis-moi Iris&nbsp;».</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Routines et rappels</th>
+              <td>Créés dans l’application&nbsp;: une routine se déclenche par sa phrase&nbsp;; un rappel est
+                annoncé à l’heure prévue.
+                <span class="small muted">Une routine suit la règle des lunettes, comme le chat écrit. Les créer par une phrase libre («&nbsp;rappelle-moi dans dix minutes&nbsp;») passe par IRIS en ligne&nbsp;: En test.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Mémoire</th>
+              <td>Souvenirs chiffrés sur votre ordinateur, que vous consultez, ajoutez et effacez.
+                <span class="small muted">Que les réponses en ligne tiennent compte de vos souvenirs&nbsp;: En test, avec votre accord.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+
+            <tr class="statut-groupe"><th scope="rowgroup" colspan="3">Confidentialité</th></tr>
+            <tr>
+              <th scope="row">Registre de transparence</th>
+              <td>Registre chaîné par empreintes SHA-256&nbsp;: vérification dans l’application, export JSON
+                ou CSV. <a href="confidentialite.html#preuve">Un registre produit par IRIS (session scriptée) est publié ici</a>.
+                <span class="small muted">Le registre se vide quand vous le décidez&nbsp;; ce vidage n’est pas lui-même inscrit.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Consentement par type de donnée</th>
+              <td>Texte des demandes, audio, images, captures, extraits de mémoire&nbsp;: désactivés au départ,
+                réversibles, chaque changement inscrit au registre.
+                <span class="small muted">Hors mode local, IRIS contacte aussi le serveur de VELA au démarrage, avec un identifiant d’appareil, sans passer par ces accords&nbsp;: <a href="confidentialite.html#local">le détail</a>.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Mode confidentiel</th>
+              <td>Coupe le micro et arrête l’écoute tant qu’il est actif.</td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Mode 100&nbsp;% local</th>
+              <td>Bloque les envois vers les services en ligne. En mode local, vos données restent sur votre
+                ordinateur&nbsp;; seules les fonctions traitées sur l’ordinateur répondent.</td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Conservation et purge</th>
+              <td>Durée de conservation réglable, purge manuelle inscrite au registre.
+                <span class="small muted">Limite connue de 0.1.0&nbsp;: si une durée de conservation est réglée, la purge des entrées les plus anciennes du registre fait échouer sa vérification.</span></td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+
+            <tr class="statut-groupe"><th scope="rowgroup" colspan="3">VELA, les lunettes avec IRIS</th></tr>
+            <tr>
+              <th scope="row">Connexion à l’ordinateur</th>
+              <td>Bluetooth, reconnexion par IRIS.
+                <span class="small muted">A fonctionné sur nos lunettes d’essai&nbsp;; pas encore vérifiée sur les paires de la première série.</span></td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Micro des lunettes</th>
+              <td>IRIS écoute «&nbsp;Dis-moi Iris&nbsp;» et votre demande par le micro des lunettes.</td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Voix d’IRIS dans l’oreille</th>
+              <td>La réponse d’IRIS par le haut-parleur à oreille ouverte des lunettes.</td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Écouteurs Bluetooth</th>
+              <td>Musique et son de l’ordinateur dans les lunettes, comme un casque Bluetooth.</td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Batterie des lunettes</th>
+              <td>IRIS lit le niveau de charge. Autonomie&nbsp;: pas encore mesurée par VELA.</td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Photo à la voix</th>
+              <td>«&nbsp;Dis-moi Iris, prends une photo&nbsp;» avec la caméra des lunettes, image rangée sur
+                l’ordinateur. <span class="small muted">La version 0.1.0 refuse encore de déclencher la caméra, tant que la commande n’est pas confirmée sur le vrai matériel.</span></td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Vidéo à la voix</th>
+              <td>Filmer avec la caméra des lunettes, à la voix.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+
+            <tr class="statut-groupe"><th scope="rowgroup" colspan="3">IRIS en ligne (optionnel)</th></tr>
+            <tr>
+              <th scope="row">Réponses libres</th>
+              <td>Questions ouvertes, rédaction et actions en plusieurs étapes sur l’ordinateur, par le service
+                IRIS en ligne, avec votre accord.
+                <span class="small muted">Accès d’essai&nbsp;: il peut être lent, limité ou interrompu.</span></td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Recherche sur le web</th>
+              <td>Chercher une information à jour et la résumer.</td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Lecture de l’écran</th>
+              <td>Lire à voix haute le texte affiché, cliquer sur un libellé nommé.
+                <span class="small muted">Réservée à un palier d’abonnement pas encore ouvert.</span></td>
+              <td><span class="pill warn">En test</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Abonnement IRIS en ligne</th>
+              <td>Paliers payants (quotas et modèles plus capables). Aucun abonnement n’est vendu aujourd’hui.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Gouvernance d’équipe</th>
+              <td>Gestion de plusieurs postes et facturation groupée, pour les organisations.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+            <tr>
+              <th scope="row">IA locale</th>
+              <td>Répondre librement sans aucun service en ligne, tout sur l’ordinateur.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+
+            <tr class="statut-groupe"><th scope="rowgroup" colspan="3">Plateformes</th></tr>
+            <tr>
+              <th scope="row">Windows 10 et 11</th>
+              <td>64&nbsp;bits, version 0.1.0.</td>
+              <td><span class="pill ok">Disponible</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Téléphone</th>
+              <td>Application iPhone en préparation. Piloter IRIS depuis le téléphone, loin de l’ordinateur,
+                n’est pas possible aujourd’hui.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Mac</th>
+              <td>Aucune version publiée.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Linux</th>
+              <td>Aucune version publiée.</td>
+              <td><span class="pill">Prévu</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="small muted" style="margin-top:14px">
+        Sans lunettes, l’application IRIS n’est qu’un aperçu&nbsp;: elle est conçue et vendue pour être utilisée
+        avec les lunettes VELA. La version 0.2.0 est en développement et n’est pas publiée&nbsp;: rien de ce
+        qu’elle contient n’est compté «&nbsp;Disponible&nbsp;» ici.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================= livraison -->
   <section>
     <div class="wrap narrow">
-      <p class="section-label">Prévu <span class="pill">Ensuite</span></p>
-      <h2>Ce qui viendra.</h2>
-      <p class="small muted" style="margin-bottom:4px">Aucune de ces dates n’est arrêtée. Le trimestre
-        cible est marqué «&nbsp;à confirmer&nbsp;» tant qu’on n’en est pas certains&nbsp;: on préfère le
-        dire franchement plutôt que d’annoncer une date qu’on ne tiendrait pas.</p>
+      <p class="section-label">Les lunettes de l’Édition fondatrice</p>
+      <h2>La première série.</h2>
       <div class="detours">
         <div class="detour">
-          <h3>L’ouverture publique des paliers payants</h3>
-          <p>Pro, Premium et Entreprise accessibles à tous, une fois le service en ligne éprouvé.
-            <span class="pill">Prévu</span> — trimestre cible à confirmer</p>
+          <h3>Préparation et livraison</h3>
+          <p>Les paiements ne sont pas ouverts. Ils n’ouvriront qu’avec une date écrite juste avant le
+            bouton de paiement&nbsp;: «&nbsp;Livraison au plus tard le…&nbsp;». En attendant, la
+            <a href="index.html#liste-attente">liste d’attente</a> est gratuite et sans engagement. Ce qui se
+            passe si la livraison n’arrive pas à cette date&nbsp;: <a href="#engagement">l’engagement
+            Édition fondatrice</a>, en entier dans les <a href="conditions-vente.html#edition-fondatrice">conditions de vente</a>.</p>
         </div>
         <div class="detour">
-          <h3>Le mode 100&nbsp;% local et autonome</h3>
-          <p>Répondre et chercher sans dépendre d’un service en ligne&nbsp;: tout sur votre machine,
-            même coupé d’Internet. <span class="pill">Prévu</span> — trimestre cible à confirmer</p>
-        </div>
-        <div class="detour">
-          <h3>La gouvernance d’équipe (plan Entreprise)</h3>
-          <p>La gestion de plusieurs postes, la facturation groupée et le déploiement pour les
-            organisations. <span class="pill">Prévu</span> — trimestre cible à confirmer</p>
-        </div>
-        <div class="detour">
-          <h3>macOS et Linux</h3>
-          <p>Porter IRIS au-delà de Windows. Une bonne partie du code s’y prête déjà&nbsp;; il reste
-            l’empaquetage et les essais sur chaque système. <span class="pill">Prévu</span> —
-            trimestre cible à confirmer</p>
+          <h3>Premiers testeurs</h3>
+          <p>Des personnes extérieures vont essayer VELA et IRIS&nbsp;0.1.0 dans leur vraie vie. Leurs résultats
+            réels, échecs compris, seront publiés avec leur accord et pourront faire changer un statut de
+            ce tableau. <a href="contact.html?objet=Premier%20testeur">Proposer sa candidature</a>.</p>
         </div>
       </div>
     </div>
@@ -237,29 +422,42 @@
   <section class="band">
     <div class="wrap narrow">
       <p class="section-label">Journal des versions</p>
-      <h2>Ce que chaque version a apporté.</h2>
+      <h2>Ce que chaque version publiée a apporté.</h2>
 
       <div class="entry" style="margin-top:16px">
         <span class="idx">0.1.0</span>
         <div class="body">
           <div class="line">
-            <span class="what">Première version d’IRIS</span>
-            <span class="when">Date de publication à confirmer</span>
+            <span class="what">Première version publiée d’IRIS</span>
+            <span class="when">13 septembre 2026</span>
             <span class="pill ok">Disponible</span>
           </div>
-          <p class="small muted" style="margin:0">Le plan Gratuit, sur Windows 10 et 11&nbsp;: contrôle du PC
-            à la voix, mot d’éveil «&nbsp;Dis-moi Iris&nbsp;» et dialogue de suivi, routines et rappels,
-            mémoire locale, voix française locale (Piper), reconnaissance vocale locale (Vosk), et la
-            confidentialité de bout en bout sur l’appareil.</p>
+          <p class="small muted" style="margin:0">Windows 10 et 11 (64&nbsp;bits)&nbsp;: voix française sur
+            l’ordinateur, commandes courantes au chat écrit, routines et rappels, mémoire locale, registre
+            vérifiable, consentements, mode confidentiel et mode local. «&nbsp;Dis-moi Iris&nbsp;» y est écrit,
+            mais reste En test avec les lunettes. Le détail des statuts est dans le tableau ci-dessus.</p>
         </div>
       </div>
 
-      <p class="small muted" style="margin-top:18px">Les versions suivantes s’ajouteront ici, au fur et à
-        mesure. On n’inscrit une ligne que lorsqu’elle est vraiment publiée.</p>
+      <p class="small muted" style="margin-top:18px">On n’inscrit une ligne ici que lorsqu’une version est
+        vraiment publiée.</p>
+
+      <h3 id="historique" style="margin-top:34px">Historique du tableau</h3>
+      <p class="small muted">Chaque changement de statut ou de description est daté ici&nbsp;: vous pouvez
+        savoir ce que disait le tableau à une date donnée.</p>
+      <ul class="statuts-bref">
+        <li><span class="pill">14 sept. 2026</span><span>«&nbsp;Dis-moi Iris&nbsp;» et la voix passent de
+          Disponible à <b>En test</b>&nbsp;: une fois des lunettes associées, IRIS&nbsp;0.1.0 n’écoute que
+          lorsqu’elles sont connectées, et cette liaison est en test. La règle des lunettes est écrite pour le
+          chat écrit et les routines. Mode confidentiel&nbsp;: la description se limite à ce qu’il fait (couper
+          le micro, arrêter l’écoute). Ajout de la limite connue de la purge du registre, et du contact d’IRIS
+          avec le serveur de VELA au démarrage. Le registre publié est décrit comme une session scriptée.</span></li>
+        <li><span class="pill">13 sept. 2026</span><span>Première publication du tableau, pour IRIS&nbsp;0.1.0.</span></li>
+      </ul>
 
       <p class="actions" style="margin-top:22px">
-        <a class="btn primary" href="installer.html#telecharger">Installer IRIS</a>
-        <a class="btn" href="plans.html">Voir les plans</a>
+        <a class="btn primary" href="index.html#edition-fondatrice">L’Édition fondatrice</a>
+        <a class="btn" href="installer.html#telecharger">Installer IRIS</a>
         <a class="btn" href="contact.html">Une question&nbsp;?</a>
       </p>
     </div>
@@ -300,7 +498,7 @@
         <h3>En savoir plus</h3>
         <ul>
           <li><a href="a-propos.html">À propos</a></li>
-          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="feuille-de-route.html" aria-current="page">Ce qui marche aujourd’hui</a></li>
           <li><a href="presse.html">Presse</a></li>
           <li><a href="faq.html">Questions fréquentes</a></li>
           <li><a href="accessibilite.html">Accessibilité</a></li>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Confidentialité — la preuve, pas la promesse — VELA</title>
-<meta name="description" content="Le pilier transparence de VELA : chaque capture et chaque envoi s’inscrit dans un registre que vous vérifiez vous-même, d’un clic. Traitement local par défaut, témoin quand la caméra filme, consentement par type de donnée, mode confidentiel.">
+<meta name="description" content="Le pilier transparence de VELA : un registre chaîné que vous vérifiez vous-même, avec un registre produit par IRIS (session scriptée) publié et vérifiable dans le navigateur. En mode local, vos données restent sur votre ordinateur ; consentement par type de donnée, mode confidentiel.">
 
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
 
@@ -15,7 +15,7 @@
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="fr_CA">
 <meta property="og:title" content="Confidentialité — la preuve, pas la promesse — VELA">
-<meta property="og:description" content="Chaque capture et chaque envoi s’inscrit dans un registre que vous vérifiez vous-même, d’un clic. Traitement local par défaut, un témoin quand la caméra filme, consentement par type de donnée.">
+<meta property="og:description" content="Un registre produit par IRIS (session scriptée), publié et vérifiable dans votre navigateur. En mode local, vos données restent sur votre ordinateur ; en ligne, un accord par type de donnée, et ce qui n’y passe pas est écrit.">
 <meta property="og:url" content="https://velaglass.ca/confidentialite.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
@@ -23,7 +23,7 @@
 <meta property="og:image:alt" content="Lunettes VELA">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Confidentialité — la preuve, pas la promesse — VELA">
-<meta name="twitter:description" content="Un registre que vous vérifiez vous-même, d’un clic. Vos données restent sur votre ordinateur — rien dans un nuage par défaut.">
+<meta name="twitter:description" content="Un registre produit par IRIS (session scriptée), vérifiable dans votre navigateur. En mode local, vos données restent sur votre ordinateur.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 
 <!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
@@ -102,6 +102,7 @@
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
       <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
       <a href="accessibilite.html">Accessibilité</a>
       <a href="plans.html">Plans</a>
       <a href="confidentialite.html" aria-current="page">Confidentialité</a>
@@ -122,8 +123,11 @@
       <p class="eyebrow">Confidentialité · pilier transparence</p>
       <h1>Une confidentialité <em>qui se vérifie</em>.</h1>
       <p class="lead">
-        Promettre, c’est facile. IRIS fait l’inverse&nbsp;: vos données restent sur votre ordinateur, et un
-        registre d’activité vous laisse le prouver vous-même, d’un clic. La preuve, pas la promesse.
+        Promettre, c’est facile. En mode local, vos données restent sur votre ordinateur. Quand vous activez
+        une fonction en ligne, IRIS vous montre ce qui part avant l’envoi. Concrètement, dans IRIS&nbsp;0.1.0&nbsp;:
+        un accord par type de donnée, désactivé au départ, un aperçu avant de joindre une capture d’écran, et
+        l’envoi inscrit au registre. Ce registre, vous le vérifiez vous-même, et nous écrivons aussi ce qu’il
+        ne couvre pas. La preuve, pas la promesse.
       </p>
       <p class="actions">
         <a class="btn primary" href="#preuve">Voir la vérification</a>
@@ -144,7 +148,7 @@
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
           <h3>Local</h3>
-          <p>Vos conversations, vos photos, votre mémoire restent sur votre ordinateur. Rien ne part dans un nuage par défaut.</p>
+          <p>Mémoire, historique et registre sont enregistrés sur votre ordinateur. Vos demandes, images jointes, captures d’écran et souvenirs ne partent pas sans votre accord, type par type. Ce qui part quand même est <a href="#local">écrit plus bas</a>.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-quebec"/></svg></span>
@@ -154,12 +158,12 @@
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-access"/></svg></span>
           <h3>Accessibilité</h3>
-          <p>Piloter l’ordinateur à la voix, ou se faire lire l’écran à voix haute. Un moyen d’y arriver seul.</p>
+          <p>Ouvrir une application ou un site sans souris&nbsp;: au chat écrit aujourd’hui, à la voix avec les lunettes en test. La lecture de l’écran à voix haute est en test.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
           <h3>Transparence</h3>
-          <p>Un registre d’activité que vous vérifiez vous-même. Chaque capture, chaque envoi y est inscrit.</p>
+          <p>Un registre que vous vérifiez vous-même&nbsp;: consentements, modes, purges et envois de vos données en ligne y sont inscrits. Le contact d’IRIS avec le serveur de VELA au démarrage, lui, ne l’est pas.</p>
         </div>
       </div>
     </div>
@@ -171,23 +175,28 @@
       <div class="sec-head">
         <p class="section-label">La preuve, pas la promesse</p>
         <h2>Un registre que vous vérifiez vous-même.</h2>
-        <p>Chaque capture et chaque envoi s’inscrit dans un registre, sur votre appareil. Vous en contrôlez
-          l’intégrité d’un clic&nbsp;: si une ligne avait été modifiée ou retirée, la vérification échouerait.
-          Ce n’est pas une promesse de conception — c’est une preuve d’exécution.</p>
+        <p>IRIS inscrit dans un registre, sur votre ordinateur, les changements de consentement et de mode,
+          les purges, les envois vers le service en ligne et d’autres actions. Chaque entrée porte une
+          empreinte SHA-256 qui contient celle de l’entrée précédente&nbsp;: modifier ou retirer une ligne
+          après coup rompt la chaîne, et la vérification le montre — sauf si quelqu’un recalcule toutes les
+          empreintes suivantes. C’est pourquoi une empreinte finale publiée à part compte. Deux blocs
+          ci-dessous&nbsp;: une démo du principe, puis un registre produit par IRIS lors d’une session
+          scriptée.</p>
       </div>
 
-      <div class="proof" style="margin-bottom:20px">
+      <!-- Bloc 1 : démo du principe (entrées inventées, calcul simplifié) — assets/site.js -->
+      <div class="proof" id="demonstration" style="margin-bottom:20px">
         <div class="proof-main">
-          <div class="proof-label">Registre de transparence — exemple</div>
+          <div class="proof-label">Démo du principe</div>
           <div class="proof-state" data-state role="status" aria-live="polite">Chaîne SHA-256 — non vérifiée pour l’instant</div>
-          <p class="proof-hint">Chaque entrée contient l’empreinte de la précédente. Modifier ou retirer une
-            ligne casse la chaîne, et la vérification le montre.</p>
+          <p class="proof-hint">Une illustration à manipuler&nbsp;: chaque entrée contient l’empreinte de la
+            précédente. Réécrivez une ligne, puis vérifiez&nbsp;: la chaîne casse.</p>
         </div>
       </div>
 
       <div class="demo" data-chain-demo>
         <div class="demo-head">
-          <span class="grow small muted">Journée du 3 septembre 2026 · 5 entrées</span>
+          <span class="grow small muted">Démo · entrées inventées · 5 entrées</span>
           <button class="btn primary sm" type="button" data-verify>Vérifier la chaîne</button>
           <button class="btn sm" type="button" data-tamper>Réécrire l’entrée n°&nbsp;2</button>
           <button class="btn sm" type="button" data-reset hidden>Rétablir</button>
@@ -200,8 +209,42 @@
         <p class="demo-status" data-status>Chaîne SHA-256 — non vérifiée pour l’instant.</p>
       </div>
       <p class="demo-note">
-        Registre d’exemple, pour l’illustration&nbsp;: ces entrées ne proviennent d’aucun utilisateur. Le
-        calcul des empreintes, lui, est le vrai — SHA-256, exécuté dans cette page, sans rien envoyer nulle part.
+        Démo du principe&nbsp;: ces entrées sont inventées et ne proviennent d’aucun utilisateur. Le calcul
+        SHA-256 est réel et s’exécute dans cette page, mais il est simplifié (départ à zéros, champs
+        heure | action | détail)&nbsp;: ce n’est pas le format exact du registre d’IRIS. Le registre
+        au format d’IRIS, produit par IRIS lors d’une session scriptée, est juste en dessous.
+      </p>
+
+      <!-- Bloc 2 : preuve réelle — registre exporté par IRIS, vérifié dans le navigateur (assets/registre-preuve.js) -->
+      <div class="proof" style="margin:40px 0 20px">
+        <div class="proof-main">
+          <div class="proof-label">Preuve</div>
+          <div class="proof-state">Preuve&nbsp;: registre produit par IRIS lors d’une session d’essai du 13 septembre 2026</div>
+          <p class="proof-hint">Export JSON non retouché, produit par un script de test qui appelle l’API locale
+            d’IRIS (code en développement, module du registre identique à 0.1.0), et non par l’application
+            installée ni par une utilisation réelle&nbsp;; les 10 entrées portent la même seconde. Dossier de
+            données vierge, aucune donnée personnelle (consentement accordé puis retiré, un souvenir neutre
+            effacé, mode confidentiel et mode&nbsp;100&nbsp;% local activés puis désactivés, purge manuelle).
+            Votre navigateur télécharge le fichier et recalcule chaque empreinte SHA-256&nbsp;; rien n’est envoyé
+            nulle part. Un registre venant de l’application installée sera publié ici à son tour.</p>
+        </div>
+      </div>
+
+      <div class="demo" data-registre="assets/preuves/registre-session-essai-2026-09-13.json"
+           data-empreinte-finale="6dfc0287079f30400cf5a5a44530f7cd8500b24838ddaf62724ae7cca0bad25e">
+        <p class="small muted">Activez JavaScript pour vérifier ce registre ici, ou
+          <a href="assets/preuves/registre-session-essai-2026-09-13.json" download>téléchargez le fichier</a>
+          et vérifiez-le vous-même avec la formule ci-dessous.</p>
+      </div>
+      <p class="demo-note">
+        <a href="assets/preuves/registre-session-essai-2026-09-13.json" download>Télécharger le fichier (.json, 3,8&nbsp;ko)</a>.
+        Empreinte finale publiée&nbsp;: <span class="mono" style="word-break:break-all">6dfc0287079f30400cf5a5a44530f7cd8500b24838ddaf62724ae7cca0bad25e</span>.
+        Horodatages en temps universel&nbsp;: 14&nbsp;septembre 2026, 1&nbsp;h&nbsp;30&nbsp;UTC, soit le 13&nbsp;septembre
+        à 21&nbsp;h&nbsp;30, heure de l’Est. Formule&nbsp;: SHA-256 de «&nbsp;empreinte précédente | created_at |
+        event_type | data_type | agent | detail&nbsp;». Session jouée avec le code d’IRIS en développement, dont le
+        module du registre est identique à celui de la version publiée 0.1.0. Cette session ne comprend aucun
+        envoi en ligne. La vérification montre que le fichier est cohérent et identique à celui dont l’empreinte
+        est publiée ici&nbsp;; à elle seule, elle ne dit pas qui l’a produit.
       </p>
     </div>
   </section>
@@ -210,51 +253,63 @@
   <section id="local">
     <div class="wrap">
       <div class="sec-head">
-        <p class="section-label">Traitement local par défaut</p>
-        <h2>Rien ne part dans un nuage par défaut.</h2>
-        <p>IRIS tourne sur votre PC. Les lunettes s’y relient en Bluetooth. Tout se passe sur votre
-          ordinateur&nbsp;: c’est la contrepartie assumée du «&nbsp;tout reste chez vous&nbsp;».</p>
+        <p class="section-label">Votre ordinateur est le cerveau</p>
+        <h2>En mode local, vos données restent sur votre ordinateur.</h2>
+        <p>Quand vous activez une fonction en ligne, IRIS vous montre ce qui part avant l’envoi. Concrètement,
+          dans IRIS&nbsp;0.1.0&nbsp;: un accord par type de donnée, désactivé au départ, un aperçu avant de joindre
+          une capture d’écran, et l’envoi inscrit au registre. Contrepartie assumée&nbsp;: sans ordinateur allumé
+          à portée, les lunettes ne pilotent pas IRIS aujourd’hui.</p>
       </div>
 
-      <figure class="viz" style="margin-top:8px">
-        <svg class="arch-svg" viewBox="0 0 820 230" role="img"
-             aria-label="Schéma : les lunettes VELA se relient à votre ordinateur par Bluetooth. IRIS tourne sur cet ordinateur. Rien ne part vers Internet : vos données restent chez vous."
-             style="width:100%;height:auto;max-width:760px;display:block;margin-inline:auto">
-          <title>Comment circulent vos données</title>
-          <desc>Les lunettes se relient en Bluetooth à votre ordinateur, où tourne IRIS. Aucune donnée ne part vers Internet.</desc>
-          <rect x="16" y="70" width="196" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2"/>
-          <text x="114" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Lunettes</text>
-          <text x="114" y="136" text-anchor="middle" font-size="13" fill="currentColor" opacity="0.72">micro · son · caméra</text>
-          <text x="262" y="102" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">Bluetooth</text>
-          <line x1="220" y1="116" x2="300" y2="116" stroke="currentColor" stroke-width="2"/>
-          <polygon points="300,111 312,116 300,121" fill="currentColor"/>
-          <line x1="312" y1="134" x2="232" y2="134" stroke="currentColor" stroke-width="2"/>
-          <polygon points="232,129 220,134 232,139" fill="currentColor"/>
-          <rect x="312" y="56" width="216" height="122" rx="16" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="2.5"/>
-          <text x="420" y="102" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Votre PC</text>
-          <text x="420" y="128" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor">IRIS</text>
-          <text x="420" y="150" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.72">tout reste ici</text>
-          <line x1="528" y1="118" x2="610" y2="118" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6"/>
-          <circle cx="569" cy="118" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <line x1="559" y1="108" x2="579" y2="128" stroke="currentColor" stroke-width="2.5"/>
-          <text x="569" y="152" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Rien ne sort</text>
-          <rect x="626" y="70" width="178" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 6" opacity="0.55"/>
-          <text x="715" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" opacity="0.6">Internet</text>
-          <text x="715" y="134" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.55">aucune donnée</text>
-        </svg>
-        <figcaption>Lunettes → Bluetooth → votre PC (IRIS). Vos données restent chez vous&nbsp;: rien ne part vers Internet.</figcaption>
-      </figure>
+      <div class="callout warn" style="margin-bottom:26px">
+        <p><strong>Ce qui part, et ce qui ne passe pas par vos accords.</strong> Vos demandes, images jointes,
+          captures d’écran et souvenirs ne partent pas sans votre accord, type par type, et ces envois sont
+          inscrits au registre. Hors mode local, IRIS contacte aussi le serveur de VELA au démarrage, avec un
+          identifiant d’appareil (et votre courriel d’achat s’il est renseigné), pour ouvrir l’accès en ligne,
+          puis une fois par jour pour vérifier votre forfait si ce courriel est renseigné&nbsp;; ces contacts ne
+          sont pas inscrits au registre. Le mode 100&nbsp;% local les bloque.</p>
+      </div>
+
+      <div class="archi">
+        <div class="card">
+          <p class="archi-niveau">1 · Les lunettes</p>
+          <h3>VELA, votre interface</h3>
+          <p>Micro, haut-parleur à oreille ouverte, caméra et boutons. Reliées à l’ordinateur en Bluetooth.</p>
+          <span class="pill warn">Liaison avec IRIS&nbsp;: En test</span>
+        </div>
+        <span class="archi-fleche" aria-hidden="true">→</span>
+        <div class="card">
+          <p class="archi-niveau">2 · L’intelligence</p>
+          <h3>IRIS, sur votre ordinateur</h3>
+          <p>Souvenirs et conversations chiffrés sur votre ordinateur&nbsp;; registre et réglages enregistrés sur
+            votre ordinateur, en clair (le registre garde un extrait des demandes envoyées). La voix fonctionne
+            sans Internet&nbsp;; le mot d’activation aussi, en test avec les lunettes.</p>
+          <span class="pill ok">Disponible</span>
+        </div>
+        <span class="archi-fleche" aria-hidden="true">→</span>
+        <div class="card">
+          <p class="archi-niveau">3 · Optionnel</p>
+          <h3>IRIS en ligne</h3>
+          <p>Reçoit ce que vous avez autorisé, type par type, pour les réponses libres, par un serveur de VELA.
+            Bloqué en mode 100&nbsp;% local. Détail dans la <a href="politique-confidentialite.html">politique</a>.</p>
+          <span class="pill warn">En test</span>
+        </div>
+      </div>
 
       <div class="grid grid-2" style="margin-top:26px">
         <div class="card">
-          <h3>Rien ne remonte vers nous</h3>
-          <p>Pas de télémétrie, pas de statistiques d’usage, pas d’envoi automatique. Le service local d’IRIS
-            n’écoute que sur votre machine, derrière un jeton régénéré à chaque démarrage.</p>
+          <h3>Pas de télémétrie dans l’application</h3>
+          <p>L’application n’envoie ni télémétrie ni statistiques d’usage. Si vous utilisez IRIS en ligne,
+            notre serveur compte vos requêtes pour appliquer le quota, sans garder vos demandes (voir la
+            <a href="politique-confidentialite.html">politique</a>). Par défaut, le service local d’IRIS
+            n’écoute que sur votre machine, derrière un jeton régénéré à chaque démarrage&nbsp;; si vous activez
+            l’accès depuis le téléphone, il écoute aussi sur votre réseau local, derrière un mot de passe.</p>
         </div>
         <div class="card">
           <h3>Vous les emportez, ou les effacez</h3>
-          <p>Le registre s’exporte en JSON ou en CSV, et se vide quand vous le décidez. Vos souvenirs se
-            modifient un par un&nbsp;; une purge retire les données pour de bon.</p>
+          <p>Le registre s’exporte en JSON ou en CSV. Le registre se vide quand vous le décidez&nbsp;; ce vidage
+            n’est pas lui-même inscrit. La purge supprime définitivement les données arrivées au terme de la
+            durée choisie&nbsp;; les souvenirs s’effacent un par un.</p>
         </div>
       </div>
     </div>
@@ -266,26 +321,27 @@
       <div class="sec-head">
         <p class="section-label">Quatre garde-fous</p>
         <h2>Ce que vous gardez la main dessus.</h2>
-        <p>Aucun réglage caché. Chacun est visible, réversible, et inscrit au registre quand il change.</p>
+        <p>Chacun est visible dans l’application et réversible&nbsp;; les changements de consentement et de
+          mode sont inscrits au registre.</p>
       </div>
       <div class="grid grid-4">
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
           <h3>Le consentement, par type</h3>
-          <p>Texte, audio, images, captures, mémoire&nbsp;: rien ne sort sans votre accord pour ce type précis.
-            Chaque interrupteur se retire d’un geste.</p>
+          <p>Texte, audio, images, captures, mémoire&nbsp;: tous désactivés au départ. Aucun envoi en ligne de
+            ce type sans votre accord&nbsp;; chaque interrupteur se retire d’un geste.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
           <h3>L’indicateur de capture</h3>
-          <p>Dès que le micro, l’écran ou la caméra servent, un témoin s’affiche. Un témoin lumineux s’allume
-            aussi sur les lunettes quand la caméra filme&nbsp;: vous le savez toujours.</p>
+          <p>Quand le micro, l’écran ou une caméra de l’ordinateur servent, une pastille s’affiche à l’écran.
+            La monture des lunettes porte aussi un témoin lumineux lié à sa caméra.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
           <h3>Le mode confidentiel</h3>
-          <p>Un geste coupe le micro. Le mode 100&nbsp;% local s’appuie sur une voix française hors ligne
-            (Piper) et une reconnaissance vocale locale (Vosk)&nbsp;: plus rien ne part.</p>
+          <p>Un geste coupe le micro. Le mode 100&nbsp;% local, lui, bloque les envois vers les services en
+            ligne&nbsp;: IRIS garde sa voix et le mot d’activation, qui fonctionnent sur l’ordinateur.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
@@ -297,34 +353,17 @@
     </div>
   </section>
 
-  <!-- ============================================== l'indicateur de capture -->
+  <!-- ============================================== la caméra des lunettes -->
   <section id="temoin">
-    <div class="wrap">
+    <div class="wrap narrow">
       <div class="sec-head">
-        <p class="section-label">Le témoin de capture</p>
-        <h2>Un témoin s’allume dès que la caméra filme.</h2>
-        <p>Rien ne se fait en cachette. La demande, l’action, la trace&nbsp;: chaque étape est visible, et la
-          dernière s’inscrit au registre que vous pouvez vérifier.</p>
+        <p class="section-label">La caméra des lunettes</p>
+        <h2>La photo à la voix est en test.</h2>
+        <p>IRIS&nbsp;0.1.0 refuse encore de déclencher la caméra des lunettes, tant que la commande n’est pas
+          confirmée sur le vrai matériel <span class="pill warn">En test</span>. Ce qui est écrit dans le
+          logiciel pour ce jour-là&nbsp;: l’image est rapatriée sur votre ordinateur, et la prise de vue est
+          inscrite au registre. Nous ne l’annoncerons «&nbsp;Disponible&nbsp;» qu’une fois vérifiée.</p>
       </div>
-
-      <figure class="viz viz-voice">
-        <div class="vs">
-          <div class="vs-row vs-ask">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
-            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
-            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, prends une photo.&nbsp;»</span></p>
-          </div>
-          <div class="vs-row vs-do">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-camera"/></svg></span>
-            <p>Photo prise. Un témoin lumineux s’allume pendant la capture ; l’image se range sur votre ordinateur.</p>
-          </div>
-          <div class="vs-row vs-log">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
-            <p>Inscrit au registre&nbsp;: <span class="mono">capture — vérifiable</span>.</p>
-          </div>
-        </div>
-        <figcaption>La demande, l’action, la trace — sur votre appareil, vérifiable par vous.</figcaption>
-      </figure>
     </div>
   </section>
 
@@ -337,9 +376,11 @@
         «&nbsp;est-ce qu’elle écoute&nbsp;?&nbsp;» mais «&nbsp;où va ce qu’elle entend&nbsp;?&nbsp;».
       </p>
       <p>
-        La reconnaissance vocale peut tourner entièrement sur votre appareil, avec un modèle français local
-        (Vosk). Dans ce cas, aucun son ne part. Et pour qu’un service d’IA en ligne réponde, seul le texte de
-        votre demande est transmis — avec votre accord, et inscrit au registre à chaque fois.
+        IRIS repère «&nbsp;Dis-moi Iris&nbsp;» sur votre ordinateur, avec un modèle de reconnaissance français
+        installé avec l’application&nbsp;: ce son n’est pas envoyé en ligne. Pour qu’IRIS en ligne réponde, le
+        texte de votre demande est transmis — et, selon vos consentements, les images jointes, les captures ou
+        des extraits de mémoire. Ces envois demandent votre accord et IRIS les inscrit au registre. La session
+        d’essai publiée plus haut ne contient aucun envoi en ligne&nbsp;: elle ne démontre pas ce point.
       </p>
       <p class="small muted">
         Le détail, mécanisme par mécanisme, est dans la
@@ -387,7 +428,7 @@
         <h3>En savoir plus</h3>
         <ul>
           <li><a href="a-propos.html">À propos</a></li>
-          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="feuille-de-route.html">Ce qui marche aujourd’hui</a></li>
           <li><a href="presse.html">Presse</a></li>
           <li><a href="faq.html">Questions fréquentes</a></li>
           <li><a href="accessibilite.html">Accessibilité</a></li>
@@ -417,5 +458,6 @@
 </footer>
 
 <script src="assets/site.js?v=9"></script>
+<script src="assets/registre-preuve.js?v=2" defer></script>
 </body>
 </html>

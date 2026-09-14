@@ -1,0 +1,65 @@
+/* =========================================================================
+   Vision partagée (équipe interface-confiance, 2026-09-13).
+
+   Pendant un partage, trois choses doivent se lire d'un coup d'œil, même en
+   basse vision : le code (très grand, en deux groupes), le lien à copier, et
+   qui regarde. Le reste (cadence mesurée, données, expiration) vient dessous.
+   ========================================================================= */
+
+.vp-hero {
+  background: var(--card-feature); border-radius: var(--r-xl); padding: 20px 22px;
+  display: flex; flex-direction: column; gap: 8px; color: #fff;
+}
+.vp-hero h2 { font-size: 24px; line-height: 1.2; font-weight: 800; }
+.vp-hero p { color: rgba(255, 255, 255, 0.8); font-size: 15.5px; font-weight: 600; line-height: 1.45; }
+
+.vp-etiquette { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.vp-sources { display: flex; flex-direction: column; gap: 8px; }
+.vp-source {
+  display: flex; align-items: flex-start; gap: 14px; text-align: left; width: 100%;
+  background: var(--bg-2); border: 2px solid transparent; border-radius: var(--r-md); padding: 14px 16px; color: var(--text);
+}
+.vp-source .icone { width: 30px; flex: none; color: var(--teal-icon); padding-top: 2px; }
+.vp-source .icone svg { width: 28px; height: 28px; }
+.vp-source .corps { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vp-source .nom { font-size: 18px; font-weight: 800; }
+.vp-source .sous { font-size: 14px; font-weight: 500; color: var(--muted); line-height: 1.4; }
+.vp-source[aria-checked="true"] { border-color: var(--blue-2); background: var(--blue-soft); }
+
+.vp-actif { border: 1.5px solid rgba(255, 59, 48, 0.4); }
+.vp-direct { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; }
+
+.vp-code {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: #000; border-radius: var(--r-lg); padding: 16px 12px 18px; outline: none;
+}
+.vp-code:focus-visible { box-shadow: 0 0 0 3px var(--blue-2); }
+.vp-code .etiquette { font-size: 13px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #b8b8be; }
+.vp-code .valeur {
+  font-family: var(--mono); font-size: clamp(38px, 9vw, 60px); font-weight: 800; letter-spacing: 0.08em; color: #fff;
+  line-height: 1.1; word-break: break-all; text-align: center;
+}
+
+.vp-lien { display: flex; flex-direction: column; gap: 8px; }
+.vp-lien .etiquette { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.vp-lien .url {
+  font-family: var(--mono); font-size: 15px; color: var(--text); background: var(--bg-2); border-radius: 12px; padding: 10px 12px;
+  word-break: break-all; user-select: all;
+}
+
+.vp-mesures { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 8px; }
+.vp-mesures .mesure { background: var(--bg-2); border-radius: var(--r-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.vp-mesures .mesure.large { grid-column: 1 / -1; }
+.vp-mesures .chiffre { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.vp-mesures .chiffre small { font-size: 17px; color: var(--muted); font-weight: 700; }
+.vp-mesures .chiffre.petit { font-size: 18px; line-height: 1.3; }
+.vp-mesures .libelle { font-size: 13.5px; color: var(--muted); font-weight: 600; }
+
+.vp-details { display: flex; flex-wrap: wrap; gap: 4px 16px; font-weight: 600; font-size: 13.5px; }
+.vp-details .vp-alerte { color: var(--orange); }
+
+.vp-messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.vp-messages li { background: var(--bg-2); border-radius: var(--r-md); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.vp-messages .heure { font-size: 12.5px; color: var(--muted); font-weight: 700; }
+.vp-messages .texte { font-size: 19px; font-weight: 700; line-height: 1.35; word-break: break-word; }

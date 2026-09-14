@@ -17,7 +17,7 @@ const COQUILLE = [
 // Modules des fonctions : mis en cache s'ils existent. Un module absent ne doit pas faire échouer
 // l'installation de l'agent (d'où un ajout un par un, et non addAll).
 const MODULES = [
-  '/m/js/guidage.js', '/m/js/zones.js', '/m/js/partage.js',
+  '/m/js/lunettes.js', '/m/js/guidage.js', '/m/js/zones.js', '/m/js/partage.js',
   '/m/js/achats.js', '/m/js/invite.js', '/m/js/interprete.js',
 ];
 

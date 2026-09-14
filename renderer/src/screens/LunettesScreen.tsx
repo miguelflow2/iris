@@ -1,17 +1,25 @@
 import React, { useCallback, useRef, useState } from 'react'
 import { CarteReglage, Holo, Liste, Rangee, Toggle, TopBar } from '../components/ui'
-import { IcoBatterie } from '../components/icons'
+import { IcoBatterie, IcoLunettes } from '../components/icons'
 import { LunettesFace } from '../components/Lunettes'
 import { api, formatDate, formatTime } from '../lib/api'
 import { useStore } from '../lib/store'
 
 /* =========================================================================
-   Mes lunettes : l'appareil (nom, adresse, état, batterie), les réglages liés aux lunettes
-   (reconnexion automatique, verrou, mode démonstration), les actions et la dissociation.
-   Aucune donnée inventée : ni firmware ni numéro de série tant que le service ne les fournit pas.
+   Mes lunettes : l'appareil (nom, adresse, état, batterie), la présence telle que le service
+   la voit (ordinateur ou téléphone appairé), la reconnexion automatique, le bouton des
+   lunettes, les actions et la dissociation.
+   Aucune donnée inventée : ni micrologiciel ni numéro de série tant que le service ne les fournit pas.
+
+   Lunettes d'abord (décision de Miguel du 2026-09-13) : les anciens interrupteurs du verrou des
+   lunettes ont été RETIRÉS de cet écran, et les réglages correspondants sont refusés par le service
+   (403). Leur seul accès est propriétaire et caché (voir AProposScreen) ; aucun écran client ne doit
+   le montrer ni le mentionner (vérifié par backend/tests/test_wake.py).
    ========================================================================= */
 
-const PAS_DISPONIBLE = 'Pas encore disponible dans cette version.'
+// Ce que le fabricant ne documente pas ne se promet pas : ni « à venir », ni bouton qui fait semblant.
+const NON_DOCUMENTE = 'Non pris en charge : le fabricant des lunettes ne documente pas cette commande, IRIS ne peut donc pas la lancer.'
+const SANS_CAPTEUR = 'Non pris en charge : les lunettes n’exposent à IRIS aucun capteur de port.'
 
 function messageErreur(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -19,7 +27,7 @@ function messageErreur(err: unknown): string {
 
 export function LunettesScreen({ params }: { params?: Record<string, any> }): JSX.Element {
   void params
-  const { nav, settings, updateSettings, lunettes, rafraichirLunettes, toast } = useStore()
+  const { nav, lunettes, rafraichirLunettes, toast, presence } = useStore()
   const [occupe, setOccupe] = useState<'batterie' | 'reconnexion' | 'deconnexion' | 'dissociation' | null>(null)
   const monte = useRef(true)
   React.useEffect(() => {
@@ -116,16 +124,6 @@ export function LunettesScreen({ params }: { params?: Record<string, any> }): JS
       .then(() => rafraichirLunettes())
       .catch((err: unknown) => toast(messageErreur(err), 'error'))
   }
-  const changerVerrou = (v: boolean): void => {
-    updateSettings({ require_glasses: v })
-      .then(() => toast(v ? 'Lunettes VELA requises pour parler à IRIS.' : 'Verrou des lunettes désactivé.', 'info'))
-      .catch((err: unknown) => toast(messageErreur(err), 'error'))
-  }
-  const changerDemo = (v: boolean): void => {
-    updateSettings({ demo_sans_lunettes: v })
-      .then(() => toast(v ? 'Mode démonstration activé : IRIS fonctionne sans les lunettes.' : 'Mode démonstration désactivé.', v ? 'success' : 'info'))
-      .catch((err: unknown) => toast(messageErreur(err), 'error'))
-  }
 
   return (
     <div className="ecran">
@@ -153,6 +151,13 @@ export function LunettesScreen({ params }: { params?: Record<string, any> }): JS
                 </span>
               ) : null}
             </div>
+            {!connected && presence?.presentes && presence.source === 'telephone' ? (
+              <div style={{ marginTop: 10 }}>
+                <span className="pill ok" style={{ whiteSpace: 'normal', lineHeight: 1.35 }}>
+                  Signalées par votre téléphone{presence.attestation_age_s !== null ? ` il y a ${Math.round(presence.attestation_age_s)} s` : ''}
+                </span>
+              </div>
+            ) : null}
             {lunettes?.error ? (
               <div style={{ marginTop: 10 }}>
                 <span className="pill err">{String(lunettes.error)}</span>
@@ -169,48 +174,28 @@ export function LunettesScreen({ params }: { params?: Record<string, any> }): JS
           disabled={!remembered?.address}
           onChange={changerAutoConnect}
         />
-        <CarteReglage
-          titre="Exiger les lunettes"
-          desc="La voix ne fonctionne qu’avec les lunettes VELA connectées ; le chat écrit reste disponible."
-          on={settings?.require_glasses !== false}
-          onChange={changerVerrou}
-        />
-        <CarteReglage
-          titre="Mode démonstration"
-          desc="Pour une présentation : si les lunettes se déconnectent, IRIS continue de répondre à la voix et au chat écrit. À laisser désactivé le reste du temps."
-          on={Boolean(settings?.demo_sans_lunettes)}
-          onChange={changerDemo}
-        />
-        {/* Maquette : « Détection d'utilisation ». Aucun support côté service (pas de capteur de port
-            exposé) : même carte, interrupteur désactivé, libellé « À venir », toast au clic sur la carte.
+        {/* Maquette : « Détection d'utilisation ». Aucun capteur de port n'est exposé par les lunettes :
+            même carte, interrupteur désactivé, et la raison écrite sur la carte au lieu d'un « À venir ».
             Markup identique à CarteReglage (qui n'accepte qu'un titre texte). */}
-        <div
-          className="carte reglage"
-          role="button"
-          tabIndex={0}
-          aria-label="Détection d’utilisation : à venir"
-          style={{ cursor: 'pointer' }}
-          onClick={() => toast(PAS_DISPONIBLE, 'info')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              toast(PAS_DISPONIBLE, 'info')
-            }
-          }}
-        >
+        <div className="carte reglage">
           <div className="corps">
             <h3>
-              Détection d’utilisation <span className="pill" style={{ verticalAlign: 'middle', marginLeft: 6 }}>À venir</span>
+              Détection d’utilisation <span className="pill" style={{ verticalAlign: 'middle', marginLeft: 6 }}>Non disponible</span>
             </h3>
-            <div className="desc">Lorsque vous retirez vos lunettes, la fonction est suspendue.</div>
+            <div className="desc">Suspendre IRIS quand vous retirez vos lunettes. {SANS_CAPTEUR}</div>
           </div>
-          {/* Un bouton désactivé n'émet pas de clic : on laisse le clic traverser jusqu'à la carte. */}
-          <span style={{ pointerEvents: 'none', display: 'inline-flex', flex: 'none' }} aria-hidden="true">
-            <Toggle on={false} disabled onChange={() => toast(PAS_DISPONIBLE, 'info')} titre="Détection d’utilisation" />
+          <span style={{ display: 'inline-flex', flex: 'none' }}>
+            <Toggle on={false} disabled onChange={() => undefined} titre="Détection d’utilisation : non disponible" />
           </span>
         </div>
 
         <Liste>
+          <Rangee
+            icone={<IcoLunettes />}
+            titre="Bouton des lunettes"
+            sous="Apprendre un bouton pour demander une description, si les lunettes l’envoient"
+            onClick={() => nav.ouvrir('bouton-lunettes')}
+          />
           <Rangee titre="Paramètres d’enregistrement audio" onClick={() => nav.ouvrir('lunettes-audio')} />
           <Rangee
             titre="Mesurer la batterie"
@@ -229,9 +214,9 @@ export function LunettesScreen({ params }: { params?: Record<string, any> }): JS
         </Liste>
 
         <Liste>
-          <Rangee titre="Mise à jour du firmware" valeur="À venir" onClick={() => toast(PAS_DISPONIBLE, 'info')} />
-          <Rangee titre="Redémarrer" valeur="À venir" onClick={() => toast(PAS_DISPONIBLE, 'info')} />
-          <Rangee titre="Restaurer les paramètres d’usine" valeur="À venir" onClick={() => toast(PAS_DISPONIBLE, 'info')} />
+          <Rangee titre="Mise à jour du micrologiciel" valeur="Non pris en charge" onClick={() => toast(NON_DOCUMENTE, 'info')} />
+          <Rangee titre="Redémarrer les lunettes" valeur="Non pris en charge" onClick={() => toast(NON_DOCUMENTE, 'info')} />
+          <Rangee titre="Restaurer les paramètres d’usine" valeur="Non pris en charge" onClick={() => toast(NON_DOCUMENTE, 'info')} />
           <Rangee titre="À propos" onClick={() => nav.ouvrir('a-propos')} />
         </Liste>
 

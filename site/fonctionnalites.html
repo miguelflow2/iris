@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ce qu’IRIS fait — piloter l’ordinateur à la voix — VELA</title>
-<meta name="description" content="Ce qu’IRIS sait faire, honnêtement, avec le palier requis : le mot d’éveil « Dis-moi Iris », le contrôle du PC à la voix, les routines et rappels, une mémoire locale, la lecture de l’écran, la caméra. IRIS agit sur commande, jamais d’elle-même — un registre trace tout.">
+<meta name="description" content="Ce qu’IRIS fait aujourd’hui, avec son statut : voix française et commandes courantes au chat écrit sur l’ordinateur, routines, rappels et mémoire locale sont Disponible ; « Dis-moi Iris » avec les lunettes, IRIS en ligne, lecture de l’écran et photo à la voix sont En test. IRIS agit quand vous le demandez.">
 
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
 
@@ -15,7 +15,7 @@
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="fr_CA">
 <meta property="og:title" content="Ce qu’IRIS fait — piloter l’ordinateur à la voix — VELA">
-<meta property="og:description" content="Ce qu’IRIS sait faire, honnêtement, avec le palier requis : mot d’éveil « Dis-moi Iris », contrôle du PC à la voix, routines, mémoire locale, lecture de l’écran, caméra. IRIS agit sur commande ; un registre trace tout.">
+<meta property="og:description" content="Ce qu’IRIS fait aujourd’hui, fonction par fonction : Disponible, En test ou Prévu. Votre ordinateur est le cerveau, VELA est votre interface.">
 <meta property="og:url" content="https://velaglass.ca/fonctionnalites.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
@@ -23,7 +23,7 @@
 <meta property="og:image:alt" content="Lunettes VELA">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Ce qu’IRIS fait — piloter l’ordinateur à la voix — VELA">
-<meta name="twitter:description" content="Ce qu’IRIS sait faire, honnêtement, avec le palier requis. IRIS agit sur commande, jamais d’elle-même ; un registre trace tout.">
+<meta name="twitter:description" content="Ce qu’IRIS fait aujourd’hui, avec son statut : Disponible, En test ou Prévu. IRIS agit quand vous le demandez.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 
 <!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
@@ -102,6 +102,7 @@
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
       <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html" aria-current="page">Ce qu’IRIS fait</a>
+      <a href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
       <a href="accessibilite.html">Accessibilité</a>
       <a href="plans.html">Plans</a>
       <a href="confidentialite.html">Confidentialité</a>
@@ -122,17 +123,20 @@
       <p class="eyebrow">Ce qu’IRIS fait</p>
       <h1>Piloter l’ordinateur à la voix.</h1>
       <p class="lead">
-        IRIS agit sur votre ordinateur, à la voix, <strong>seulement quand vous le demandez</strong>.
-        Voici ce qu’elle sait faire — et, plus bas, ce qui n’existe pas encore.
+        IRIS agit sur votre ordinateur Windows <strong>quand vous le demandez</strong>&nbsp;: au chat écrit
+        aujourd’hui, à la voix avec les lunettes, en test.
+        Chaque capacité ci-dessous porte son statut&nbsp;: <span class="pill ok">Disponible</span>,
+        <span class="pill warn">En test</span> ou <span class="pill">Prévu</span> — les mêmes que sur la
+        page <a href="feuille-de-route.html">Ce qui marche aujourd’hui</a>.
       </p>
       <p class="actions">
-        <a class="btn primary" href="plans.html">Comparer les plans</a>
-        <a class="btn" href="confidentialite.html">Comment vous vérifiez</a>
+        <a class="btn primary" href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
+        <a class="btn" href="confidentialite.html#preuve">Comment vous vérifiez</a>
       </p>
     </div>
   </section>
 
-  <!-- ================================================= vidéo porté (lifestyle) -->
+  <!-- ================================================= vidéo porté (présentation) -->
   <section class="band">
     <div class="wrap narrow">
       <figure class="viz" style="margin-block:0">
@@ -140,22 +144,25 @@
           <video src="assets/videos/vela-rue.mp4"
                  poster="assets/photos/lunettes-trois-quarts.jpg"
                  muted loop playsinline autoplay preload="metadata"
-                 aria-label="Une personne porte les lunettes VELA dans la rue et parle à IRIS."
+                 aria-label="Vidéo de présentation : une personne porte les lunettes VELA dans la rue."
                  style="width:100%;border-radius:var(--r);display:block"></video>
         </div>
-        <figcaption>Dehors comme à la maison&nbsp;: tout à la voix.</figcaption>
+        <figcaption>Vidéo de présentation des lunettes, pas une démonstration d’IRIS. Aujourd’hui, les
+          lunettes pilotent IRIS seulement avec l’ordinateur allumé à portée.</figcaption>
       </figure>
     </div>
   </section>
 
-  <!-- ================================================= sur commande + registre -->
+  <!-- ================================================= sur commande -->
   <section id="sur-commande">
     <div class="wrap">
       <div class="sec-head center">
         <p class="section-label">La règle, d’abord</p>
-        <h2>Sur commande. Jamais d’elle-même.</h2>
-        <p>IRIS n’agit qu’après votre demande. Chaque action passe au registre local, que vous
-          ouvrez d’un clic — et que vous pouvez exporter.</p>
+        <h2>Sur votre demande.</h2>
+        <p>IRIS agit sur l’ordinateur quand vous le lui demandez. Les routines et les rappels que vous
+          avez créés se déclenchent à leur phrase ou à leur heure. Le registre, sur votre ordinateur,
+          inscrit notamment les changements de consentement et de mode, les purges et les envois vers
+          IRIS en ligne.</p>
       </div>
 
       <figure class="viz viz-voice">
@@ -163,22 +170,25 @@
           <div class="vs-row vs-ask">
             <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
             <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
-            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, ouvre mes courriels.&nbsp;»</span></p>
+            <p class="vs-said"><span>«&nbsp;Dis-moi Iris, ouvre Chrome.&nbsp;»</span></p>
           </div>
           <div class="vs-row vs-do">
             <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-fais"/></svg></span>
-            <p>IRIS ouvre l’application — parce que vous l’avez demandé, et pour rien d’autre.</p>
+            <p>IRIS ouvre l’application installée, parce que vous l’avez demandé.</p>
           </div>
           <div class="vs-row vs-log">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
-            <p>Inscrit au registre&nbsp;: <span class="mono">action — vérifiable</span>.</p>
+            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-local"/></svg></span>
+            <p>Commande courante, traitée sur l’ordinateur, sans passer par IRIS en ligne.
+              Tapée au chat écrit&nbsp;: <span class="pill ok">Disponible</span>. Dite à la voix&nbsp;: <span class="pill warn">En test</span></p>
           </div>
         </div>
-        <figcaption>La demande, l’action, la trace — sur votre appareil.</figcaption>
+        <figcaption>Un exemple de commande courante. À la voix, elle passe par les lunettes&nbsp;: une fois vos
+          lunettes associées, IRIS&nbsp;0.1.0 ne vous écoute que lorsqu’elles sont connectées, et cette liaison est
+          en test.</figcaption>
       </figure>
 
       <p class="actions" style="justify-content:center">
-        <a class="btn" href="confidentialite.html">Comment la vérification fonctionne</a>
+        <a class="btn" href="confidentialite.html#preuve">Voir le registre publié</a>
       </p>
     </div>
   </section>
@@ -188,61 +198,58 @@
     <div class="wrap">
       <div class="sec-head center">
         <p class="section-label">Comment ça marche</p>
-        <h2>Tout se passe sur votre PC.</h2>
-        <p><strong>IRIS tourne sur votre PC Windows — il doit être allumé pour que les lunettes
-          fonctionnent.</strong> Les lunettes parlent à l’ordinateur par Bluetooth&nbsp;; rien ne part
-          vers Internet.</p>
+        <h2>Votre ordinateur est le cerveau. <em>VELA</em> est votre interface.</h2>
+        <p><strong>Sans ordinateur allumé à portée, les lunettes ne pilotent pas IRIS aujourd’hui.</strong>
+          Trois niveaux, chacun à sa place&nbsp;; le troisième est optionnel.</p>
       </div>
 
-      <figure class="viz" style="margin-top:8px">
-        <svg class="arch-svg" viewBox="0 0 820 230" role="img"
-             aria-label="Schéma : les lunettes VELA se relient à votre ordinateur par Bluetooth. IRIS tourne sur cet ordinateur. Rien ne part vers Internet : vos données restent chez vous."
-             style="width:100%;height:auto;max-width:760px;display:block;margin-inline:auto">
-          <title>Comment circulent vos données</title>
-          <desc>Les lunettes se relient en Bluetooth à votre ordinateur, où tourne IRIS. Aucune donnée ne part vers Internet.</desc>
+      <div class="archi">
+        <div class="card">
+          <p class="archi-niveau">1 · Les lunettes</p>
+          <h3>VELA, votre interface</h3>
+          <p>Micro, haut-parleur à oreille ouverte, caméra et boutons. Reliées à l’ordinateur en Bluetooth.</p>
+          <span class="pill warn">Liaison avec IRIS&nbsp;: En test</span>
+        </div>
+        <span class="archi-fleche" aria-hidden="true">→</span>
+        <div class="card">
+          <p class="archi-niveau">2 · L’intelligence</p>
+          <h3>IRIS, sur votre ordinateur</h3>
+          <p>La voix française et les commandes courantes fonctionnent sur l’ordinateur, sans Internet&nbsp;; le
+            mot d’activation aussi, en test avec les lunettes. Mémoire et registre y sont enregistrés.</p>
+          <span class="pill ok">Disponible</span>
+        </div>
+        <span class="archi-fleche" aria-hidden="true">→</span>
+        <div class="card">
+          <p class="archi-niveau">3 · Optionnel</p>
+          <h3>IRIS en ligne</h3>
+          <p>Pour les réponses libres et les demandes en plusieurs étapes. Chaque type de donnée envoyé
+            demande votre accord&nbsp;; le mode 100&nbsp;% local le bloque.</p>
+          <span class="pill warn">En test</span>
+        </div>
+      </div>
 
-          <!-- Boîte 1 : les lunettes -->
-          <rect x="16" y="70" width="196" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2"/>
-          <text x="114" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Lunettes</text>
-          <text x="114" y="136" text-anchor="middle" font-size="13" fill="currentColor" opacity="0.72">micro · son · caméra</text>
-
-          <!-- Flèche 1 : Bluetooth, dans les deux sens -->
-          <text x="262" y="102" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">Bluetooth</text>
-          <line x1="220" y1="116" x2="300" y2="116" stroke="currentColor" stroke-width="2"/>
-          <polygon points="300,111 312,116 300,121" fill="currentColor"/>
-          <line x1="312" y1="134" x2="232" y2="134" stroke="currentColor" stroke-width="2"/>
-          <polygon points="232,129 220,134 232,139" fill="currentColor"/>
-
-          <!-- Boîte 2 : votre PC (IRIS) -->
-          <rect x="312" y="56" width="216" height="122" rx="16" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="2.5"/>
-          <text x="420" y="102" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Votre PC</text>
-          <text x="420" y="128" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor">IRIS</text>
-          <text x="420" y="150" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.72">tout reste ici</text>
-
-          <!-- Flèche 2 : barrée, rien ne sort -->
-          <line x1="528" y1="118" x2="610" y2="118" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6"/>
-          <circle cx="569" cy="118" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <line x1="559" y1="108" x2="579" y2="128" stroke="currentColor" stroke-width="2.5"/>
-          <text x="569" y="152" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Rien ne sort</text>
-
-          <!-- Boîte 3 : Internet / le nuage -->
-          <rect x="626" y="70" width="178" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 6" opacity="0.55"/>
-          <text x="715" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" opacity="0.6">Internet</text>
-          <text x="715" y="134" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.55">aucune donnée</text>
-        </svg>
-        <figcaption>Lunettes → Bluetooth → votre PC (IRIS). Rien ne part vers Internet.</figcaption>
-      </figure>
+      <div class="callout" style="max-width:760px;margin:26px auto 0">
+        <p><strong>En mode local, vos données restent sur votre ordinateur. Quand vous activez une fonction en
+          ligne, IRIS vous montre ce qui part avant l’envoi.</strong> Concrètement, dans IRIS&nbsp;0.1.0&nbsp;:
+          un accord par type de donnée (texte de vos demandes, images, captures d’écran, extraits de mémoire,
+          audio), désactivé au départ&nbsp;; un aperçu avant de joindre une capture d’écran&nbsp;; et ces envois
+          inscrits au registre. Hors mode local, IRIS contacte aussi le serveur de VELA au démarrage, avec un
+          identifiant d’appareil (et votre courriel d’achat s’il est renseigné), pour ouvrir l’accès en
+          ligne&nbsp;; ce contact n’est pas inscrit au registre, et le mode 100&nbsp;% local le bloque.</p>
+      </div>
     </div>
   </section>
 
-  <!-- ================================================= capacités, par groupe -->
+  <!-- ================================================= capacités, avec statut -->
   <section id="capacites">
     <div class="wrap">
       <div class="sec-head center">
         <p class="section-label">Au quotidien</p>
         <h2>Vous parlez. Elle s’exécute.</h2>
-        <p>Le gros tourne sur votre appareil, sans connexion. Les réponses libres du service d’IA en
-          ligne arrivent <span class="pill warn">Bientôt</span>.</p>
+        <p>Ce qui est traité sur l’ordinateur est <span class="pill ok">Disponible</span>. Ce qui passe par
+          IRIS en ligne ou par les lunettes, dont la voix, est encore <span class="pill warn">En test</span>.
+          Règle d’IRIS&nbsp;0.1.0&nbsp;: une fois vos lunettes VELA associées, IRIS ne répond, à la voix comme par
+          écrit, que lorsqu’elles sont connectées.</p>
       </div>
 
       <div class="galerie" style="margin-bottom:26px">
@@ -254,7 +261,7 @@
                  width="900" height="900" loading="lazy" decoding="async"
                  alt="Les lunettes VELA vues de trois quarts, branches ouvertes, sur fond clair.">
           </div>
-          <figcaption>Vous dites, IRIS agit sur le PC.</figcaption>
+          <figcaption>Vous dites, IRIS agit sur l’ordinateur.</figcaption>
         </figure>
         <figure>
           <div class="pv-plaque">
@@ -272,65 +279,76 @@
 
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
-          <h3>Écoute et dialogue</h3>
-          <p>«&nbsp;Dis-moi Iris&nbsp;», et le suivi s’enchaîne sans répéter le mot d’éveil.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <h3>«&nbsp;Dis-moi Iris&nbsp;» et dialogue</h3>
+          <p>Le mot d’activation est reconnu sur l’ordinateur, sans Internet, mais une fois vos lunettes VELA
+            associées, IRIS&nbsp;0.1.0 ne vous écoute que lorsqu’elles sont connectées, et cette liaison est en
+            test. Après une réponse, vous enchaînez sans le répéter. L’audio ne part en ligne que si vous
+            activez la reconnaissance en ligne, désactivée au départ.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
 
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-son"/></svg></span>
-          <h3>Voix et reconnaissance, locales</h3>
-          <p>Elle parle et vous écoute hors ligne&nbsp;: aucune donnée vocale ne part ailleurs.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <h3>Voix française d’IRIS</h3>
+          <p>Produite sur l’ordinateur, sans Internet&nbsp;: elle annonce vos rappels et s’essaie dans les
+            réglages. Les réponses dites à voix haute après «&nbsp;Dis-moi Iris&nbsp;» sont en test, avec les
+            lunettes.</p>
+          <span class="pill ok plan-note">Disponible</span>
         </div>
 
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-fais"/></svg></span>
-          <h3>Agir sur l’ordinateur</h3>
-          <p>Ouvrir une application ou un site, chercher un fichier, taper&nbsp;: elle pilote le PC à la voix.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <h3>Commandes courantes, au chat écrit</h3>
+          <p>Ouvrir une application installée ou un site courant, lancer une vidéo, demander l’heure ou la
+            date&nbsp;: traité sur l’ordinateur. À la voix&nbsp;: en test, comme «&nbsp;Dis-moi Iris&nbsp;».</p>
+          <span class="pill ok plan-note">Disponible</span>
         </div>
 
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
           <h3>Routines et rappels</h3>
-          <p>Une phrase rejoue une suite d’actions&nbsp;; le rappel est dit à voix haute à l’heure venue.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <p>Créés dans l’application&nbsp;: une phrase rejoue une routine, le rappel est dit à l’heure prévue.
+            Les créer par une phrase libre passe par IRIS en ligne, en test.</p>
+          <span class="pill ok plan-note">Disponible</span>
         </div>
 
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
           <h3>Une mémoire locale</h3>
-          <p>Vos préférences sont retenues, puis rappelées quand c’est utile — gardées sur l’appareil.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <p>Des souvenirs chiffrés sur votre ordinateur, que vous consultez, ajoutez et effacez. Leur usage
+            dans les réponses en ligne, avec votre accord, est en test.</p>
+          <span class="pill ok plan-note">Disponible</span>
         </div>
 
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg></span>
-          <h3>Caméra&nbsp;: la photo à la voix</h3>
-          <p>«&nbsp;Prends une photo&nbsp;»&nbsp;: un témoin s’allume, l’image se range sur votre PC.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
+          <h3>Demandes en plusieurs étapes</h3>
+          <p>Chercher un fichier, rédiger, taper dans une application, répondre librement&nbsp;: par IRIS en
+            ligne, en accès d’essai qui peut être lent, limité ou interrompu.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
 
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
           <h3>Lire et piloter l’écran</h3>
-          <p>Elle lit le texte affiché à voix haute et clique sur un libellé que vous nommez.</p>
-          <span class="pill plan-note">À partir du plan Premium</span>
+          <p>Lire à voix haute le texte affiché, cliquer sur un libellé nommé. Réservé à un palier
+            d’IRIS en ligne pas encore ouvert.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
 
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
-          <h3>Navigation web assistée</h3>
-          <p>Chercher et suivre une page à la voix, avec le service d’IA en ligne.</p>
-          <span class="pill warn plan-note">À partir du plan Pro · bientôt</span>
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
+          <h3>Recherche sur le web</h3>
+          <p>Chercher une information à jour et la résumer, par IRIS en ligne.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
 
         <div class="card feat">
-          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-quebec"/></svg></span>
-          <h3>En français, ici</h3>
-          <p>Pensée et écrite en français, au Canada. Une vraie personne répond à vos courriels.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg></span>
+          <h3>Photo à la voix</h3>
+          <p>«&nbsp;Prends une photo&nbsp;» avec la caméra des lunettes. IRIS&nbsp;0.1.0 refuse encore de la
+            déclencher, tant que la commande n’est pas confirmée sur le vrai matériel.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
 
       </div>
@@ -340,16 +358,18 @@
           <video src="assets/videos/vela-camera-led.mp4"
                  poster="assets/photos/lunettes-fond-sombre.jpg"
                  muted loop playsinline autoplay preload="metadata"
-                 aria-label="Gros plan des lunettes VELA : le témoin lumineux s’allume quand la caméra filme."
+                 aria-label="Vidéo de présentation : gros plan des lunettes VELA, témoin lumineux près de la caméra."
                  style="width:100%;border-radius:var(--r);display:block"></video>
         </div>
-        <figcaption>Le témoin s’allume dès que la caméra filme — rien en cachette.</figcaption>
+        <figcaption>Vidéo de présentation de la monture et de son témoin lumineux. Ce n’est pas une
+          démonstration d’IRIS&nbsp;: la photo à la voix est En test.</figcaption>
       </figure>
 
       <div class="callout" style="margin-top:26px">
-        <p><strong>Ce qui ouvre un palier, c’est le volume et les modèles en ligne</strong> — pas la
-          confidentialité. Mémoire locale, consentement par type de donnée, indicateur de capture,
-          mode confidentiel et registre vérifiable sont là <strong>dès le plan gratuit</strong>.</p>
+        <p><strong>La confidentialité n’est pas un palier payant.</strong> Mémoire locale, consentement par
+          type de donnée, indicateur de capture, mode confidentiel, mode 100&nbsp;% local et registre
+          vérifiable sont dans IRIS&nbsp;0.1.0, sans abonnement. Les paliers payants d’IRIS en ligne sont
+          <span class="pill">Prévu</span>&nbsp;: <a href="plans.html">voir les plans</a>.</p>
       </div>
     </div>
   </section>
@@ -358,29 +378,32 @@
   <section class="band" id="accessibilite">
     <div class="wrap">
       <div class="sec-head center">
-        <p class="section-label">Pour tout le monde</p>
-        <h2>La voix comme moyen, jamais comme obstacle.</h2>
-        <p>Piloter l’ordinateur sans le regarder, ou se faire lire l’écran à voix haute.</p>
+        <p class="section-label">Accessibilité</p>
+        <h2>La voix comme moyen, pas comme obstacle.</h2>
+        <p>Ouvrir sans la souris&nbsp;: au chat écrit aujourd’hui, à la voix en test. Se faire lire
+          l’écran&nbsp;: en test.</p>
       </div>
 
       <div class="grid grid-3">
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-access"/></svg></span>
-          <h3>Tout à la voix</h3>
-          <p>Ouvrir, écrire, lancer&nbsp;: mener sa journée sans toucher la souris.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <h3>Ouvrir à la voix</h3>
+          <p>Une application installée ou un site courant, sans toucher la souris. La voix passe par les
+            lunettes, dont la liaison avec IRIS est en test.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
           <h3>L’écran, lu à voix haute</h3>
-          <p>Elle lit le texte affiché et clique sur un libellé nommé, pour piloter sans voir l’écran.</p>
-          <span class="pill plan-note">À partir du plan Premium</span>
+          <p>Lire le texte affiché et cliquer sur un libellé nommé, pour piloter sans voir l’écran.</p>
+          <span class="pill warn plan-note">En test</span>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
           <h3>Et à l’écrit aussi</h3>
-          <p>Tout ce qui se dit se tape&nbsp;: un fil reste consultable si parler ne convient pas.</p>
-          <span class="pill ok plan-note">Dès le plan Gratuit</span>
+          <p>Les commandes courantes se tapent aussi dans le chat écrit, et le fil reste consultable si parler
+            ne convient pas.</p>
+          <span class="pill ok plan-note">Disponible</span>
         </div>
       </div>
 
@@ -390,21 +413,26 @@
     </div>
   </section>
 
-  <!-- ================================================= ce qui n'existe pas encore -->
+  <!-- ================================================= ce qui n'est pas encore là -->
   <section id="a-venir">
     <div class="wrap narrow">
       <p class="section-label">Honnêteté</p>
-      <h2>Ce qui n’existe pas encore.</h2>
-      <p class="lead">On préfère le dire. Rien de tout ceci n’est compté dans ce que vous payez aujourd’hui.</p>
-      <ul class="check" style="margin-top:18px">
-        <li><strong>Les réponses libres du service d’IA en ligne</strong> — et la navigation web — se déploient. Le reste, qui tourne chez vous, fonctionne déjà.</li>
-        <li><strong>Commander IRIS depuis le téléphone, loin de la maison.</strong> Pour l’instant, un ordinateur allumé doit être à portée. C’est le prochain cap.</li>
-        <li><strong>Mac et Linux.</strong> L’installeur d’aujourd’hui est celui de Windows 10 et 11, en 64&nbsp;bits. macOS et Linux sont au plan de route.</li>
-        <li><strong>La gouvernance d’entreprise.</strong> Prévue pour le plan Entreprise&nbsp;: à venir.</li>
+      <h2>Ce qui n’est pas encore là.</h2>
+      <p class="lead">On préfère le dire. Rien de ceci ne fait partie de l’engagement Édition fondatrice&nbsp;:
+        seules les fonctions marquées «&nbsp;Disponible&nbsp;» en font partie.</p>
+      <ul class="statuts-bref">
+        <li><span class="pill warn">En test</span><span>«&nbsp;Dis-moi Iris&nbsp;» et les commandes à la voix&nbsp;: une fois vos lunettes VELA associées, IRIS&nbsp;0.1.0 ne vous écoute que lorsqu’elles sont connectées, et cette liaison est en test.</span></li>
+        <li><span class="pill warn">En test</span><span>Les lunettes reliées à IRIS&nbsp;: leur micro, la voix d’IRIS dans l’oreille, la batterie, la photo à la voix.</span></li>
+        <li><span class="pill warn">En test</span><span>IRIS en ligne&nbsp;: réponses libres, demandes en plusieurs étapes, recherche sur le web, lecture de l’écran.</span></li>
+        <li><span class="pill">Prévu</span><span>Piloter IRIS depuis le téléphone, loin de l’ordinateur (application iPhone en préparation).</span></li>
+        <li><span class="pill">Prévu</span><span>IRIS sur Mac et sur Linux. La version publiée est celle de Windows 10 et 11, en 64&nbsp;bits.</span></li>
+        <li><span class="pill">Prévu</span><span>La vidéo à la voix, une IA qui répond librement sans aucun service en ligne, la gouvernance d’équipe.</span></li>
       </ul>
+      <p class="small muted" style="margin-top:14px">«&nbsp;Prévu&nbsp;» veut dire une intention, sans date
+        garantie. Le détail est sur la page <a href="feuille-de-route.html">Ce qui marche aujourd’hui</a>.</p>
       <p class="actions" style="margin-top:26px">
-        <a class="btn primary" href="plans.html">Comparer les plans</a>
-        <a class="btn" href="confidentialite.html">Voir la confidentialité</a>
+        <a class="btn primary" href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
+        <a class="btn" href="plans.html">Comparer les plans</a>
       </p>
       <p class="small muted" style="margin-top:14px">
         Une question sur ce qui est prêt&nbsp;? Écrivez-nous à
@@ -449,7 +477,7 @@
         <h3>En savoir plus</h3>
         <ul>
           <li><a href="a-propos.html">À propos</a></li>
-          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="feuille-de-route.html">Ce qui marche aujourd’hui</a></li>
           <li><a href="presse.html">Presse</a></li>
           <li><a href="faq.html">Questions fréquentes</a></li>
           <li><a href="accessibilite.html">Accessibilité</a></li>

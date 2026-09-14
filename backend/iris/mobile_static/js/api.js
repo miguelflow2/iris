@@ -139,6 +139,13 @@ function creerLiaison() {
       if (/verrouill/i.test(message)) diffuser({ type: 'iris.verrouillee', raison: message });
       else diffuser({ type: 'iris.session_refusee', raison: message });
     }
+    if (reponse.status === 428 && detail && typeof detail === 'object' && detail.code === 'lunettes_requises') {
+      // Lunettes d'abord : coeur.js affiche l'invitation générale, sauf si le module l'a déjà fait dans sa
+      // propre zone (IRIS.lunettes.garde().refus pose erreur.geree). L'erreur voyage avec l'événement.
+      const erreur = new ErreurApi(message, reponse.status, detail);
+      diffuser({ type: 'iris.lunettes_requises', erreur, fonction: detail.fonction || '', message: detail.message || message, acheter_url: detail.acheter_url || '' });
+      throw erreur;
+    }
     throw new ErreurApi(message, reponse.status, detail);
   }
 

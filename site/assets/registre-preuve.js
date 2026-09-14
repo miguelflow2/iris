@@ -11,8 +11,13 @@
        [précédente ou "", created_at, event_type, data_type ou "", agent ou "", detail ou ""].join("|")
    Une entrée est valide si son empreinte recalculée est égale à « hash » ET si
    « prev_hash » est égal à l'empreinte de l'entrée précédente ("" pour la première).
-   Entrées sans empreinte (hash null, antérieures à la chaîne) : tolérées, la
-   chaîne repart de "" — exactement comme ConsentGate.verify.
+   Entrées sans empreinte (hash null, antérieures à la chaîne) : tolérées tant
+   qu'aucune entrée avec empreinte ne les précède, la chaîne repart de "".
+   Écart volontaire avec ConsentGate.verify (ajouté 2026-09-14) : une entrée sans
+   empreinte qui SUIT une entrée qui en a une est comptée comme une rupture
+   (sinon, effacer l'empreinte de la dernière ligne passait pour « intègre »).
+   Si l'empreinte annoncée dans le fichier (verification.last_hash) diffère de
+   la chaîne recalculée, l'écart est affiché.
 
    Balisage :
      <div class="demo" data-registre="assets/preuves/registre.json"
@@ -39,6 +44,8 @@
     alteree: 'Chaîne rompue à l’entrée n° {n} (identifiant {id}) : {detail}.',
     raisonEmpreinte: 'son contenu ne correspond plus à son empreinte',
     raisonChainage: 'elle ne pointe plus vers l’empreinte de l’entrée précédente',
+    raisonSansEmpreinte: 'elle n’a pas d’empreinte, alors qu’une entrée précédente en a une',
+    annonceKo: 'L’empreinte annoncée dans le fichier ne correspond pas à la chaîne recalculée.',
     ancreOk: 'Empreinte finale identique à celle publiée sur cette page.',
     ancreKo: 'La chaîne est cohérente, mais son empreinte finale diffère de celle publiée sur cette page : ce n’est pas le fichier publié.',
     sansAncre: 'Sans empreinte de référence, cela prouve la cohérence du fichier, pas qu’il n’a jamais été réécrit en entier : comparez son empreinte finale à celle qu’IRIS affiche dans Confidentialité (Vérifier maintenant), juste avant l’export.',
@@ -127,6 +134,15 @@
     for (var i = 0; i < evenements.length; i++) {
       var ev = evenements[i] || {};
       if (ev.hash === null || ev.hash === undefined) {
+        if (res.premiere !== null) {
+          // Une entrée sans empreinte après le début de la chaîne n'est pas « antérieure » :
+          // c'est une empreinte effacée (ou une ligne ajoutée hors chaîne).
+          res.etat = 'alteree';
+          res.index = i;
+          res.id = ev.id === undefined ? null : ev.id;
+          res.raison = 'sansEmpreinte';
+          return res;
+        }
         res.sansEmpreinte++;
         precedente = '';
         continue;
@@ -352,15 +368,18 @@
         classe += ' ok';
         lignes.push(gabarit(t.integre, { k: res.nombre }));
         lignes.push(res.conformeAncre === true ? t.ancreOk : t.sansAncre);
+        if (res.conformeAnnonce === false) lignes.push(t.annonceKo);
       } else if (res.etat === 'ancre') {
         classe += ' bad';
         lignes.push(t.ancreKo);
+        if (res.conformeAnnonce === false) lignes.push(t.annonceKo);
       } else if (res.etat === 'alteree') {
         classe += ' bad';
         lignes.push(gabarit(t.alteree, {
           n: res.index + 1,
           id: res.id === null ? '—' : res.id,
-          detail: res.raison === 'empreinte' ? t.raisonEmpreinte : t.raisonChainage
+          detail: res.raison === 'empreinte' ? t.raisonEmpreinte
+            : (res.raison === 'sansEmpreinte' ? t.raisonSansEmpreinte : t.raisonChainage)
         }));
       } else if (res.etat === 'vide') {
         lignes.push(t.vide);

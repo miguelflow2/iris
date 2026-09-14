@@ -1,0 +1,41 @@
+/* =========================================================================
+   Mode invité (équipe interface-confiance, 2026-09-13).
+
+   Un seul geste compte sur cet écran : l'interrupteur. Il est grand (cible de
+   plus de 60 px), porte son état en toutes lettres (« Activé » / « Désactivé »)
+   et prend la couleur du bandeau « Mode invité » de la coquille, pour que
+   l'état se reconnaisse d'un écran à l'autre sans lire.
+   ========================================================================= */
+
+.mi-carte {
+  background: var(--surface); border-radius: var(--r-xl); padding: 20px 20px 18px;
+  display: flex; flex-direction: column; gap: 16px; border: 1.5px solid transparent;
+}
+.mi-carte.actif { border-color: #7a5cf0; background: linear-gradient(165deg, rgba(91, 60, 196, 0.45), var(--surface) 75%); }
+.mi-tete { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.mi-titres { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.mi-titres h2 { font-size: 28px; font-weight: 800; line-height: 1.15; }
+.mi-titres p { color: var(--text-2); font-size: 16px; font-weight: 600; line-height: 1.4; }
+
+.mi-interrupteur {
+  position: relative; flex: none; display: inline-flex; align-items: center;
+  width: 190px; height: 66px; border-radius: 999px; border: 2px solid var(--line-2);
+  background: var(--surface-3); color: var(--text); padding: 0 20px 0 74px;
+  font-size: 18px; font-weight: 800; transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.mi-interrupteur .bille {
+  position: absolute; left: 7px; top: 50%; width: 50px; height: 50px; margin-top: -25px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); transition: transform 0.2s var(--ease);
+}
+.mi-interrupteur .texte { white-space: nowrap; }
+.mi-interrupteur.on { background: #5b3cc4; border-color: #a58cff; padding: 0 74px 0 20px; }
+.mi-interrupteur.on .bille { transform: translateX(120px); }
+.mi-interrupteur:disabled { opacity: 0.6; cursor: default; }
+
+.mi-temps { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; background: rgba(0, 0, 0, 0.25); border-radius: var(--r-md); padding: 14px 16px; }
+.mi-temps .etiquette { display: block; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #c9bdff; }
+.mi-temps .valeur { display: block; font-size: 32px; font-weight: 800; line-height: 1.15; }
+.mi-temps .small { color: var(--text-2); font-size: 14px; font-weight: 600; line-height: 1.45; }
+
+.mi-phrases { display: flex; flex-direction: column; gap: 8px; }
+.mi-phrases span { background: var(--bg-2); border-radius: var(--r-md); padding: 10px 14px; font-size: 18px; font-weight: 700; }

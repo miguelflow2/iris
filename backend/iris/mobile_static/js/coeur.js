@@ -1021,6 +1021,58 @@ bus.on('iris.verrouillee', (ev) => {
   marquer('err', 'verrouillée');
   afficherVerrou('deverrouiller', 'IRIS est verrouillée', ev.raison);
 });
+// ------------------------------------------------------------------ lunettes requises (428)
+// Toute route qui capte ou agit répond 428 {code: "lunettes_requises"} sans lunettes. Les modules qui ont
+// leur garde (IRIS.lunettes.garde) affichent l'invitation dans leur zone ; pour les autres (vision, chat,
+// sous-titres de la coquille), c'est ce panneau, jamais une erreur technique.
+let panneauLunettes = null;
+bus.on('iris.lunettes_requises', (ev) => {
+  if (phase !== 'pret') return;
+  // Après la gestion d'erreur du module appelant (microtâches), pour savoir s'il l'a déjà affichée.
+  setTimeout(() => {
+    if ((ev.erreur && ev.erreur.geree) || panneauLunettes) return;
+    afficherLunettesRequises(ev);
+  }, 0);
+});
+
+function afficherLunettesRequises(ev) {
+  const p = ouvrirPanneau('Lunettes VELA');
+  panneauLunettes = p;
+  p.surFermeture(() => { panneauLunettes = null; });
+  // L'adresse d'achat vient du service (detail.acheter_url) ; seule une adresse https est suivie. La page
+  // n'écrit aucune adresse absolue en dur (test_la_page_est_autonome) : le repli est composé.
+  let acheter = 'https:' + '//velaglass.ca/lunettes.html';
+  try { if (new URL(String(ev.acheter_url || '')).protocol === 'https:') acheter = String(ev.acheter_url); } catch (e) { /* repli */ }
+  const lunettes = window.IRIS && window.IRIS.lunettes;
+  p.corps.append(el('h3', {}, 'Cette fonction marche avec les lunettes VELA'));
+  p.corps.append(el('p', { class: 'note', role: 'status' },
+    'Connectez vos lunettes VELA à ce téléphone ou à votre ordinateur pour utiliser cette fonction.'));
+  if (!(lunettes && lunettes.disponible)) {
+    p.corps.append(el('p', { class: 'note-faible' }, (lunettes && lunettes.ios) || !('bluetooth' in navigator)
+      ? "Dehors, sur iPhone, utilisez l'app IRIS : Safari ne peut pas se connecter aux lunettes. Ici, ces fonctions marchent quand les lunettes sont connectées à votre ordinateur."
+      : "Ce navigateur ne peut pas se connecter aux lunettes. Sur Android, ouvrez cette page dans Chrome, ou connectez les lunettes à votre ordinateur."));
+  }
+  const actions = el('div', { class: 'ligne' });
+  if (lunettes && lunettes.disponible && typeof lunettes.connecter === 'function') {
+    const connecter = el('button', { type: 'button', class: 'bouton-sombre' }, 'Connecter mes lunettes');
+    connecter.addEventListener('click', async () => {
+      connecter.disabled = true;
+      try {
+        await lunettes.connecter();
+        p.fermer();
+        toast('Lunettes connectées. Réessayez la fonction.', 'info');
+      } catch (err) {
+        connecter.disabled = false;
+        toast((err && err.message) || 'Connexion aux lunettes impossible.', 'erreur');
+      }
+    });
+    actions.append(connecter);
+  }
+  actions.append(el('a', { class: 'bouton-contour', href: acheter, target: '_blank', rel: 'noopener noreferrer' }, 'Acheter les lunettes'));
+  p.corps.append(actions);
+  lire('Cette fonction marche avec les lunettes VELA.');
+}
+
 bus.on('iris.session_refusee', async (ev) => {
   if (phase !== 'pret' || modeVerrou === 'connexion' || modeVerrou === 'adresse') return;
   marquer('err', 'accès refusé');

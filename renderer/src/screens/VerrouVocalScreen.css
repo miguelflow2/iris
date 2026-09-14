@@ -1,0 +1,55 @@
+/* =========================================================================
+   Empreinte vocale (équipe interface-confiance, 2026-09-13).
+
+   Le texte de consentement est lu en entier, pas survolé : grande taille,
+   interlignage généreux. La phrase à lire est très grande (on la lit à voix
+   haute, souvent en regardant le micro). Le décompte est rouge comme le témoin
+   d'enregistrement : on sait quand IRIS écoute.
+   ========================================================================= */
+
+.vv-hero {
+  background: var(--card-feature); border-radius: var(--r-xl); padding: 20px 22px;
+  display: flex; flex-direction: column; gap: 8px; color: #fff;
+}
+.vv-hero h2 { font-size: 24px; line-height: 1.2; font-weight: 800; }
+.vv-hero p { color: rgba(255, 255, 255, 0.8); font-size: 15.5px; font-weight: 600; line-height: 1.45; }
+
+.vv-etat { display: flex; flex-wrap: wrap; gap: 8px; }
+.vv-etat .pill { font-size: 13.5px; padding: 5px 12px; }
+
+.vv-texte-legal { font-size: 17px; font-weight: 600; line-height: 1.5; color: var(--text); }
+.vv-consentement { border: 1.5px solid var(--line-2); }
+
+.vv-case {
+  display: flex; align-items: flex-start; gap: 12px; cursor: pointer;
+  background: var(--bg-2); border-radius: var(--r-md); padding: 14px 16px;
+  font-size: 16.5px; font-weight: 700; line-height: 1.4;
+}
+.vv-case input { width: 24px; height: 24px; flex: none; margin: 1px 0 0; accent-color: var(--blue); cursor: pointer; }
+
+.vv-points { display: flex; gap: 10px; align-items: center; }
+.vv-points span { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface-3); background: transparent; }
+.vv-points span.fait { background: var(--green); border-color: var(--green); }
+.vv-points span.seuil { box-shadow: 0 0 0 3px rgba(74, 163, 255, 0.35); }
+
+.vv-phrase { display: flex; flex-direction: column; gap: 6px; background: #000; border-radius: var(--r-lg); padding: 16px 18px; }
+.vv-phrase .consigne { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #b8b8be; }
+.vv-phrase .texte { font-size: clamp(22px, 4.5vw, 30px); font-weight: 800; line-height: 1.3; color: #fff; }
+
+.vv-compte {
+  display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 800;
+  background: var(--red-soft); color: #ffc2bd; border-radius: var(--r-md); padding: 12px 16px;
+}
+
+.vv-resultat { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; border-radius: var(--r-md); padding: 12px 16px; }
+.vv-resultat.admis { background: rgba(48, 209, 88, 0.12); color: #a8efbd; }
+.vv-resultat.refuse { background: var(--red-soft); color: #ffc2bd; }
+.vv-resultat .score { font-size: 38px; font-weight: 800; line-height: 1; }
+.vv-resultat .score small { font-size: 17px; font-weight: 700; opacity: 0.8; }
+.vv-resultat .verdict { font-size: 17px; font-weight: 700; }
+
+.vv-seuil { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; font-weight: 700; color: var(--text-2); }
+.vv-seuil strong { color: var(--text); font-size: 18px; }
+
+.vv-legal { border: 1.5px solid rgba(255, 159, 10, 0.4); }
+.vv-legal svg { color: var(--orange); flex: none; }

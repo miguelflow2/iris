@@ -183,6 +183,25 @@
     });
   }
 
+  /* ------------------------------------ sujet pré-choisi (?objet=…)
+     Ajouté le 2026-09-13 : un lien comme contact.html?objet=Premier%20testeur
+     pré-sélectionne le sujet correspondant dans la liste « Sujet », s'il
+     existe. Rien d'autre n'est lu dans l'adresse, et rien n'y est écrit. */
+  var champSujet = document.getElementById('sujet');
+  if (champSujet && window.location && window.location.search) {
+    try {
+      var objet = new URLSearchParams(window.location.search).get('objet');
+      if (objet) {
+        for (var io = 0; io < champSujet.options.length; io++) {
+          if (champSujet.options[io].text === objet || champSujet.options[io].value === objet) {
+            champSujet.selectedIndex = io;
+            break;
+          }
+        }
+      }
+    } catch (e) { /* navigateur sans URLSearchParams : le sujet reste au choix par défaut */ }
+  }
+
   /* --------------------------------------------------- suivi de commande
      Page suivi.html. Deux comportements, selon qu'un serveur de suivi existe :
 

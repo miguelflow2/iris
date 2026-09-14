@@ -1,16 +1,24 @@
-import React, { useEffect, useState } from 'react'
-import { api, ApiError } from '../lib/api'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { api, ApiError, messageErreur } from '../lib/api'
 import { useStore } from '../lib/store'
 import { CarteReglage, Field, Holo, TopBar } from '../components/ui'
 import { IcoMicro, IcoRobotDegrade } from '../components/icons'
+import { LunettesFace } from '../components/Lunettes'
 
 /* =========================================================================
    Première ouverture d'IRIS (porté de _ancien/views/Onboarding.tsx).
-   Cinq étapes : Bienvenue · Compte · Consentement · Audio · Voix, rendues en
-   plein écran dans le style des maquettes (IMG_0709/0710 : robot en dégradé,
-   cartes anthracite, grand bouton holographique en bas).
+   Six étapes : Bienvenue · Compte · Lunettes · Consentement · Audio · Voix,
+   rendues en plein écran dans le style des maquettes (IMG_0709/0710 : robot en
+   dégradé, cartes anthracite, grand bouton holographique en bas).
    Avec `seulementCompte`, seule l'étape du compte est réclamée — et elle se
    masque d'elle-même dès que le compte est déjà en place.
+
+   Étape « Lunettes » (règle « lunettes d'abord » du 2026-09-13) : détecter et
+   connecter la paire comme l'écran Connecter (l'accueil est une surcouche, la
+   pile d'écrans n'y est pas visible), ou dire « Je n'ai pas encore mes
+   lunettes » : IRIS explique alors l'aperçu écrit (sa taille réelle vient de
+   GET /api/lunettes/presence) et offre le lien d'achat. Jamais de mention d'un
+   mode sans lunettes.
    ========================================================================= */
 
 type Props = {
@@ -23,9 +31,19 @@ type Props = {
 }
 
 const WAKE_DEFAUT = 'Dis-moi Iris'
+const URL_ACHAT_DEFAUT = 'https://velaglass.ca/lunettes.html'
 
 /** Libellés de la barre de progression (l'étape « Compte » doit y figurer : backend/tests/test_comptes.py). */
-const ETAPES = ['Bienvenue', 'Compte', 'Consentement', 'Audio', 'Voix']
+const ETAPES = ['Bienvenue', 'Compte', 'Lunettes', 'Consentement', 'Audio', 'Voix']
+
+/** Appareil Bluetooth détecté (POST /api/glasses/scan), comme dans ConnecterScreen. */
+interface AppareilBle {
+  address: string
+  name: string
+  rssi: number | null
+  likely_glasses: boolean
+  paired?: boolean
+}
 
 interface CompteInfo {
   configure: boolean
@@ -44,7 +62,7 @@ interface Avancement {
 }
 
 export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element | null {
-  const { settings, updateSettings, consent, setConsent, toast, voice } = useStore()
+  const { settings, updateSettings, consent, setConsent, toast, voice, lunettes, rafraichirLunettes, presence, rafraichirPresence } = useStore()
   const [step, setStep] = useState(seulementCompte ? 1 : 0)
   const [comptePose, setComptePose] = useState(false)
   const [name, setName] = useState<string>(settings?.user_name || '')
@@ -63,6 +81,21 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
 
   const [devices, setDevices] = useState<Peripheriques>({ devices: [], outputs: [] })
 
+  // Étape « Lunettes » : détection Bluetooth, connexion (jusqu'à 3 × 30 s côté service), ou aperçu sans lunettes.
+  const [appareils, setAppareils] = useState<AppareilBle[]>([])
+  const [detection, setDetection] = useState(false)
+  const [detectionFaite, setDetectionFaite] = useState(false)
+  const [connexionA, setConnexionA] = useState<string | null>(null)
+  const [tentative, setTentative] = useState<{ attempt: number; attempts: number } | null>(null)
+  const [pasEncore, setPasEncore] = useState(false)
+  const monte = useRef(true)
+  useEffect(() => {
+    monte.current = true
+    return () => {
+      monte.current = false
+    }
+  }, [])
+
   useEffect(() => {
     api.get<Peripheriques>('/api/voice/devices').then(setDevices).catch(() => undefined)
     api.get<CompteInfo>('/api/compte').then(setCompte).catch(() => setCompte({ configure: false }))
@@ -77,9 +110,59 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
       } else if (event.type === 'voice.model_ready') {
         setDownloading(false)
         setAvancement(null)
+      } else if (event.type === 'glasses.connecting') {
+        setTentative({ attempt: Number(event.attempt) || 1, attempts: Number(event.attempts) || 3 })
+      } else if (event.type === 'glasses.connected' || event.type === 'glasses.disconnected') {
+        setTentative(null)
       }
     })
   }, [])
+
+  const detecter = useCallback(async () => {
+    setDetection(true)
+    try {
+      const r = await api.post('/api/glasses/scan', { seconds: 6 })
+      if (!monte.current) return
+      setAppareils(Array.isArray(r?.devices) ? r.devices : [])
+      if (r?.error) toast(String(r.error), 'error')
+    } catch (err) {
+      toast(messageErreur(err), 'error')
+    } finally {
+      if (monte.current) {
+        setDetection(false)
+        setDetectionFaite(true)
+      }
+    }
+  }, [toast])
+
+  const connecter = useCallback(
+    async (a: AppareilBle) => {
+      setConnexionA(a.address)
+      setTentative(null)
+      try {
+        await api.post('/api/glasses/connect', { address: a.address, name: a.name })
+        await rafraichirLunettes()
+        await rafraichirPresence()
+      } catch (err) {
+        toast(messageErreur(err), 'error')
+      } finally {
+        if (monte.current) {
+          setConnexionA(null)
+          setTentative(null)
+        }
+      }
+    },
+    [rafraichirLunettes, rafraichirPresence, toast]
+  )
+
+  // En arrivant sur l'étape « Lunettes » sans paire connectée : une détection part d'elle-même,
+  // comme à l'ouverture de l'écran Connecter. Une seule fois : l'utilisateur relance à la main.
+  const lunettesConnectees = Boolean(lunettes?.connected)
+  useEffect(() => {
+    if (step !== 2 || lunettesConnectees || detectionFaite || detection) return
+    rafraichirPresence().catch(() => undefined)
+    detecter()
+  }, [step, lunettesConnectees, detectionFaite, detection, detecter, rafraichirPresence])
 
   const isHandsFree = (n: string): boolean => /hands-free|mains libres/i.test(n)
   const wakeAffiche = wake.trim() || WAKE_DEFAUT
@@ -142,7 +225,12 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
 
   if (seulementCompte && (comptePose || compte === null || compte.configure)) return null
 
-  const titres = ['Bienvenue', compte?.configure ? 'Connectez-vous' : 'Votre compte', 'Consentement', 'Audio', 'Mot d’activation']
+  const titres = ['Bienvenue', compte?.configure ? 'Connectez-vous' : 'Votre compte', 'Vos lunettes', 'Consentement', 'Audio', 'Mot d’activation']
+  const acheterUrl: string = presence?.acheter_url || URL_ACHAT_DEFAUT
+  const apercuTotal: number = presence?.apercu_total ?? 10
+  const parTelephone = Boolean(presence?.presentes && presence.source === 'telephone')
+  const lunettesPretes = lunettesConnectees || parTelephone
+  const nomLunettes: string = lunettes?.device?.name || lunettes?.remembered?.name || presence?.nom || 'Lunettes VELA'
   const modeleTaille: number | undefined = typeof voice?.model_info?.size_mb === 'number' ? voice.model_info.size_mb : undefined
   const pourcentage = avancement && avancement.total > 0 ? Math.min(100, Math.round((avancement.done / avancement.total) * 100)) : null
 
@@ -182,13 +270,13 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
               <div className="intro">
                 <IcoRobotDegrade className="robot" />
                 <h1>Bienvenue dans IRIS</h1>
-                <p className="sous">Votre assistante vocale qui agit sur votre ordinateur.</p>
+                <p className="sous">La technologie de vos lunettes VELA, qui travaille sur votre ordinateur.</p>
                 <p className="consigne">Dites « {wakeAffiche} » pour la réveiller et posez directement votre demande.</p>
               </div>
               <div className="carte">
                 {/* Première phrase du produit : bénéfice concret, aucun jargon, promesse vérifiable (cf. docs/DIFFERENCIATION.md §3.A). */}
                 <p className="desc" style={{ marginBottom: 10 }}>
-                  IRIS fait travailler votre ordinateur à votre place, retient ce qui compte pour vous, et vous laisse <strong style={{ color: 'var(--text)' }}>vérifier vous-même</strong> ce qu’elle a capté et ce qu’elle a envoyé. Rien ne sort de cet ordinateur sans votre accord.
+                  IRIS agit sur votre ordinateur quand vous le lui demandez, retient ce que vous avez réellement dit, et vous laisse <strong style={{ color: 'var(--text)' }}>vérifier vous-même</strong> ce qu’elle a capté et ce qu’elle a envoyé. Rien ne sort de cet ordinateur sans votre accord.
                 </p>
                 {/* Triade de marque conservée, dans sa forme en français clair du README. */}
                 <p className="small muted" style={{ marginBottom: 16 }}><strong>Vois. Souviens-toi. Fais.</strong></p>
@@ -265,8 +353,85 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
             </div>
           ) : null}
 
-          {/* ---------------------------------------------------------- 2 · Consentement */}
+          {/* ---------------------------------------------------------- 2 · Lunettes */}
           {step === 2 ? (
+            <>
+              <div className="intro" style={{ padding: '0 0 4px' }}>
+                <LunettesFace style={{ width: 240, maxWidth: '70%', marginTop: 20 }} />
+                <h1 style={{ fontSize: 28 }}>Vos lunettes VELA</h1>
+                <p className="sous">
+                  IRIS est la technologie de vos lunettes : la voix, la vision, l’écoute et les fonctions qui agissent demandent qu’elles soient présentes.
+                </p>
+              </div>
+
+              {lunettesConnectees ? (
+                <div className="carte" role="status">
+                  <h3>Lunettes connectées</h3>
+                  <p className="desc">{nomLunettes} · vous les retrouverez dans Mon profil › Mes lunettes.</p>
+                </div>
+              ) : parTelephone ? (
+                <div className="carte" role="status">
+                  <h3>Lunettes signalées par votre téléphone</h3>
+                  <p className="desc">{nomLunettes} : l’app IRIS de votre téléphone indique qu’elles lui sont connectées.</p>
+                </div>
+              ) : (
+                <div className="carte col" style={{ gap: 12 }}>
+                  <h3 style={{ margin: 0 }}>Connecter vos lunettes</h3>
+                  <p className="desc">
+                    Allumez-les et gardez-les près de l’ordinateur. Les appareils déjà appairés dans Windows apparaissent même s’ils n’émettent pas.
+                  </p>
+                  <Holo variante="sombre" disabled={detection || connexionA !== null} onClick={() => void detecter()}>
+                    {detection ? 'Recherche… (6 s)' : 'Détecter les lunettes'}
+                  </Holo>
+                  {lunettes?.error ? <span className="pill err" style={{ alignSelf: 'flex-start', whiteSpace: 'normal' }}>{String(lunettes.error)}</span> : null}
+                  {appareils.map((a) => (
+                    <div className="row" key={a.address} style={{ alignItems: 'center', gap: 12, padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="row wrap" style={{ gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 17 }}>{a.name}</span>
+                          {a.likely_glasses ? <span className="pill ok">lunettes ?</span> : null}
+                          {a.paired ? <span className="pill">appairé Windows</span> : null}
+                        </div>
+                        <div className="small muted mono" style={{ marginTop: 3 }}>{a.address}</div>
+                      </div>
+                      <button type="button" className="btn primary sm" disabled={connexionA !== null || detection} onClick={() => void connecter(a)}>
+                        {connexionA === a.address
+                          ? tentative
+                            ? `Connexion… tentative ${tentative.attempt}/${tentative.attempts}`
+                            : 'Connexion… (jusqu’à 90 s)'
+                          : 'Connecter'}
+                      </button>
+                    </div>
+                  ))}
+                  {detectionFaite && !detection && appareils.length === 0 ? (
+                    <p className="small muted" style={{ lineHeight: 1.45 }}>
+                      Aucun appareil détecté. Allumez les lunettes, rapprochez-les de l’ordinateur, puis relancez la détection.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+
+              {pasEncore && !lunettesPretes ? (
+                <div className="carte douce col" style={{ gap: 10 }} role="status">
+                  <h3 style={{ margin: 0 }}>Sans lunettes pour l’instant</h3>
+                  <p className="desc">
+                    Vous pouvez découvrir IRIS par écrit : un aperçu de {apercuTotal} messages dans l’onglet IA. La voix, la vision, l’écoute et les
+                    enregistrements attendront vos lunettes.
+                  </p>
+                  <p className="small muted" style={{ lineHeight: 1.45 }}>
+                    Vos données, vos réglages, la confidentialité et le verrouillage à distance restent accessibles sans lunettes. Vous pourrez les connecter à tout
+                    moment depuis l’accueil.
+                  </p>
+                  <Holo variante="contour" taille="petit" onClick={() => window.iris.openExternal(acheterUrl)}>
+                    Découvrir les lunettes VELA
+                  </Holo>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {/* ---------------------------------------------------------- 3 · Consentement */}
+          {step === 3 ? (
             <>
               <div className="carte douce">
                 <h3>Ce qui peut quitter votre ordinateur</h3>
@@ -287,8 +452,8 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
             </>
           ) : null}
 
-          {/* ---------------------------------------------------------- 3 · Audio */}
-          {step === 3 ? (
+          {/* ---------------------------------------------------------- 4 · Audio */}
+          {step === 4 ? (
             <div className="carte">
               <h3>Micro et sortie audio</h3>
               <p className="desc" style={{ marginBottom: 14 }}>
@@ -316,8 +481,8 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
             </div>
           ) : null}
 
-          {/* ---------------------------------------------------------- 4 · Voix */}
-          {step === 4 ? (
+          {/* ---------------------------------------------------------- 5 · Voix */}
+          {step === 5 ? (
             <>
               {/* IMG_0710 : robot, « Essayez de dire : » et la phrase d'exemple en grand, alignées à gauche. */}
               <div className="intro" style={{ padding: '0 0 8px' }}>
@@ -335,7 +500,7 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
                   <div style={{ marginTop: 14 }}>
                     <Field
                       label="Votre mot d’activation"
-                      hint={`Autre exemple : « ${wakeAffiche}, ouvre mon navigateur et mets de la musique ». Pour une commande courte comme celle-ci, IRIS vise une réponse en moins de 5 secondes, et vous pose une question si elle a besoin d’une précision.`}
+                      hint={`Autre exemple : « ${wakeAffiche}, ouvre mon navigateur et mets de la musique ». Le temps de chaque réponse est mesuré et affiché dans l’onglet IA ; il dépend de la demande et du réseau. IRIS vous pose une question si elle a besoin d’une précision.`}
                     >
                       <input className="input" value={wake} onChange={(e) => setWake(e.target.value)} placeholder={WAKE_DEFAUT} />
                     </Field>
@@ -347,7 +512,7 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
                   <h3>Reconnaissance vocale hors-ligne</h3>
                   <div className="desc">
                     {voice?.model_ready
-                      ? 'Installée — tout reste sur l’appareil.'
+                      ? 'Installée : la reconnaissance vocale peut se faire sur l’appareil, sans envoi.'
                       : `IRIS l’installe elle-même${modeleTaille ? ` (${modeleTaille} Mo)` : ''}. Vous pouvez continuer, elle vous préviendra.`}
                   </div>
                   {!voice?.model_ready && downloading ? (
@@ -381,9 +546,19 @@ export function Onboarding({ seulementCompte = false }: Props = {}): JSX.Element
               </Holo>
             )
           : null}
-        {step === 2 ? pied(() => setStep(1), <Holo style={{ flex: 1 }} onClick={() => setStep(3)}>Continuer</Holo>) : null}
+        {step === 2 ? pied(
+              () => setStep(1),
+              lunettesPretes ? (
+                <Holo style={{ flex: 1 }} onClick={() => setStep(3)}>Continuer</Holo>
+              ) : pasEncore ? (
+                <Holo style={{ flex: 1 }} disabled={connexionA !== null} onClick={() => setStep(3)}>Continuer avec l’aperçu</Holo>
+              ) : (
+                <Holo variante="contour" style={{ flex: 1 }} disabled={connexionA !== null} onClick={() => setPasEncore(true)}>Je n’ai pas encore mes lunettes</Holo>
+              )
+            ) : null}
         {step === 3 ? pied(() => setStep(2), <Holo style={{ flex: 1 }} onClick={() => setStep(4)}>Continuer</Holo>) : null}
-        {step === 4 ? pied(() => setStep(3), <Holo variante="blanc" style={{ flex: 1 }} onClick={() => void finish()}>Terminer</Holo>) : null}
+        {step === 4 ? pied(() => setStep(3), <Holo style={{ flex: 1 }} onClick={() => setStep(5)}>Continuer</Holo>) : null}
+        {step === 5 ? pied(() => setStep(4), <Holo variante="blanc" style={{ flex: 1 }} onClick={() => void finish()}>Terminer</Holo>) : null}
       </div>
     </div>
   )

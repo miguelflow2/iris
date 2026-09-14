@@ -1,0 +1,42 @@
+/* =========================================================================
+   Verrouillage à distance (équipe interface-confiance, 2026-09-13).
+
+   Les conditions se lisent comme une liste de vérification : une marque
+   verte quand c'est prêt, orange quand il manque quelque chose. La couleur
+   n'est jamais seule : le texte dit aussi « prêt » ou « à faire » (lu par les
+   lecteurs d'écran) et le détail explique.
+   ========================================================================= */
+
+.vd-hero {
+  background: var(--card-feature); border-radius: var(--r-xl); padding: 20px 22px;
+  display: flex; gap: 16px; align-items: flex-start; color: #fff;
+}
+.vd-hero .icone { width: 54px; height: 54px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; flex: none; }
+.vd-hero .icone svg { width: 30px; height: 30px; }
+.vd-hero h2 { font-size: 24px; line-height: 1.2; font-weight: 800; margin-bottom: 8px; }
+.vd-hero p { color: rgba(255, 255, 255, 0.8); font-size: 15.5px; font-weight: 600; line-height: 1.45; }
+
+.vd-conditions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.vd-condition { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; }
+.vd-condition + .vd-condition { border-top: 1px solid var(--line); }
+.vd-condition .marque {
+  width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-weight: 900; font-size: 15px; background: var(--surface-3); color: var(--text-2); margin-top: 1px;
+}
+.vd-condition.ok .marque { background: rgba(48, 209, 88, 0.2); color: #7ee2a0; }
+.vd-condition.manque .marque { background: rgba(255, 159, 10, 0.2); color: var(--orange); }
+.vd-condition .corps { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.vd-condition .titre { font-size: 17px; font-weight: 700; }
+.vd-condition .detail { font-size: 14.5px; color: var(--muted); font-weight: 500; line-height: 1.4; word-break: break-word; }
+.vd-condition .action { flex: none; align-self: center; }
+
+/* texte réservé aux lecteurs d'écran */
+.vd-condition .sr-etat {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+.vd-adresse {
+  font-family: var(--mono); font-size: clamp(17px, 3.6vw, 22px); font-weight: 700; color: #fff;
+  background: #000; border-radius: var(--r-md); padding: 14px 16px; word-break: break-all; user-select: all;
+}

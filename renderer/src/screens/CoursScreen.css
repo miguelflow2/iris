@@ -1,0 +1,168 @@
+/* =========================================================================
+   Écrans du quotidien (équipe interface-quotidien, 2026-09-13) : Mode cours,
+   fiche d'un cours, Reçus, Pas à pas, Entraînement, Prix, Résumé de la
+   journée, Rappels liés à une personne.
+
+   Un seul fichier, importé par chacun de ces huit écrans : ils partagent les
+   mêmes briques (chronomètre, grand texte d'étape, anneau de repos, cartes à
+   retourner, carte de reçu, offres). Les classes communes des écrans
+   d'accessibilité (.bloc-note, .liste-limites, .etiquette-locale, .curseur)
+   viennent d'AccessibiliteScreen.css. Préfixe « q- » : aucune collision avec
+   la coquille ni avec les autres équipes.
+
+   Contraste : texte clair sur fond sombre ; les gros chiffres (chrono, séries,
+   repos, étape) sont blancs sur noir, lisibles de loin, mains occupées.
+   ========================================================================= */
+
+/* ------------------------------------------------------------- communs */
+.q-accroche { color: var(--text-2); font-size: 16px; font-weight: 600; line-height: 1.4; text-align: center; margin: -4px 12px 0; }
+.q-formulaire { display: flex; flex-direction: column; gap: 12px; }
+.q-grille-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px; }
+.q-pastilles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.q-pastilles:empty { display: none; }
+.q-titre-groupe { font-size: 14px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 6px 6px 0; }
+.q-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1.4; }
+.q-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.q-note { color: var(--muted); font-size: 14px; font-weight: 500; line-height: 1.45; }
+.q-dit { border-left: 3px solid #8ff0ff; padding: 4px 0 4px 12px; font-size: 17px; font-weight: 600; line-height: 1.45; color: var(--text); }
+.q-dit .qui { display: block; color: var(--muted); font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2px; }
+.q-vide-compact { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 18px 10px; }
+.q-vide-compact svg { width: 84px; height: 84px; }
+.q-vide-compact .texte { font-size: 19px; font-weight: 700; }
+.q-vide-compact .petit { color: var(--muted); font-size: 15px; font-weight: 500; line-height: 1.45; max-width: 44ch; }
+.input[type="time"], .input[type="number"] { color-scheme: dark; }
+.q-champ-court { max-width: 140px; }
+
+/* ------------------------------------------------------------- mode cours : en direct */
+.q-direct { background: #000; border: 1.5px solid var(--line-2); border-radius: var(--r-xl); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.q-direct .q-rec { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 15px; color: #ff8a80; letter-spacing: 0.02em; }
+.q-direct .q-titre-direct { font-size: 22px; font-weight: 800; line-height: 1.2; word-break: break-word; }
+.q-chrono { font-size: 56px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.q-transcription-direct { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 18px; font-weight: 600; line-height: 1.35; padding-right: 4px; }
+.q-transcription-direct .partiel { color: #9a9aa0; }
+
+/* ------------------------------------------------------------- fiche d'un cours */
+.q-entete-cours h2 { font-size: 26px; font-weight: 800; line-height: 1.2; word-break: break-word; }
+.q-entete-cours .matiere { color: #8ff0ff; font-weight: 700; font-size: 16px; margin-top: 4px; }
+.q-transcription { display: flex; flex-direction: column; }
+.q-ligne { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 16.5px; line-height: 1.45; word-break: break-word; }
+.q-ligne:last-child { border-bottom: none; }
+.q-ligne time { color: var(--muted); font-family: var(--mono); font-size: 13px; padding-top: 3px; }
+.q-ligne.partiel span { color: #9a9aa0; }
+
+/* cartes à retourner : les deux faces occupent la même case de grille, la carte prend la hauteur de la plus longue */
+.q-questions { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.q-retourner { display: block; width: 100%; padding: 0; border: none; background: transparent; color: inherit; text-align: left; perspective: 1600px; border-radius: var(--r-xl); }
+.q-retourner:focus-visible { outline: 3px solid var(--blue-2); outline-offset: 3px; }
+.q-flip { display: grid; transition: transform 0.45s var(--ease); transform-style: preserve-3d; }
+.q-retourner.retournee .q-flip { transform: rotateY(180deg); }
+.q-face {
+  grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border-radius: var(--r-xl); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; min-height: 150px;
+}
+.q-face.recto { background: var(--card-feature); color: #fff; }
+.q-face.verso { background: #fff; color: #111; transform: rotateY(180deg); }
+.q-face .haut { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.q-face .genre { font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #cfd8ff; }
+.q-face.verso .genre { color: #3a4a8a; }
+.q-face .q-question { font-size: 19px; font-weight: 700; line-height: 1.35; white-space: pre-wrap; }
+.q-face .q-reponse { font-size: 17px; font-weight: 600; line-height: 1.45; white-space: pre-wrap; }
+.q-face .indice { margin-top: auto; font-size: 13.5px; font-weight: 600; color: rgba(255, 255, 255, 0.62); }
+.q-face.verso .indice { color: #555; }
+.q-difficulte { display: inline-flex; align-items: center; gap: 4px; }
+.q-difficulte i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255, 255, 255, 0.25); }
+.q-difficulte i.plein { background: #8ff0ff; }
+.q-face.verso .q-difficulte i { background: rgba(0, 0, 0, 0.14); }
+.q-face.verso .q-difficulte i.plein { background: var(--blue); }
+
+/* ------------------------------------------------------------- reçus */
+.q-recu-image { width: 100%; max-height: 340px; object-fit: contain; border-radius: var(--r-md); background: #000; display: block; }
+.q-confiance { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 16px; }
+.q-confiance .barre { flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; min-width: 60px; }
+.q-confiance .barre > div { height: 100%; border-radius: 4px; }
+.q-confiance.haute .barre > div { background: var(--green); }
+.q-confiance.moyenne .barre > div { background: var(--orange); }
+.q-confiance.basse .barre > div { background: var(--red); }
+.q-controles { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14.5px; font-weight: 600; line-height: 1.4; color: var(--text-2); }
+.q-controles .ok { color: #7ee2a0; }
+.q-controles .ko { color: #ffb4ae; }
+.q-totaux { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.q-totaux .q-total.principal { grid-column: 1 / -1; }
+@media (max-width: 460px) { .q-totaux { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.q-total { background: var(--bg-2); border-radius: 14px; padding: 10px 12px; min-width: 0; }
+.q-total .libelle { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.q-total .valeur { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-total.principal .valeur { font-size: 22px; }
+.q-lignes-recu { display: flex; flex-direction: column; gap: 8px; }
+.q-ligne-recu { display: grid; grid-template-columns: 1fr 120px 42px; gap: 8px; align-items: center; }
+.q-mois { display: flex; flex-direction: column; gap: 8px; }
+
+/* ------------------------------------------------------------- pas à pas */
+.q-etape-courante { background: #000; border: 1.5px solid var(--line-2); border-radius: var(--r-xl); padding: 22px 22px 24px; }
+.q-etape-courante .numero { color: #8ff0ff; font-weight: 800; font-size: 18px; letter-spacing: 0.02em; }
+.q-etape-courante .texte { font-size: clamp(28px, 5.4vw, 42px); font-weight: 800; line-height: 1.22; margin-top: 8px; word-break: break-word; }
+.q-commandes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.q-gros-bouton {
+  min-height: 96px; border-radius: 26px; border: none; background: var(--surface-2); color: #fff;
+  font-size: 19px; font-weight: 800; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px 6px;
+  transition: transform 0.08s var(--ease), filter 0.15s var(--ease);
+}
+.q-gros-bouton:hover { filter: brightness(1.1); }
+.q-gros-bouton:active { transform: scale(0.98); }
+.q-gros-bouton svg { width: 30px; height: 30px; }
+.q-gros-bouton.principal { background: var(--holo); color: #1b1b1d; }
+.q-gros-bouton:disabled { opacity: 0.45; cursor: default; transform: none; filter: none; }
+.q-minuteur { display: flex; align-items: center; gap: 14px; background: var(--bg-2); border-radius: var(--r-md); padding: 12px 16px; flex-wrap: wrap; }
+.q-minuteur .temps { font-size: 38px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+.q-minuteur .corps { flex: 1; min-width: 140px; font-weight: 700; }
+.q-etapes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.q-etapes li { display: grid; grid-template-columns: 34px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 16px; line-height: 1.4; color: var(--text-2); }
+.q-etapes li:last-child { border-bottom: none; }
+.q-etapes li .n { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; font-weight: 800; font-size: 13.5px; color: #fff; }
+.q-etapes li.courante { color: #fff; font-weight: 700; }
+.q-etapes li.courante .n { background: var(--holo); color: #1b1b1d; }
+.q-etapes li.faite { color: var(--muted); }
+.q-phrases { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.q-phrases li { background: var(--bg-2); border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 14.5px; }
+
+/* ------------------------------------------------------------- entraînement */
+.q-seance { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.q-seance .exercice { font-size: 24px; font-weight: 800; line-height: 1.2; word-break: break-word; }
+.q-etat-seance { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 16px; font-weight: 800; font-size: 16px; background: var(--surface-2); }
+.q-etat-seance.repos { background: rgba(143, 240, 255, 0.16); color: #8ff0ff; }
+.q-etat-seance.pause { background: rgba(255, 159, 10, 0.16); color: var(--orange); }
+.q-compteur { font-size: 112px; font-weight: 900; line-height: 0.95; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+.q-compteur-sous { font-size: 20px; font-weight: 700; color: var(--text-2); }
+.q-anneau { position: relative; width: 230px; height: 230px; max-width: 70vw; max-height: 70vw; }
+.q-anneau svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.q-anneau .fond { stroke: rgba(255, 255, 255, 0.1); }
+.q-anneau .avance { stroke: #8ff0ff; transition: stroke-dashoffset 0.25s linear; }
+.q-anneau.pause .avance { stroke: var(--orange); }
+.q-anneau .centre { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.q-anneau .centre .temps { font-size: 54px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+.q-anneau .centre .legende { color: var(--muted); font-size: 15px; font-weight: 700; }
+.q-boutons-seance { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+.q-boutons-seance .holo:first-child { grid-column: 1 / -1; height: 72px; font-size: 22px; }
+
+/* ------------------------------------------------------------- prix */
+.q-avertissement-fort {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: rgba(255, 159, 10, 0.14); border: 1.5px solid rgba(255, 159, 10, 0.55); color: #ffd28a;
+  border-radius: var(--r-md); padding: 14px 16px; font-weight: 700; font-size: 16px; line-height: 1.45;
+}
+.q-avertissement-fort svg { width: 26px; height: 26px; flex: none; margin-top: 1px; }
+.q-produit .nom { font-size: 24px; font-weight: 800; line-height: 1.2; word-break: break-word; }
+.q-offres { display: flex; flex-direction: column; }
+.q-offre { display: flex; flex-direction: column; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.q-offre:last-child { border-bottom: none; }
+.q-offre .haut { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.q-offre .marchand { font-size: 18px; font-weight: 800; }
+.q-offre .prix { font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.q-offre.plus-bas .prix { color: #7ee2a0; }
+.q-offre .extrait { color: var(--text-2); font-size: 14.5px; line-height: 1.45; word-break: break-word; }
+.q-offre .hote { color: var(--muted); font-size: 13px; font-weight: 600; word-break: break-all; }
+
+/* ------------------------------------------------------------- résumé de la journée */
+.q-resume-texte { font-size: 20px; font-weight: 600; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.q-liste-points { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; font-weight: 500; line-height: 1.45; color: var(--text-2); }
+.q-navigation-date { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }

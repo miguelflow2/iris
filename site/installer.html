@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Installer IRIS — VELA</title>
-<meta name="description" content="Téléchargez IRIS pour Windows 10 et 11 (64 bits) et installez-la en quelques minutes. Gratuite dès l’installation, elle fonctionne même sans les lunettes VELA.">
+<meta name="description" content="Téléchargez IRIS 0.1.0 pour Windows 10 et 11 (64 bits) et installez-la en quelques minutes. IRIS est incluse avec les lunettes VELA ; sans lunettes, l’application n’offre qu’un aperçu. Mac et Linux : Prévu.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
 <link rel="canonical" href="https://velaglass.ca/installer.html">
 <link rel="stylesheet" href="assets/style.css?v=10">
@@ -12,7 +12,7 @@
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="fr_CA">
 <meta property="og:title" content="Installer IRIS — VELA">
-<meta property="og:description" content="Téléchargez IRIS pour Windows 10 et 11 (64 bits) et installez-la en quelques minutes. Gratuite dès l’installation, elle fonctionne même sans les lunettes VELA.">
+<meta property="og:description" content="IRIS 0.1.0 pour Windows 10 et 11 (64 bits). Incluse avec les lunettes VELA ; sans lunettes, un aperçu. Mac et Linux : Prévu.">
 <meta property="og:url" content="https://velaglass.ca/installer.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
@@ -20,7 +20,7 @@
 <meta property="og:image:alt" content="Lunettes VELA">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Installer IRIS — VELA">
-<meta name="twitter:description" content="Téléchargez IRIS pour Windows 10 et 11 (64 bits) et installez-la en quelques minutes. Gratuite dès l’installation, elle fonctionne même sans les lunettes VELA.">
+<meta name="twitter:description" content="IRIS 0.1.0 pour Windows 10 et 11 (64 bits). Incluse avec les lunettes VELA ; sans lunettes, un aperçu.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <!-- JSON-LD : fil d'Ariane (BreadcrumbList). -->
 <script type="application/ld+json">
@@ -56,6 +56,7 @@
     <nav id="nav" class="site-nav" aria-label="Navigation principale">
       <a href="lunettes.html">Les lunettes</a>
       <a href="fonctionnalites.html">Ce qu’IRIS fait</a>
+      <a href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
       <a href="plans.html">Plans</a>
       <a href="confidentialite.html">Confidentialité</a>
       <a href="installer.html" aria-current="page">Installer</a>
@@ -76,9 +77,10 @@
       <p class="eyebrow">Installation</p>
       <h1>Installer <em>IRIS</em>.</h1>
       <p class="lead">
-        Un seul fichier, pour Windows&nbsp;10 et 11 (64&nbsp;bits). Ni Python, ni compte à créer&nbsp;:
-        tout est dans l’installeur. Vérifiez seulement la <a href="#config">configuration minimale</a>
-        ci-dessous. Comptez une dizaine de minutes, téléchargement compris.
+        Un seul fichier, pour Windows&nbsp;10 et 11 (64&nbsp;bits)&nbsp;: IRIS&nbsp;0.1.0, la version publiée.
+        Ni Python ni logiciel à installer à côté&nbsp;: ce qu’il faut à IRIS est dans l’installeur. Vérifiez
+        la <a href="#config">configuration minimale</a> ci-dessous. IRIS est faite pour être utilisée avec
+        les lunettes VELA&nbsp;; sans elles, l’application n’offre qu’un <a href="#sans-lunettes">aperçu</a>.
       </p>
       <p class="actions">
         <a class="btn primary btn-xl" href="#telecharger">Télécharger IRIS</a>
@@ -107,7 +109,9 @@
             <li>Un processeur récent à <strong>4 cœurs</strong>.</li>
             <li><strong>8 Go</strong> de mémoire vive (RAM).</li>
             <li><strong>~1 Go</strong> d’espace disque libre.</li>
-            <li>Un micro&nbsp;: celui du PC, des lunettes VELA ou d’un casque.</li>
+            <li>Les lunettes VELA, connectées en Bluetooth&nbsp;: IRIS est faite pour s’utiliser avec elles, et
+              une fois vos lunettes associées, IRIS&nbsp;0.1.0 ne répond, à la voix comme par écrit, que
+              lorsqu’elles sont connectées. Sans lunettes, l’application n’est qu’un aperçu.</li>
           </ul>
         </div>
         <div class="card">
@@ -118,7 +122,7 @@
             <li>Un processeur récent à <strong>6 cœurs</strong> ou plus.</li>
             <li><strong>16 Go</strong> de mémoire vive (RAM).</li>
             <li>Un <strong>disque SSD</strong> avec environ 2 Go libres.</li>
-            <li>Un micro de bonne qualité, pour une écoute plus sûre.</li>
+            <li>Les lunettes VELA près de l’ordinateur.</li>
           </ul>
         </div>
       </div>
@@ -139,8 +143,9 @@
       <div class="sec-head">
         <p class="section-label">Téléchargement</p>
         <h2>Choisissez votre système.</h2>
-        <p>IRIS est publiée pour Windows. Mac et Linux suivront&nbsp;: le contrôle du PC et la connexion aux
-          lunettes s’appuient d’abord sur Windows. On préfère le dire.</p>
+        <p>IRIS est publiée pour Windows seulement. Mac et Linux sont <span class="pill">Prévu</span>, sans
+          date&nbsp;: le pilotage de l’ordinateur et la liaison avec les lunettes s’appuient d’abord sur
+          Windows. On préfère le dire.</p>
       </div>
 
       <div class="grid grid-3">
@@ -154,9 +159,12 @@
           </div>
           <p class="small">Windows 10 ou 11, 64&nbsp;bits. Le service d’IRIS est embarqué dans l’installeur.</p>
           <p class="os-actions">
-            <a class="btn primary" href="https://github.com/miguelflow2/iris/releases/latest/download/IRIS-Setup.exe" download>Télécharger pour Windows</a>
+            <a class="btn primary" href="https://github.com/miguelflow2/iris/releases/download/v0.1.0/IRIS-Setup.exe" download>Télécharger pour Windows</a>
           </p>
-          <p class="small muted" style="margin:10px 0 0">246&nbsp;Mo · version 0.1.0 · <code>IRIS-Setup.exe</code></p>
+          <p class="small muted" style="margin:10px 0 0">369&nbsp;Mo (387&nbsp;007&nbsp;937 octets) · version 0.1.0 · <code>IRIS-Setup.exe</code></p>
+          <p class="small muted" style="margin:8px 0 0">Lien fixé sur la version 0.1.0, celle que décrit ce site.
+            Empreinte SHA-256 du fichier&nbsp;: <span class="mono" style="word-break:break-all">031b0c3c74549ca5bfee7c2b84c79b05040c6955467130edb76784011271d5f0</span>
+            (dans PowerShell&nbsp;: <code>Get-FileHash IRIS-Setup.exe</code>).</p>
           <p class="small muted" style="margin:8px 0 0">Installeur non encore signé&nbsp;: Windows affichera un
             avertissement. <a href="#etapes">La marche à suivre</a> explique quoi faire (étape&nbsp;2).</p>
         </div>
@@ -167,7 +175,7 @@
               <path d="M16.2 12.7c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.6 2.2-1.6 2.7-.4 6.7 1.1 8.9.7 1.1 1.6 2.3 2.8 2.2 1.1 0 1.5-.7 2.9-.7 1.3 0 1.7.7 2.9.7 1.2 0 2-1.1 2.7-2.1.8-1.2 1.2-2.4 1.2-2.4s-2.3-.9-2.4-3.8ZM14 5.9c.6-.8 1-1.8.9-2.9-.9 0-2 .6-2.7 1.4-.6.7-1.1 1.8-.9 2.8 1 .1 2-.5 2.7-1.3Z"/>
             </svg>
             <h3>macOS</h3>
-            <span class="pill warn">Bientôt</span>
+            <span class="pill">Prévu</span>
           </div>
           <p class="small">Aucune version pour Mac aujourd’hui, aucune date promise. Laissez-nous votre
             courriel&nbsp;: on vous prévient le jour où elle sort, et pas pour autre chose.</p>
@@ -182,7 +190,7 @@
               <path d="M12 2c-2.2 0-3.3 1.9-3.2 4.1.1 1.6-.1 2.5-.7 3.5-.8 1.3-1.9 2.6-2.4 4.3-.4 1.4-.2 2.3.3 2.6.4.3.6.7.6 1.3 0 .9.7 1.5 1.9 1.7 1.1.2 1.8.6 2.4 1 .7.5 1.5.5 2.2 0 .6-.4 1.3-.8 2.4-1 1.2-.2 1.9-.8 1.9-1.7 0-.6.2-1 .6-1.3.5-.3.7-1.2.3-2.6-.5-1.7-1.6-3-2.4-4.3-.6-1-.8-1.9-.7-3.5C15.3 3.9 14.2 2 12 2Zm-1.4 3.3c.4 0 .7.4.7 1s-.3 1-.7 1-.7-.4-.7-1 .3-1 .7-1Zm2.8 0c.4 0 .7.4.7 1s-.3 1-.7 1-.7-.4-.7-1 .3-1 .7-1Zm-1.4 2.9c.8 0 1.7.4 1.7.8 0 .3-.9.9-1.7.9s-1.7-.6-1.7-.9c0-.4.9-.8 1.7-.8Z"/>
             </svg>
             <h3>Linux</h3>
-            <span class="pill warn">Bientôt</span>
+            <span class="pill">Prévu</span>
           </div>
           <p class="small">Rien de publié pour l’instant non plus. Le bouton prépare un courriel&nbsp;: on vous
             écrit quand une version est prête.</p>
@@ -206,8 +214,8 @@
           <p>Il s’appelle <code>IRIS-Setup.exe</code> et atterrit dans votre dossier
             <strong>Téléchargements</strong>.</p>
           <p class="actions">
-            <a class="btn primary" href="https://github.com/miguelflow2/iris/releases/latest/download/IRIS-Setup.exe" download>Télécharger pour Windows</a>
-            <span class="small muted">Windows 10 et 11, 64&nbsp;bits · 246&nbsp;Mo · version 0.1.0</span>
+            <a class="btn primary" href="https://github.com/miguelflow2/iris/releases/download/v0.1.0/IRIS-Setup.exe" download>Télécharger pour Windows</a>
+            <span class="small muted">Windows 10 et 11, 64&nbsp;bits · 369&nbsp;Mo · version 0.1.0</span>
           </p>
         </li>
 
@@ -226,39 +234,40 @@
           <h3>Répondre à l’assistant</h3>
           <p>Cinq questions, toutes modifiables plus tard&nbsp;: votre prénom&nbsp;; le courriel de votre achat
             et un mot de passe qui reste sur l’ordinateur&nbsp;; vos consentements&nbsp;; le micro&nbsp;; le mot
-            d’activation. <strong>Aucune clé d’IA à coller&nbsp;:</strong> l’accès viendra du service de VELA,
-            en cours de déploiement.</p>
+            d’activation. <strong>Aucune clé d’IA à coller&nbsp;:</strong> IRIS en ligne passe par le service
+            de VELA, en accès d’essai <span class="pill warn">En test</span>.</p>
         </li>
 
         <li>
           <h3>Dire votre première phrase</h3>
-          <p>À voix haute&nbsp;: <span class="mono">«&nbsp;Dis-moi Iris, rappelle-moi dans dix minutes.&nbsp;»</span>
-            IRIS confirme et programme le rappel. Les demandes qui passent par les modèles en ligne arriveront
-            dès que le service sera déployé.</p>
+          <p>Lunettes VELA connectées, à voix haute&nbsp;: <span class="mono">«&nbsp;Dis-moi Iris, quelle heure est-il&nbsp;?&nbsp;»</span>
+            IRIS répond sur l’ordinateur, sans passer par IRIS en ligne. La liaison des lunettes avec IRIS est
+            <span class="pill warn">En test</span>&nbsp;: si IRIS ne vous entend pas, écrivez-nous, c’est ce que nous
+            voulons savoir. Les demandes libres, elles, passent par IRIS en ligne, en test.</p>
         </li>
       </ol>
     </div>
   </section>
 
   <!-- ===================================================== sans lunettes -->
-  <section class="band">
+  <section class="band" id="sans-lunettes">
     <div class="wrap narrow">
       <p class="section-label">Bon à savoir</p>
-      <h2>Ça marche même sans lunettes.</h2>
+      <h2>Sans lunettes, un aperçu.</h2>
       <p class="lead">
-        IRIS tourne seule sur un PC Windows. Le micro de l’ordinateur suffit — il est même plus clair que celui
-        d’un casque Bluetooth.
+        IRIS est faite pour être utilisée avec les lunettes VELA. Sans elles, l’application téléchargée n’offre
+        qu’un aperçu. Et une fois vos lunettes associées, IRIS&nbsp;0.1.0 ne répond, à la voix comme par écrit,
+        que lorsqu’elles sont connectées.
       </p>
-      <ul class="check">
-        <li>Le mot d’activation, les routines, les rappels et la mémoire fonctionnent dès l’installation, sur
-          votre appareil.</li>
-        <li>La voix française locale (Piper) parle hors ligne, sans clé.</li>
-        <li>Les réponses des modèles d’IA en ligne arrivent quand le service se déploie
-          <span class="pill warn">Bientôt</span>.</li>
+      <ul class="statuts-bref">
+        <li><span class="pill ok">Disponible</span><span>Sur l’ordinateur, sans Internet&nbsp;: la voix française d’IRIS et les commandes courantes au chat écrit.</span></li>
+        <li><span class="pill ok">Disponible</span><span>Les routines, les rappels, la mémoire locale et le registre vérifiable.</span></li>
+        <li><span class="pill warn">En test</span><span>«&nbsp;Dis-moi Iris&nbsp;»&nbsp;: le mot d’activation est reconnu sur l’ordinateur, sans Internet, mais une fois vos lunettes VELA associées, IRIS&nbsp;0.1.0 ne vous écoute que lorsqu’elles sont connectées, et cette liaison est en test.</span></li>
+        <li><span class="pill warn">En test</span><span>Les lunettes reliées à IRIS, et IRIS en ligne pour les réponses libres.</span></li>
       </ul>
       <p class="actions">
+        <a class="btn" href="feuille-de-route.html">Ce qui marche aujourd’hui</a>
         <a class="btn" href="fonctionnalites.html">Ce qu’IRIS fait</a>
-        <a class="btn" href="plans.html">Comparer les plans</a>
       </p>
     </div>
   </section>
@@ -298,7 +307,7 @@
         <h3>En savoir plus</h3>
         <ul>
           <li><a href="a-propos.html">À propos</a></li>
-          <li><a href="feuille-de-route.html">Feuille de route</a></li>
+          <li><a href="feuille-de-route.html">Ce qui marche aujourd’hui</a></li>
           <li><a href="presse.html">Presse</a></li>
           <li><a href="faq.html">Questions fréquentes</a></li>
           <li><a href="accessibilite.html">Accessibilité</a></li>

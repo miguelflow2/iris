@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
-import { BtnIcone, Field, Liste, Rangee, SettingRow, Toggle, TopBar } from '../components/ui'
+import React, { useCallback, useEffect, useState } from 'react'
+import { BtnIcone, Field, Holo, Liste, Rangee, SettingRow, Toggle, TopBar } from '../components/ui'
 import { IcoDossier, IcoJournal } from '../components/icons'
+import { api } from '../lib/api'
 import { useStore } from '../lib/store'
 
 /* =========================================================================
@@ -10,6 +11,96 @@ import { useStore } from '../lib/store'
    service sait de cet ordinateur (présence, dossier de données, journal,
    version). Aucun nom de fournisseur dans les libellés.
    ========================================================================= */
+
+/** GET /api/recherche/cle : la clé n'est jamais renvoyée en clair (cle_masquee seulement). */
+type EtatCleRecherche = {
+  configuree: boolean
+  source: 'environnement' | 'coffre' | null
+  fournisseur: string | null
+  cle_masquee: string | null
+  coffre_defini: boolean
+  note?: string
+}
+
+/* Clé de recherche web (apportez votre clé) : la comparaison de prix en dépend et répond 409 sans elle.
+   Écran avancé : les services compatibles sont nommés, comme dans les autres réglages de clé. */
+function CleRecherche(): JSX.Element {
+  const { toast } = useStore()
+  const [etat, setEtat] = useState<EtatCleRecherche | null>(null)
+  const [cle, setCle] = useState('')
+  const [fournisseur, setFournisseur] = useState('')
+  const [occupe, setOccupe] = useState(false)
+
+  const charger = useCallback(() => {
+    api.get<EtatCleRecherche>('/api/recherche/cle').then(setEtat).catch(() => setEtat(null))
+  }, [])
+  useEffect(charger, [charger])
+
+  const enregistrer = async (): Promise<void> => {
+    if (!cle.trim()) return
+    setOccupe(true)
+    try {
+      setEtat(await api.post<EtatCleRecherche>('/api/recherche/cle', { cle: cle.trim(), fournisseur: fournisseur || null }))
+      setCle('')
+      toast('Clé de recherche enregistrée dans le coffre de cet ordinateur.', 'success')
+    } catch (err) {
+      toast(String((err as Error).message), 'error')
+    } finally {
+      setOccupe(false)
+    }
+  }
+
+  const effacer = async (): Promise<void> => {
+    setOccupe(true)
+    try {
+      setEtat(await api.delete<EtatCleRecherche>('/api/recherche/cle'))
+      toast('Clé de recherche effacée du coffre.', 'info')
+    } catch (err) {
+      toast(String((err as Error).message), 'error')
+    } finally {
+      setOccupe(false)
+    }
+  }
+
+  const resume = !etat
+    ? 'État inconnu (service injoignable).'
+    : !etat.configuree
+      ? 'Aucune clé : la comparaison de prix est indisponible.'
+      : `Clé ${etat.cle_masquee || ''} (${etat.fournisseur || 'service détecté'}), ${etat.source === 'environnement' ? 'lue dans le fichier .env : elle passe avant celle du coffre' : 'gardée dans le coffre de cet ordinateur'}.`
+
+  return (
+    <div className="col" style={{ gap: 10 }}>
+      <Field
+        label="Clé de recherche web (comparaison de prix)"
+        hint={`${resume} La requête (le nom du produit) part vers le service de recherche choisi ; les prix trouvés peuvent dater de quelques jours.`}
+      >
+        <input
+          className="input mono"
+          type="password"
+          autoComplete="off"
+          placeholder={etat?.coffre_defini ? 'remplacer la clé enregistrée' : 'coller la clé'}
+          value={cle}
+          onChange={(e) => setCle(e.target.value)}
+        />
+      </Field>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select className="select" aria-label="Service de recherche" style={{ width: 230 }} value={fournisseur} onChange={(e) => setFournisseur(e.target.value)}>
+          <option value="">Détecter d’après la clé</option>
+          <option value="tavily">Tavily</option>
+          <option value="brave">Brave Search</option>
+        </select>
+        <Holo taille="mini" variante="bleu" disabled={occupe || !cle.trim()} onClick={() => void enregistrer()}>
+          Enregistrer
+        </Holo>
+        {etat?.coffre_defini ? (
+          <Holo taille="mini" variante="contour" disabled={occupe} onClick={() => void effacer()}>
+            Effacer
+          </Holo>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 export function ReglagesPcScreen({ params: _params }: { params?: Record<string, any> }): JSX.Element {
   const { settings, updateSettings, status, appInfo, toast } = useStore()
@@ -80,6 +171,7 @@ export function ReglagesPcScreen({ params: _params }: { params?: Record<string, 
               onBlur={() => commit('vision_model')}
             />
           </Field>
+          <CleRecherche />
           <div>
             <SettingRow title="Recherche web" desc="Le cerveau d’IRIS peut consulter le web pour répondre à jour ; les requêtes de recherche transitent alors par le fournisseur d’intelligence artificielle tiers.">
               <Toggle on={Boolean(draft.claude_web_search)} onChange={(v) => set({ claude_web_search: v })} titre="Recherche web" />
