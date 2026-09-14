@@ -4,20 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy — the proof, not the promise — VELA</title>
-<meta name="description" content="VELA's transparency pillar: every capture and every transmission is written to a log you can verify yourself, in one click. Local processing by default, an indicator when the camera records, consent by data type, private mode.">
+<meta name="description" content="VELA’s transparency pillar: a chained log you verify yourself, with a log produced by IRIS (scripted session) published and verifiable in your browser. In local mode, your data stays on your computer; consent by type of data, private mode.">
 
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 158 158'><rect width='158' height='158' rx='34' fill='%231B140E'/><g transform='translate(31.9 17) scale(0.785)'><path d='M 36.5 46.3 L 36.6 158 L 0 158 Z' fill='%23B36B3B'/><path d='M 41.4 0 C 93.3 52.6 115 105.2 120 157.8 Q 80.4 149.2 41.4 158 Z' fill='%23F8F0E7'/></g></svg>">
 
 <link rel="canonical" href="https://velaglass.ca/en/confidentialite.html">
 <link rel="alternate" hreflang="fr" href="https://velaglass.ca/confidentialite.html">
 <link rel="alternate" hreflang="en" href="https://velaglass.ca/en/confidentialite.html">
+<link rel="alternate" hreflang="es" href="https://velaglass.ca/es/confidentialite.html">
+<link rel="alternate" hreflang="it" href="https://velaglass.ca/it/confidentialite.html">
+<link rel="alternate" hreflang="x-default" href="https://velaglass.ca/confidentialite.html">
 <link rel="stylesheet" href="/assets/style.css?v=10">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VELA">
 <meta property="og:locale" content="en_CA">
 <meta property="og:title" content="Privacy — the proof, not the promise — VELA">
-<meta property="og:description" content="Every capture and every transmission is written to a log you can verify yourself, in one click. Local processing by default, an indicator when the camera records, consent by data type.">
+<meta property="og:description" content="A log produced by IRIS (scripted session), published and verifiable in your browser. In local mode, your data stays on your computer; online, one consent per type of data, and what doesn’t go through those consents is written down.">
 <meta property="og:url" content="https://velaglass.ca/en/confidentialite.html">
 <meta property="og:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 <meta property="og:image:width" content="900">
@@ -25,7 +28,7 @@
 <meta property="og:image:alt" content="VELA glasses">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Privacy — the proof, not the promise — VELA">
-<meta name="twitter:description" content="A log you can verify yourself, in one click. Your data stays on your computer — nothing in a cloud by default.">
+<meta name="twitter:description" content="A log produced by IRIS (scripted session), verifiable in your browser. In local mode, your data stays on your computer.">
 <meta name="twitter:image" content="https://velaglass.ca/assets/photos/lunettes-fond-sombre.jpg">
 
 <!-- JSON-LD: breadcrumb (BreadcrumbList). -->
@@ -34,7 +37,7 @@
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/en/" },
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/en/index.html" },
     { "@type": "ListItem", "position": 2, "name": "Privacy", "item": "https://velaglass.ca/en/confidentialite.html" }
   ]
 }
@@ -95,15 +98,16 @@
       <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
     </a>
     <nav class="site-lang" aria-label="Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
-      <a href="/index.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
-      <a href="/en/index.html" hreflang="en" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">EN</a>
-      <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
-      <a href="/it/index.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
+      <a href="/confidentialite.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
+      <a href="/en/confidentialite.html" hreflang="en" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">EN</a>
+      <a href="/es/confidentialite.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+      <a href="/it/confidentialite.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
     </nav>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav id="nav" class="site-nav" aria-label="Main navigation">
       <a href="/en/lunettes.html">The glasses</a>
       <a href="/en/fonctionnalites.html">What IRIS does</a>
+      <a href="/en/feuille-de-route.html">What works today</a>
       <a href="/en/accessibilite.html">Accessibility</a>
       <a href="/en/plans.html">Plans</a>
       <a href="/en/confidentialite.html" aria-current="page">Privacy</a>
@@ -124,12 +128,15 @@
       <p class="eyebrow">Privacy · transparency pillar</p>
       <h1>Privacy <em>you can verify</em>.</h1>
       <p class="lead">
-        Promising is easy. IRIS does the opposite: your data stays on your computer, and an activity log
-        lets you prove it yourself, in one click. The proof, not the promise.
+        Promising is easy. In local mode, your data stays on your computer. When you turn on an online
+        feature, IRIS shows you what will be sent before it goes. In practice, in IRIS&nbsp;0.1.0: one
+        consent per type of data, off by default, a preview before a screenshot is attached, and the send
+        recorded in the log. You verify that log yourself, and we also write down what it doesn’t cover.
+        The proof, not the promise.
       </p>
       <p class="actions">
         <a class="btn primary" href="#preuve">See the verification</a>
-        <a class="btn" href="/politique-confidentialite.html">Read the privacy policy</a>
+        <a class="btn" href="/politique-confidentialite.html">Read the privacy policy (in French)</a>
       </p>
     </div>
   </section>
@@ -138,7 +145,7 @@
   <section class="tight">
     <div class="wrap">
       <div class="sec-head">
-        <p class="section-label">What we stand for</p>
+        <p class="section-label">What holds us steady</p>
         <h2>Four commitments, here too.</h2>
         <p>This page is the one about transparency — but all four hold together.</p>
       </div>
@@ -146,22 +153,22 @@
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-local"/></svg></span>
           <h3>Local</h3>
-          <p>Your conversations, your photos, your memory stay on your computer. Nothing goes to a cloud by default.</p>
+          <p>Memory, history and log are stored on your computer. Your requests, attached images, screenshots and memories aren’t sent without your consent, type by type. What is sent anyway is <a href="#local">written further down</a>.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-quebec"/></svg></span>
-          <h3>Canadian, and bilingual</h3>
-          <p>Designed and written here, in Canada. A real person answers your emails.</p>
+          <h3>Canada and French</h3>
+          <p>Designed and written here, French first. A real person answers your emails.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-access"/></svg></span>
           <h3>Accessibility</h3>
-          <p>Drive the computer by voice, or have the screen read aloud to you. A way to get there on your own.</p>
+          <p>Open an app or a website without a mouse: in the text chat today (commands in French), by voice with the glasses in testing. Reading the screen aloud is in testing.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-chaine"/></svg></span>
           <h3>Transparency</h3>
-          <p>An activity log you can verify yourself. Every capture, every transmission is written into it.</p>
+          <p>A log you verify yourself: consents, modes, purges and sends of your data online are recorded in it. IRIS’s contact with VELA’s server at startup is not.</p>
         </div>
       </div>
     </div>
@@ -172,38 +179,104 @@
     <div class="wrap">
       <div class="sec-head">
         <p class="section-label">The proof, not the promise</p>
-        <h2>A log you can verify yourself.</h2>
-        <p>Every capture and every transmission is written to a log, on your device. You can check its
-          integrity in one click: if a line had been altered or removed, the verification would fail.
-          This isn't a promise about the design — it's proof of what actually ran.</p>
+        <h2>A log you verify yourself.</h2>
+        <p>IRIS records in a log, on your computer, consent and mode changes, purges, sends to the online
+          service and other actions. Each entry carries a SHA-256 hash that includes the hash of the previous
+          entry: changing or removing a line after the fact breaks the chain, and the verification shows it —
+          unless someone recalculates every hash that follows. That is why a final hash published separately
+          matters. Two blocks below: a demo of the principle, then a log produced by IRIS during a scripted
+          session.</p>
       </div>
 
-      <div class="proof" style="margin-bottom:20px">
+      <!-- Block 1: demo of the principle (made-up entries, simplified calculation) — assets/site.js -->
+      <div class="proof" id="demonstration" style="margin-bottom:20px">
         <div class="proof-main">
-          <div class="proof-label">Transparency log — example</div>
+          <div class="proof-label">Demo of the principle</div>
           <div class="proof-state" data-state role="status" aria-live="polite">SHA-256 chain — not verified yet</div>
-          <p class="proof-hint">Each entry contains the fingerprint of the previous one. Altering or removing a
-            line breaks the chain, and the verification shows it.</p>
+          <p class="proof-hint">An illustration you can play with: each entry contains the hash of the
+            previous one. Rewrite a line, then verify: the chain breaks.</p>
         </div>
       </div>
 
       <div class="demo" data-chain-demo>
         <div class="demo-head">
-          <span class="grow small muted">Day of 3 September 2026 · 5 entries</span>
+          <span class="grow small muted">Demo · made-up entries · 5 entries</span>
           <button class="btn primary sm" type="button" data-verify>Verify the chain</button>
           <button class="btn sm" type="button" data-tamper>Rewrite entry no.&nbsp;2</button>
           <button class="btn sm" type="button" data-reset hidden>Reset</button>
         </div>
         <div class="demo-body" data-entries>
-          <p class="small muted">Enable JavaScript to try this demonstration. The principle stays the
-            same: each line of the log is sealed with a fingerprint that contains the one from the
-            previous line.</p>
+          <p class="small muted">Turn on JavaScript to play with this demo. The principle stays the same:
+            each line of the log is sealed by a hash that contains the hash of the previous line.</p>
         </div>
         <p class="demo-status" data-status>SHA-256 chain — not verified yet.</p>
       </div>
       <p class="demo-note">
-        Example log, for illustration: these entries come from no user. The computation of the fingerprints,
-        though, is the real thing — SHA-256, run inside this page, without sending anything anywhere.
+        Demo of the principle: these entries are made up and don’t come from any user. The SHA-256
+        calculation is real and runs in this page, but it is simplified (starting from zeros, fields
+        time | action | detail): it is not the exact format of IRIS’s log. The entries of this demo are
+        displayed in French. The log in IRIS’s format, produced by IRIS during a scripted session, is just below.
+      </p>
+
+      <!-- Block 2: real proof — log exported by IRIS, verified in the browser (assets/registre-preuve.js) -->
+      <div class="proof" style="margin:40px 0 20px">
+        <div class="proof-main">
+          <div class="proof-label">Proof</div>
+          <div class="proof-state">Proof: log produced by IRIS during a test session on September 13, 2026</div>
+          <p class="proof-hint">Unedited JSON export, produced by a test script that calls IRIS’s local API
+            (code in development, log module identical to 0.1.0), and not by the installed app or by real-world
+            use; all 10 entries carry the same second. Blank data folder, no personal data (consent granted
+            then withdrawn, one neutral memory deleted, private mode and 100% local mode turned on then off,
+            manual purge). Your browser downloads the file and recalculates every SHA-256 hash; nothing is sent
+            anywhere. A log coming from the installed app will be published here in turn.</p>
+        </div>
+      </div>
+
+      <div class="demo" data-registre="/assets/preuves/registre-session-essai-2026-09-13.json"
+           data-empreinte-finale="6dfc0287079f30400cf5a5a44530f7cd8500b24838ddaf62724ae7cca0bad25e"
+           data-t-chargement="Loading the log…"
+           data-t-calcul="Recalculating the SHA-256 hashes in your browser…"
+           data-t-integre="Chain intact: {k} entries recalculated, each hash matches its content and the previous entry."
+           data-t-alteree="Chain broken at entry no. {n} (identifier {id}): {detail}."
+           data-t-raison-empreinte="its content no longer matches its hash"
+           data-t-raison-chainage="it no longer points to the hash of the previous entry"
+           data-t-raison-sans-empreinte="it has no hash, although a previous entry has one"
+           data-t-annonce-ko="The hash stated in the file does not match the recalculated chain."
+           data-t-ancre-ok="Final hash identical to the one published on this page."
+           data-t-ancre-ko="The chain is consistent, but its final hash differs from the one published on this page: this is not the published file."
+           data-t-sans-ancre="Without a reference hash, this proves the file is consistent, not that it was never rewritten in full: compare its final hash with the one IRIS shows under Confidentialité › Vérifier maintenant (Privacy › Verify now), just before exporting."
+           data-t-sans-empreinte="{k} entry(ies) older than the chain, without a hash (tolerated, as in IRIS)."
+           data-t-vide="Empty log: no entries to verify."
+           data-t-entrees="Entries"
+           data-t-premiere="First hash"
+           data-t-derniere="Last hash"
+           data-t-horodatage="Timestamp (UTC)"
+           data-t-heure-locale="In your device’s time"
+           data-t-voir-entrees="See the {k} entries"
+           data-t-empreinte="hash: "
+           data-t-alterer="Tamper with an entry to see"
+           data-t-retablir="Restore the published file"
+           data-t-copie="In-memory copy: in entry no. {n}, the “{champ}” field changes from “{avant}” to “{apres}”. The published file is not modified."
+           data-t-marque-alteree="modified in memory"
+           data-t-telecharger="Download the file (.json)"
+           data-t-fichier-local="Verify your own exported log (the file stays in your browser)"
+           data-t-fichier-local-nom="File verified: {detail}"
+           data-t-erreur-chargement="Unable to load the log ({detail})."
+           data-t-erreur-format="This file doesn’t have the shape of an IRIS log (“events” list missing or unreadable)."
+           data-t-erreur-crypto="This browser doesn’t provide SHA-256 on this page (crypto.subtle requires an https connection).">
+        <p class="small muted">Turn on JavaScript to verify this log here, or
+          <a href="/assets/preuves/registre-session-essai-2026-09-13.json" download>download the file</a>
+          and verify it yourself with the formula below.</p>
+      </div>
+      <p class="demo-note">
+        <a href="/assets/preuves/registre-session-essai-2026-09-13.json" download>Download the file (.json, 3.8&nbsp;kB)</a>.
+        Published final hash: <span class="mono" style="word-break:break-all">6dfc0287079f30400cf5a5a44530f7cd8500b24838ddaf62724ae7cca0bad25e</span>.
+        Timestamps in Coordinated Universal Time: September 14, 2026, 1:30 UTC, that is September 13 at
+        9:30&nbsp;p.m., Eastern Time. Formula: SHA-256 of “previous hash | created_at | event_type | data_type |
+        agent | detail”. The session was run with IRIS code in development, whose log module is identical to
+        the one in the released version 0.1.0. This session includes
+        no online send. The verification shows that the file is consistent and identical to the one whose hash
+        is published here; on its own, it doesn’t tell who produced it.
       </p>
     </div>
   </section>
@@ -212,51 +285,63 @@
   <section id="local">
     <div class="wrap">
       <div class="sec-head">
-        <p class="section-label">Local processing by default</p>
-        <h2>Nothing goes to a cloud by default.</h2>
-        <p>IRIS runs on your PC. The glasses connect to it over Bluetooth. Everything happens on your
-          computer: that's the trade-off we accept for "everything stays with you".</p>
+        <p class="section-label">Your computer is the brain</p>
+        <h2>In local mode, your data stays on your computer.</h2>
+        <p>When you turn on an online feature, IRIS shows you what will be sent before it goes. In practice,
+          in IRIS&nbsp;0.1.0: one consent per type of data, off by default, a preview before a screenshot is
+          attached, and the send recorded in the log. The trade-off, and we own it: without a computer that is
+          switched on and within range, the glasses don’t drive IRIS today.</p>
       </div>
 
-      <figure class="viz" style="margin-top:8px">
-        <svg class="arch-svg" viewBox="0 0 820 230" role="img"
-             aria-label="Diagram: the VELA glasses connect to your computer over Bluetooth. IRIS runs on that computer. Nothing goes out to the Internet: your data stays with you."
-             style="width:100%;height:auto;max-width:760px;display:block;margin-inline:auto">
-          <title>How your data flows</title>
-          <desc>The glasses connect over Bluetooth to your computer, where IRIS runs. No data goes out to the Internet.</desc>
-          <rect x="16" y="70" width="196" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2"/>
-          <text x="114" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Glasses</text>
-          <text x="114" y="136" text-anchor="middle" font-size="13" fill="currentColor" opacity="0.72">mic · sound · camera</text>
-          <text x="262" y="102" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor">Bluetooth</text>
-          <line x1="220" y1="116" x2="300" y2="116" stroke="currentColor" stroke-width="2"/>
-          <polygon points="300,111 312,116 300,121" fill="currentColor"/>
-          <line x1="312" y1="134" x2="232" y2="134" stroke="currentColor" stroke-width="2"/>
-          <polygon points="232,129 220,134 232,139" fill="currentColor"/>
-          <rect x="312" y="56" width="216" height="122" rx="16" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-width="2.5"/>
-          <text x="420" y="102" text-anchor="middle" font-size="19" font-weight="700" fill="currentColor">Your PC</text>
-          <text x="420" y="128" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor">IRIS</text>
-          <text x="420" y="150" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.72">everything stays here</text>
-          <line x1="528" y1="118" x2="610" y2="118" stroke="currentColor" stroke-width="2" stroke-dasharray="6 6"/>
-          <circle cx="569" cy="118" r="15" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <line x1="559" y1="108" x2="579" y2="128" stroke="currentColor" stroke-width="2.5"/>
-          <text x="569" y="152" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Nothing leaves</text>
-          <rect x="626" y="70" width="178" height="96" rx="16" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 6" opacity="0.55"/>
-          <text x="715" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" opacity="0.6">Internet</text>
-          <text x="715" y="134" text-anchor="middle" font-size="12" fill="currentColor" opacity="0.55">no data</text>
-        </svg>
-        <figcaption>Glasses → Bluetooth → your PC (IRIS). Your data stays with you: nothing goes out to the Internet.</figcaption>
-      </figure>
+      <div class="callout warn" style="margin-bottom:26px">
+        <p><strong>What is sent, and what doesn’t go through your consents.</strong> Your requests, attached
+          images, screenshots and memories aren’t sent without your consent, type by type, and these sends
+          are recorded in the log. Outside local mode, IRIS also contacts VELA’s server at startup, with a
+          device identifier (and your purchase email, if you entered it), to open online access, then once a
+          day to check your plan if that email is entered; these contacts are not recorded in the log. The
+          100% local mode blocks them.</p>
+      </div>
+
+      <div class="archi">
+        <div class="card">
+          <p class="archi-niveau">1 · The glasses</p>
+          <h3>VELA, your interface</h3>
+          <p>Mic, open-ear speaker, camera and buttons. Connected to the computer over Bluetooth.</p>
+          <span class="pill warn">Link with IRIS: In testing</span>
+        </div>
+        <span class="archi-fleche" aria-hidden="true">→</span>
+        <div class="card">
+          <p class="archi-niveau">2 · The intelligence</p>
+          <h3>IRIS, on your computer</h3>
+          <p>Memories and conversations encrypted on your computer; log and settings stored on your computer,
+            unencrypted (the log keeps an excerpt of the requests sent). The voice works without Internet; so
+            does the wake word, in testing with the glasses.</p>
+          <span class="pill ok">Available</span>
+        </div>
+        <span class="archi-fleche" aria-hidden="true">→</span>
+        <div class="card">
+          <p class="archi-niveau">3 · Optional</p>
+          <h3>IRIS Online</h3>
+          <p>Receives what you have authorized, type by type, for open-ended answers, through a VELA server.
+            Blocked in 100% local mode. Details in the <a href="/politique-confidentialite.html">policy</a> (in French).</p>
+          <span class="pill warn">In testing</span>
+        </div>
+      </div>
 
       <div class="grid grid-2" style="margin-top:26px">
         <div class="card">
-          <h3>Nothing comes back to us</h3>
-          <p>No telemetry, no usage statistics, no automatic uploads. The IRIS local service only listens
-            on your machine, behind a token regenerated at each startup.</p>
+          <h3>No telemetry in the app</h3>
+          <p>The app sends no telemetry and no usage statistics. If you use IRIS Online, our server counts your
+            requests to apply the quota, without keeping your requests (see the
+            <a href="/politique-confidentialite.html">policy</a>, in French). By default, IRIS’s local service
+            only listens on your machine, behind a token regenerated at every startup; if you turn on access
+            from your phone, it also listens on your local network, behind a password.</p>
         </div>
         <div class="card">
-          <h3>You take it with you, or erase it</h3>
-          <p>The log exports to JSON or CSV, and clears whenever you decide. Your memories can be edited
-            one at a time; a purge removes the data for good.</p>
+          <h3>Take them with you, or erase them</h3>
+          <p>The log exports to JSON or CSV. The log is cleared whenever you decide; that clearing is not
+            itself recorded. The purge permanently deletes data that has reached the end of the period you
+            chose; memories are erased one by one.</p>
         </div>
       </div>
     </div>
@@ -267,87 +352,73 @@
     <div class="wrap">
       <div class="sec-head">
         <p class="section-label">Four safeguards</p>
-        <h2>What you keep control over.</h2>
-        <p>No hidden settings. Each one is visible, reversible, and written to the log when it changes.</p>
+        <h2>What you stay in control of.</h2>
+        <p>Each one is visible in the app and reversible; consent and mode changes are recorded in the log.</p>
       </div>
       <div class="grid grid-4">
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>
           <h3>Consent, by type</h3>
-          <p>Text, audio, images, captures, memory: nothing goes out without your agreement for that
-            specific type. Each switch can be turned off with a single tap.</p>
+          <p>Text, audio, images, screenshots, memory: all off by default. No online send of that type without
+            your consent; each switch can be turned off in one gesture.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-oeil"/></svg></span>
           <h3>The capture indicator</h3>
-          <p>As soon as the mic, the screen or the camera are in use, an indicator appears. A light also
-            turns on the glasses when the camera records: you always know.</p>
+          <p>When the computer’s mic, screen or a camera is in use, a badge appears on screen. The glasses’
+            frame also has an indicator light linked to its camera.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-micro"/></svg></span>
           <h3>Private mode</h3>
-          <p>One gesture cuts the mic. The 100% local mode relies on an offline English voice
-            (Piper) and local speech recognition (Vosk): nothing goes out anymore.</p>
+          <p>One gesture cuts the mic. The 100% local mode, for its part, blocks sends to online services:
+            IRIS keeps its voice and the wake word, which work on the computer.</p>
         </div>
         <div class="card feat">
           <span class="ico-wrap"><svg class="ico" aria-hidden="true"><use href="#i-memoire"/></svg></span>
-          <h3>On your disk, for as long as you choose</h3>
-          <p>Memories, messages and logs stay on your device. You set how long they're kept and you
-            purge whenever you see fit.</p>
+          <h3>On your drive, for as long as you choose</h3>
+          <p>Memories, messages and logs stay on your device. You set the retention period and purge
+            whenever you see fit.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============================================== the capture indicator -->
+  <!-- ============================================== the glasses' camera -->
   <section id="temoin">
-    <div class="wrap">
+    <div class="wrap narrow">
       <div class="sec-head">
-        <p class="section-label">The capture indicator</p>
-        <h2>An indicator lights up as soon as the camera records.</h2>
-        <p>Nothing happens in secret. The request, the action, the trace: every step is visible, and the
-          last one is written to the log you can verify.</p>
+        <p class="section-label">The glasses’ camera</p>
+        <h2>Photos by voice are in testing.</h2>
+        <p>IRIS&nbsp;0.1.0 still refuses to trigger the glasses’ camera until the command is confirmed on the
+          real hardware <span class="pill warn">In testing</span>. What is written in the software for that
+          day: the image is brought back to your computer, and the capture is recorded in the log. We will
+          only call it “Available” once it has been verified.</p>
       </div>
-
-      <figure class="viz viz-voice">
-        <div class="vs">
-          <div class="vs-row vs-ask">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-micro"/></svg></span>
-            <span class="vs-wave" aria-hidden="true"><i style="--b:0"></i><i style="--b:1"></i><i style="--b:2"></i><i style="--b:3"></i><i style="--b:4"></i><i style="--b:5"></i><i style="--b:6"></i><i style="--b:7"></i></span>
-            <p class="vs-said"><span>"Dis-moi Iris, take a photo."</span></p>
-          </div>
-          <div class="vs-row vs-do">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-camera"/></svg></span>
-            <p>Photo taken. A light turns on during the capture; the image is filed away on your computer.</p>
-          </div>
-          <div class="vs-row vs-log">
-            <span class="vs-badge" aria-hidden="true"><svg class="ico"><use href="#i-chaine"/></svg></span>
-            <p>Written to the log: <span class="mono">capture — verifiable</span>.</p>
-          </div>
-        </div>
-        <figcaption>The request, the action, the trace — on your device, verifiable by you.</figcaption>
-      </figure>
     </div>
   </section>
 
-  <!-- ================================================= what about always listening? -->
+  <!-- ================================================= what about always-on listening? -->
   <section class="band">
     <div class="wrap narrow">
       <h2>So what about always-on listening?</h2>
       <p>
-        To hear "Dis-moi Iris", it does have to listen. So the real question isn't
-        "is it listening?" but "where does what it hears go?".
+        To hear “Dis-moi Iris”, it does have to listen. So the real question isn’t “is it listening?” but
+        “where does what it hears go?”.
       </p>
       <p>
-        Speech recognition can run entirely on your device, with a local model (French is built in; the English model downloads once). In that case, no sound goes out. And for an online AI service to answer, only the text of
-        your request is transmitted — with your agreement, and written to the log every time.
+        IRIS spots “Dis-moi Iris” on your computer, with a French speech-recognition model installed with the
+        app: that sound is not sent online. For IRIS Online to answer, the text of your request is
+        transmitted — and, depending on your consents, attached images, screenshots or memory excerpts. These
+        sends need your consent and IRIS records them in the log. The test session published above contains
+        no online send: it doesn’t demonstrate this point.
       </p>
       <p class="small muted">
-        The detail, mechanism by mechanism, is in the
-        <a href="/politique-confidentialite.html">privacy policy</a>.
+        The details, mechanism by mechanism, are in the
+        <a href="/politique-confidentialite.html">privacy policy</a> (in French).
       </p>
       <p class="actions">
-        <a class="btn primary" href="/en/installer.html">Install IRIS, free</a>
+        <a class="btn primary" href="/en/installer.html">Install IRIS, for free</a>
         <a class="btn" href="/en/fonctionnalites.html">What IRIS can do</a>
       </p>
     </div>
@@ -388,7 +459,7 @@
         <h3>Learn more</h3>
         <ul>
           <li><a href="/en/a-propos.html">About</a></li>
-          <li><a href="/en/feuille-de-route.html">Roadmap</a></li>
+          <li><a href="/en/feuille-de-route.html">What works today</a></li>
           <li><a href="/presse.html">Press</a></li>
           <li><a href="/en/faq.html">Frequently asked questions</a></li>
           <li><a href="/en/accessibilite.html">Accessibility</a></li>
@@ -406,7 +477,7 @@
       </div>
     </div>
     <div class="foot-bottom">
-      <p>© 2026 VELA. IRIS version 0.1.0, for Windows 10 and 11 (64&nbsp;bit).</p>
+      <p>© 2026 VELA. IRIS version 0.1.0, for Windows 10 and 11 (64-bit).</p>
       <p class="foot-legal">
         <a href="/politique-confidentialite.html">Privacy policy</a>
         <a href="/conditions-vente.html">Terms of sale</a>
@@ -418,5 +489,6 @@
 </footer>
 
 <script src="/assets/site.js?v=9"></script>
+<script src="/assets/registre-preuve.js?v=2" defer></script>
 </body>
 </html>

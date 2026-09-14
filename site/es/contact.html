@@ -11,6 +11,7 @@
 <link rel="alternate" hreflang="en" href="https://velaglass.ca/en/contact.html">
 <link rel="alternate" hreflang="es" href="https://velaglass.ca/es/contact.html">
 <link rel="alternate" hreflang="it" href="https://velaglass.ca/it/contact.html">
+<link rel="alternate" hreflang="x-default" href="https://velaglass.ca/contact.html">
 <link rel="stylesheet" href="/assets/style.css?v=10">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VELA">
@@ -51,15 +52,16 @@
       <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
     </a>
     <nav class="site-lang" aria-label="Langue / Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
-  <a href="/index.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
-  <a href="/en/index.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
-  <a href="/es/index.html" hreflang="es" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">ES</a>
-  <a href="/it/index.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
+  <a href="/contact.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
+  <a href="/en/contact.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
+  <a href="/es/contact.html" hreflang="es" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">ES</a>
+  <a href="/it/contact.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
 </nav>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menú</button>
     <nav id="nav" class="site-nav" aria-label="Navegación principal">
       <a href="/es/lunettes.html">Las gafas</a>
       <a href="/es/fonctionnalites.html">Lo que hace IRIS</a>
+      <a href="/es/feuille-de-route.html">Lo que funciona hoy</a>
       <a href="/es/plans.html">Planes</a>
       <a href="/es/confidentialite.html">Privacidad</a>
       <a href="/es/installer.html">Instalar</a>
@@ -111,7 +113,7 @@
 
       <h2>Escríbenos unas líneas</h2>
       <p class="small muted" style="margin-bottom:18px">
-        Rellenas, envías&nbsp;: tu programa de correo se abre con el mensaje ya redactado. Nada pasa
+        Rellenas, envías: tu programa de correo se abre con el mensaje ya redactado. Nada pasa
         por un servicio de terceros, nada se guarda en esta página.
       </p>
 
@@ -135,6 +137,7 @@
             <option>Las gafas VELA</option>
             <option>Clave de suscripción</option>
             <option>Instalación</option>
+            <option>Primer tester</option>
             <option>Otro</option>
           </select>
         </div>
@@ -151,6 +154,14 @@
         </p>
         <p id="reponse" class="form-reponse" role="status" aria-live="polite" hidden></p>
       </form>
+
+      <div class="callout" id="premier-testeur" style="margin-top:26px">
+        <p><strong>Ser de los primeros testers.</strong> Elige el asunto «&nbsp;Primer tester&nbsp;» y
+          cuéntanos qué perfil te interesa (técnico, accesibilidad, día a día o privacidad), qué ordenador
+          tienes y por qué. En esta etapa no hace falta que nos hables de tu salud. Solo con tu consentimiento
+          por escrito publicaremos tus resultados reales, fallos incluidos; nunca te pediremos una opinión
+          positiva. IRIS&nbsp;0.1.0 funciona en francés.</p>
+      </div>
     </div>
   </section>
 
@@ -162,23 +173,28 @@
       <div class="grid grid-2" style="margin-top:24px">
         <div class="card">
           <h3>¿IRIS funciona sin las gafas?</h3>
-          <p class="small">Sí. Es una aplicación de Windows completa, que se usa con el micrófono de tu
-            ordenador: las gafas solo añaden el micrófono y el sonido al alcance del oído.</p>
+          <p class="small">IRIS está hecha para usarse con las gafas VELA: sin ellas, la aplicación es
+            solo una vista previa. Una vez vinculadas tus gafas, IRIS&nbsp;0.1.0 solo responde, por voz o por
+            escrito, cuando están conectadas. Y sin un ordenador encendido cerca, hoy las gafas no pueden
+            controlar IRIS. <a href="/es/feuille-de-route.html">Lo que funciona hoy</a>.</p>
         </div>
         <div class="card">
           <h3>¿Hay que pagar para probarlo?</h3>
-          <p class="small">No. El plan Gratuito se abre en cuanto instalas. Las respuestas de los modelos
-            en línea llegan con el servicio que se desplegará <span class="pill warn">Próximamente</span>.</p>
+          <p class="small">No. IRIS se descarga gratis. IRIS en línea, el servicio opcional para las
+            respuestas libres, está <span class="pill warn">En pruebas</span>.</p>
         </div>
         <div class="card">
           <h3>¿A dónde van mis datos?</h3>
-          <p class="small">Se quedan contigo. Conversaciones, memoria y registro permanecen en tu dispositivo.
-            <a href="/es/confidentialite.html">Cómo lo demostramos</a>.</p>
+          <p class="small">En modo local, tus datos se quedan en tu ordenador. Cuando activas una función en
+            línea, IRIS te muestra lo que sale antes de enviarlo. En concreto, en IRIS&nbsp;0.1.0: una
+            autorización por tipo de dato, desactivada de entrada, una vista previa antes de adjuntar una captura
+            de pantalla, y el envío anotado en el registro. <a href="/es/confidentialite.html#local">Lo que sale, en detalle</a>.</p>
         </div>
         <div class="card">
           <h3>¿Cómo comprar las gafas?</h3>
-          <p class="small">250&nbsp;$ CAD, un solo pago. Acordamos la entrega por correo,
-            juntos. <a href="/es/lunettes.html">Ver las gafas</a>.</p>
+          <p class="small">Edición Fundadora: 250&nbsp;$ CAD, un solo pago. Los pagos aún no están
+            abiertos: apúntate a la lista de espera, gratuita y sin compromiso. La fecha de entrega se
+            escribirá antes de cualquier pago. <a href="/es/index.html#edition-fondatrice">Ver la oferta y el compromiso</a>.</p>
         </div>
       </div>
     </div>
@@ -218,8 +234,8 @@
       <div>
         <h3>Más información</h3>
         <ul>
-          <li><a href="/es/a-propos.html">Quiénes somos</a></li>
-          <li><a href="/es/feuille-de-route.html">Hoja de ruta</a></li>
+          <li><a href="/es/a-propos.html">Acerca de</a></li>
+          <li><a href="/es/feuille-de-route.html">Lo que funciona hoy</a></li>
           <li><a href="/presse.html">Prensa</a></li>
           <li><a href="/es/faq.html">Preguntas frecuentes</a></li>
           <li><a href="/es/accessibilite.html">Accesibilidad</a></li>
@@ -227,7 +243,7 @@
         </ul>
       </div>
       <div>
-        <h3>Contacto</h3>
+        <h3>Contáctanos</h3>
         <ul>
           <li><a href="/suivi.html">Seguir mi pedido</a></li>
           <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>

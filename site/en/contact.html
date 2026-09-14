@@ -9,6 +9,9 @@
 <link rel="canonical" href="https://velaglass.ca/en/contact.html">
 <link rel="alternate" hreflang="fr" href="https://velaglass.ca/contact.html">
 <link rel="alternate" hreflang="en" href="https://velaglass.ca/en/contact.html">
+<link rel="alternate" hreflang="es" href="https://velaglass.ca/es/contact.html">
+<link rel="alternate" hreflang="it" href="https://velaglass.ca/it/contact.html">
+<link rel="alternate" hreflang="x-default" href="https://velaglass.ca/contact.html">
 <link rel="stylesheet" href="/assets/style.css?v=10">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VELA">
@@ -30,7 +33,7 @@
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/en/" },
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/en/index.html" },
     { "@type": "ListItem", "position": 2, "name": "Contact", "item": "https://velaglass.ca/en/contact.html" }
   ]
 }
@@ -49,15 +52,16 @@
       <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
     </a>
     <nav class="site-lang" aria-label="Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
-      <a href="/index.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
-      <a href="/en/index.html" hreflang="en" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">EN</a>
-      <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
-      <a href="/it/index.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
+      <a href="/contact.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
+      <a href="/en/contact.html" hreflang="en" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">EN</a>
+      <a href="/es/contact.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+      <a href="/it/contact.html" hreflang="it" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">IT</a>
     </nav>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav id="nav" class="site-nav" aria-label="Main navigation">
       <a href="/en/lunettes.html">The glasses</a>
       <a href="/en/fonctionnalites.html">What IRIS does</a>
+      <a href="/en/feuille-de-route.html">What works today</a>
       <a href="/en/plans.html">Plans</a>
       <a href="/en/confidentialite.html">Privacy</a>
       <a href="/en/installer.html">Install</a>
@@ -96,7 +100,7 @@
         <div class="card">
           <h3>Phone</h3>
           <p class="coord"><a href="tel:+18195242804">819&nbsp;524-2804</a></p>
-          <p class="small muted">For a quick question or a hand with the install.</p>
+          <p class="small muted">For a quick question or a hand with the installation.</p>
         </div>
       </div>
 
@@ -109,8 +113,8 @@
 
       <h2>Drop us a line</h2>
       <p class="small muted" style="margin-bottom:18px">
-        Fill it in, send it&nbsp;: your email software opens with the message already written. Nothing
-        goes through a third-party service, nothing is kept on this page.
+        Fill it in, send it: your email software opens with the message already written. Nothing goes
+        through a third-party service, nothing is kept on this page.
       </p>
 
       <form id="form-contact" novalidate>
@@ -133,6 +137,7 @@
             <option>The VELA glasses</option>
             <option>Subscription key</option>
             <option>Installation</option>
+            <option>First tester</option>
             <option>Other</option>
           </select>
         </div>
@@ -144,39 +149,51 @@
         </div>
         <p class="actions">
           <button class="btn primary" type="submit">Open my email</button>
-          <span class="small muted">or straight to
+          <span class="small muted">or write straight to
             <a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></span>
         </p>
         <p id="reponse" class="form-reponse" role="status" aria-live="polite" hidden></p>
       </form>
+
+      <div class="callout" id="premier-testeur" style="margin-top:26px">
+        <p><strong>Become a first tester.</strong> Choose the “First tester” subject and tell us which profile
+          interests you (technical, accessibility, everyday life or privacy), what computer you have and why.
+          No need to tell us about your health at this stage. Only with your written consent, we will publish
+          your actual results, failures included; we will never ask you for a positive review.</p>
+      </div>
     </div>
   </section>
 
-  <!-- ================================================= three short answers -->
+  <!-- ================================================= four short answers -->
   <section class="band">
     <div class="wrap narrow">
       <p class="section-label">In a nutshell</p>
-      <h2>What people ask us most.</h2>
+      <h2>What people often ask us.</h2>
       <div class="grid grid-2" style="margin-top:24px">
         <div class="card">
-          <h3>Does IRIS work without the glasses&nbsp;?</h3>
-          <p class="small">Yes. It is a full Windows application, used through your computer's
-            microphone — the glasses only add the microphone and the sound within earshot.</p>
+          <h3>Does IRIS work without the glasses?</h3>
+          <p class="small">IRIS is made to be used with the VELA glasses: without them, the app is only a
+            preview. Once your glasses are paired, IRIS&nbsp;0.1.0 only responds, by voice or in writing, while
+            they are connected. And without a computer that is switched on and within range, the glasses don’t
+            drive IRIS today. <a href="/en/feuille-de-route.html">What works today</a>.</p>
         </div>
         <div class="card">
-          <h3>Do I have to pay to try it&nbsp;?</h3>
-          <p class="small">No. The Free plan opens the moment you install. Answers from online
-            models arrive with the service now rolling out <span class="pill warn">Coming soon</span>.</p>
+          <h3>Do I have to pay to try it?</h3>
+          <p class="small">No. IRIS is a free download. IRIS Online, the optional service for open-ended
+            answers, is <span class="pill warn">In testing</span>. IRIS is built in French.</p>
         </div>
         <div class="card">
-          <h3>Where does my data go&nbsp;?</h3>
-          <p class="small">It stays with you. Conversations, memory and logs remain on your device.
-            <a href="/en/confidentialite.html">How we prove it</a>.</p>
+          <h3>Where does my data go?</h3>
+          <p class="small">In local mode, your data stays on your computer. When you turn on an online
+            feature, IRIS shows you what will be sent before it goes. In practice, in IRIS&nbsp;0.1.0: one
+            consent per type of data, off by default, a preview before a screenshot is attached, and the send
+            recorded in the log. <a href="/en/confidentialite.html#local">What is sent, in detail</a>.</p>
         </div>
         <div class="card">
-          <h3>How do I buy the glasses&nbsp;?</h3>
-          <p class="small">250&nbsp;$ CAD, a single payment. We arrange delivery by email,
-            together. <a href="/en/lunettes.html">See the glasses</a>.</p>
+          <h3>How do I buy the glasses?</h3>
+          <p class="small">Founders Edition: $250 CAD, a single payment. Payments aren’t open yet: join the
+            waitlist, free and with no commitment. The delivery date will be written down before any payment.
+            <a href="/en/index.html#edition-fondatrice">See the offer and the commitment</a>.</p>
         </div>
       </div>
     </div>
@@ -217,7 +234,7 @@
         <h3>Learn more</h3>
         <ul>
           <li><a href="/en/a-propos.html">About</a></li>
-          <li><a href="/en/feuille-de-route.html">Roadmap</a></li>
+          <li><a href="/en/feuille-de-route.html">What works today</a></li>
           <li><a href="/presse.html">Press</a></li>
           <li><a href="/en/faq.html">Frequently asked questions</a></li>
           <li><a href="/en/accessibilite.html">Accessibility</a></li>
@@ -225,7 +242,7 @@
         </ul>
       </div>
       <div>
-        <h3>Reach us</h3>
+        <h3>Get in touch</h3>
         <ul>
           <li><a href="/suivi.html">Track my order</a></li>
           <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>
@@ -235,7 +252,7 @@
       </div>
     </div>
     <div class="foot-bottom">
-      <p>© 2026 VELA. IRIS version 0.1.0, for Windows 10 and 11 (64&nbsp;bit).</p>
+      <p>© 2026 VELA. IRIS version 0.1.0, for Windows 10 and 11 (64-bit).</p>
       <p class="foot-legal">
         <a href="/politique-confidentialite.html">Privacy policy</a>
         <a href="/conditions-vente.html">Terms of sale</a>

@@ -11,6 +11,7 @@
 <link rel="alternate" hreflang="en" href="https://velaglass.ca/en/contact.html">
 <link rel="alternate" hreflang="es" href="https://velaglass.ca/es/contact.html">
 <link rel="alternate" hreflang="it" href="https://velaglass.ca/it/contact.html">
+<link rel="alternate" hreflang="x-default" href="https://velaglass.ca/contact.html">
 <link rel="stylesheet" href="/assets/style.css?v=10">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VELA">
@@ -32,7 +33,7 @@
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/it/" },
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://velaglass.ca/it/index.html" },
     { "@type": "ListItem", "position": 2, "name": "Contatti", "item": "https://velaglass.ca/it/contact.html" }
   ]
 }
@@ -51,17 +52,18 @@
       <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
     </a>
     <nav class="site-lang" aria-label="Langue / Language" style="display:flex;gap:4px;align-items:center;margin-left:16px">
-  <a href="/index.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
-  <a href="/en/index.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
-  <a href="/es/index.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
-  <a href="/it/index.html" hreflang="it" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">IT</a>
+  <a href="/contact.html" hreflang="fr" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">FR</a>
+  <a href="/en/contact.html" hreflang="en" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">EN</a>
+  <a href="/es/contact.html" hreflang="es" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--muted)">ES</a>
+  <a href="/it/contact.html" hreflang="it" aria-current="true" style="font-weight:700;font-size:.8rem;letter-spacing:.04em;padding:5px 9px;border-radius:999px;text-decoration:none;color:var(--sail);background:var(--sail-tint)">IT</a>
 </nav>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
     <nav id="nav" class="site-nav" aria-label="Navigazione principale">
       <a href="/it/lunettes.html">Gli occhiali</a>
       <a href="/it/fonctionnalites.html">Cosa fa IRIS</a>
+      <a href="/it/feuille-de-route.html">Cosa funziona oggi</a>
       <a href="/it/plans.html">Piani</a>
-      <a href="/it/confidentialite.html">Riservatezza</a>
+      <a href="/it/confidentialite.html">Privacy</a>
       <a href="/it/installer.html">Installa</a>
       <a href="/it/contact.html" class="nav-cta" aria-current="page">Contatti</a>
     </nav>
@@ -111,7 +113,7 @@
 
       <h2>Scrivici due righe</h2>
       <p class="small muted" style="margin-bottom:18px">
-        Compili, invii&nbsp;: si apre il tuo programma di posta con il messaggio già pronto. Nulla
+        Compili, invii: si apre il tuo programma di posta con il messaggio già pronto. Nulla
         passa da un servizio esterno, nulla resta salvato su questa pagina.
       </p>
 
@@ -135,6 +137,7 @@
             <option>Gli occhiali VELA</option>
             <option>Chiave di abbonamento</option>
             <option>Installazione</option>
+            <option>Primo tester</option>
             <option>Altro</option>
           </select>
         </div>
@@ -151,6 +154,14 @@
         </p>
         <p id="reponse" class="form-reponse" role="status" aria-live="polite" hidden></p>
       </form>
+
+      <div class="callout" id="premier-testeur" style="margin-top:26px">
+        <p><strong>Diventare primo tester.</strong> Scegli l'oggetto «Primo tester» e dicci quale
+          profilo ti interessa (tecnica, accessibilità, quotidiano o privacy), che computer hai e perché.
+          Non serve parlarci della tua salute in questa fase. Solo con il tuo consenso scritto pubblicheremo i
+          tuoi risultati reali, fallimenti compresi; non ti chiederemo mai una recensione positiva. Tieni
+          presente che IRIS&nbsp;0.1.0 funziona in francese.</p>
+      </div>
     </div>
   </section>
 
@@ -161,24 +172,29 @@
       <h2>Quello che ci chiedono più spesso.</h2>
       <div class="grid grid-2" style="margin-top:24px">
         <div class="card">
-          <h3>IRIS funziona senza gli occhiali&nbsp;?</h3>
-          <p class="small">Sì. È un'applicazione Windows completa, che si usa con il microfono del tuo
-            computer — gli occhiali si limitano ad aggiungere il microfono e il suono a portata d'orecchio.</p>
+          <h3>IRIS funziona senza gli occhiali?</h3>
+          <p class="small">IRIS è fatta per essere usata con gli occhiali VELA: senza di loro,
+            l'applicazione è solo un'anteprima. Una volta associati i tuoi occhiali, IRIS&nbsp;0.1.0 risponde, a
+            voce come per iscritto, solo quando sono collegati. E senza un computer acceso a portata, oggi gli
+            occhiali non comandano IRIS. <a href="/it/feuille-de-route.html">Cosa funziona oggi</a>.</p>
         </div>
         <div class="card">
-          <h3>Bisogna pagare per provarla&nbsp;?</h3>
-          <p class="small">No. Il piano Gratuito si apre già dall'installazione. Le risposte dei modelli
-            online arrivano con il servizio che verrà attivato <span class="pill warn">Prossimamente</span>.</p>
+          <h3>Bisogna pagare per provarla?</h3>
+          <p class="small">No. IRIS si scarica gratuitamente. IRIS online, il servizio facoltativo per le
+            risposte libere, è <span class="pill warn">In prova</span>.</p>
         </div>
         <div class="card">
-          <h3>Dove finiscono i miei dati&nbsp;?</h3>
-          <p class="small">Da te. Conversazioni, memoria e registro restano sul tuo dispositivo.
-            <a href="/it/confidentialite.html">Come lo dimostriamo</a>.</p>
+          <h3>Dove finiscono i miei dati?</h3>
+          <p class="small">In modalità locale, i tuoi dati restano sul tuo computer. Quando attivi una
+            funzione online, IRIS ti mostra cosa parte prima dell'invio. In concreto, in IRIS&nbsp;0.1.0: un
+            consenso per ogni tipo di dato, disattivato all'inizio, un'anteprima prima di allegare uno
+            screenshot, e l'invio annotato nel registro. <a href="/it/confidentialite.html#local">Cosa parte, nel dettaglio</a>.</p>
         </div>
         <div class="card">
-          <h3>Come si comprano gli occhiali&nbsp;?</h3>
-          <p class="small">250&nbsp;$ CAD, un unico pagamento. Concordiamo insieme la consegna via
-            email. <a href="/it/lunettes.html">Vedi gli occhiali</a>.</p>
+          <h3>Come si comprano gli occhiali?</h3>
+          <p class="small">Edizione Fondatori: 250&nbsp;$ CAD, un unico pagamento. I pagamenti non sono
+            ancora aperti: iscriviti alla lista d'attesa, gratuita e senza impegno. La data di consegna sarà
+            scritta prima di qualsiasi pagamento. <a href="/it/index.html#edition-fondatrice">Guarda l'offerta e l'impegno</a>.</p>
         </div>
       </div>
     </div>
@@ -197,7 +213,7 @@
           </svg>
           <span class="brand-txt"><b>VELA</b><i>IRIS</i></span>
         </a>
-        <p>La tua voce dà la rotta.<br>IRIS tiene il timone.</p>
+        <p>La tua voce traccia la rotta.<br>IRIS tiene il timone.</p>
         <nav class="foot-social" aria-label="VELA sui social">
           <a href="https://www.instagram.com/vela_iris2026/" target="_blank" rel="noopener noreferrer me">Instagram</a>
           <a href="https://www.linkedin.com/in/vela-glass-427361431/" target="_blank" rel="noopener noreferrer me">LinkedIn</a>
@@ -209,17 +225,17 @@
         <ul>
           <li><a href="/it/lunettes.html">Gli occhiali VELA</a></li>
           <li><a href="/it/fonctionnalites.html">Cosa fa IRIS</a></li>
-          <li><a href="/it/confidentialite.html">Riservatezza</a></li>
+          <li><a href="/it/confidentialite.html">Privacy</a></li>
           <li><a href="/it/plans.html">Piani e prezzi</a></li>
           <li><a href="/it/entreprises.html">Per le aziende</a></li>
           <li><a href="/it/installer.html">Installa IRIS</a></li>
         </ul>
       </div>
       <div>
-        <h3>Scopri di più</h3>
+        <h3>Per saperne di più</h3>
         <ul>
           <li><a href="/it/a-propos.html">Chi siamo</a></li>
-          <li><a href="/it/feuille-de-route.html">Roadmap</a></li>
+          <li><a href="/it/feuille-de-route.html">Cosa funziona oggi</a></li>
           <li><a href="/presse.html">Stampa</a></li>
           <li><a href="/it/faq.html">Domande frequenti</a></li>
           <li><a href="/it/accessibilite.html">Accessibilità</a></li>
@@ -229,7 +245,7 @@
       <div>
         <h3>Contattaci</h3>
         <ul>
-          <li><a href="/suivi.html">Traccia il mio ordine</a></li>
+          <li><a href="/suivi.html">Segui il mio ordine</a></li>
           <li><a href="mailto:contact@velaglass.ca">contact@velaglass.ca</a></li>
           <li><a href="tel:+18195242804">819&nbsp;524-2804</a></li>
           <li><a href="/it/contact.html">Modulo di contatto</a></li>
