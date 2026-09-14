@@ -10,10 +10,31 @@ from .base import BaseConnector, ChatOptions, Chunk, ConnectorError, ToolRunner,
 
 log = logging.getLogger("iris.gemini")
 
+# Modèles GRATUITS seulement (décision de Miguel, 2026-09-14). Vérifiés le 2026-09-14 sur la clé
+# de VELA, projet sans facturation : ces modèles répondent ; les modèles « Pro » sont refusés
+# (quota 0 sans facturation) et Gemini 2.5 n'est plus ouvert aux nouveaux comptes (404). Un modèle
+# hors de cette liste n'est JAMAIS utilisé : `modele_gratuit` retombe sur le défaut.
+# Limite à connaître : sur l'offre gratuite, Google peut utiliser les contenus envoyés pour améliorer
+# ses produits (conditions de l'API Gemini pour les services non payants).
 GEMINI_MODELS = [
-    {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro"},
-    {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+    {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash (gratuit)"},
+    {"id": "gemini-3.6-flash", "label": "Gemini 3.6 Flash (gratuit)"},
+    {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash (gratuit)"},
+    {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash-Lite (gratuit, le plus rapide)"},
+    {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite (gratuit)"},
 ]
+GEMINI_MODELE_DEFAUT = "gemini-3.5-flash"
+GEMINI_GRATUITS = frozenset(m["id"] for m in GEMINI_MODELS)
+
+
+def modele_gratuit(modele: str | None) -> str:
+    """Le modèle demandé s'il est gratuit, sinon le modèle gratuit par défaut."""
+    choisi = (modele or "").strip().removeprefix("models/")
+    if choisi in GEMINI_GRATUITS:
+        return choisi
+    if choisi:
+        log.warning("modèle Gemini « %s » hors de la liste gratuite : %s utilisé à la place", choisi, GEMINI_MODELE_DEFAUT)
+    return GEMINI_MODELE_DEFAUT
 
 
 def _map_error(exc: Exception) -> ConnectorError:

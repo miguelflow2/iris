@@ -147,7 +147,7 @@ def _default_agents() -> dict[str, AgentConfig]:
         "openrouter": AgentConfig(label="OpenRouter", model="minimax/minimax-m3:free", active=True),
         "claude": AgentConfig(label="Claude", model="claude-opus-5"),
         "gpt": AgentConfig(label="GPT", model="gpt-5"),
-        "gemini": AgentConfig(label="Gemini", model="gemini-2.5-pro"),
+        "gemini": AgentConfig(label="Gemini", model="gemini-3.5-flash"),  # gratuit seulement (connectors/gemini.py)
         "custom": AgentConfig(
             label="IA locale / perso",
             model="llama3.2",

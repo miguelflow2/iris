@@ -5,7 +5,7 @@ from ..config import Settings
 from ..security.secrets import SecretStore
 from .base import BaseConnector, ChatOptions, Chunk, ConnectorError, ToolSpec
 from .claude import CLAUDE_MODELS, ClaudeConnector
-from .gemini import GEMINI_MODELS, GeminiConnector
+from .gemini import GEMINI_MODELS, modele_gratuit, GeminiConnector
 from .openai_compat import GPT_MODELS, OPENROUTER_MODELS, OpenAICompatibleConnector, OpenRouterConnector, VelaConnector
 
 __all__ = [
@@ -62,7 +62,7 @@ AGENT_META = {
     "gemini": {
         "label": "Gemini",
         "vendor": "Google",
-        "key_hint": "AIza…",
+        "key_hint": "AIza… ou AQ.…",
         "key_url": "https://aistudio.google.com/app/apikey",
         "needs_key": True,
         "supports_tools": False,
@@ -210,7 +210,7 @@ def build_connector(name: str, settings: Settings, secrets: SecretStore) -> Base
     if name == "gpt":
         return OpenAICompatibleConnector(key, cfg.model or "gpt-5", name="gpt", label="GPT", supports_tools=True)
     if name == "gemini":
-        return GeminiConnector(key, cfg.model or "gemini-2.5-pro")
+        return GeminiConnector(key, modele_gratuit(cfg.model))
     if name == "custom":
         if not cfg.base_url:
             raise ConnectorError("Indiquez l'URL du serveur de votre IA perso (ex. http://127.0.0.1:11434/v1).")
