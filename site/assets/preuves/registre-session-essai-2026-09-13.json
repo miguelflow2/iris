@@ -1,0 +1,111 @@
+{
+  "exported_at": "2026-09-14T01:30:22+00:00",
+  "verification": {
+    "ok": true,
+    "count": 10,
+    "first_bad_id": null,
+    "last_hash": "6dfc0287079f30400cf5a5a44530f7cd8500b24838ddaf62724ae7cca0bad25e"
+  },
+  "events": [
+    {
+      "id": 1,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "consent_granted",
+      "data_type": "transcript",
+      "agent": null,
+      "detail": "",
+      "prev_hash": "",
+      "hash": "28bad477b1bca24db90cf6745c8b404e1e89eab9631cabc03742c537bbd986ba"
+    },
+    {
+      "id": 2,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "consent_revoked",
+      "data_type": "transcript",
+      "agent": null,
+      "detail": "",
+      "prev_hash": "28bad477b1bca24db90cf6745c8b404e1e89eab9631cabc03742c537bbd986ba",
+      "hash": "ee7b55bbd95297970273a4944887bd0a03af813b6859b74e79b5fc771afdee12"
+    },
+    {
+      "id": 3,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "memory_cleared",
+      "data_type": null,
+      "agent": null,
+      "detail": "1 souvenirs",
+      "prev_hash": "ee7b55bbd95297970273a4944887bd0a03af813b6859b74e79b5fc771afdee12",
+      "hash": "3644f4952dd40a92e0925924de33b7ff18008b8bb43cbc67d818dd207421e258"
+    },
+    {
+      "id": 4,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "privacy_mode_enabled",
+      "data_type": null,
+      "agent": null,
+      "detail": "",
+      "prev_hash": "3644f4952dd40a92e0925924de33b7ff18008b8bb43cbc67d818dd207421e258",
+      "hash": "5cc2bc40b0f78bc4fdcd4434e9b9e08ec625ecfdb9b1901d5a2ba58f5df7312c"
+    },
+    {
+      "id": 5,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "privacy_mode_disabled",
+      "data_type": null,
+      "agent": null,
+      "detail": "",
+      "prev_hash": "5cc2bc40b0f78bc4fdcd4434e9b9e08ec625ecfdb9b1901d5a2ba58f5df7312c",
+      "hash": "a51ed06796aecae3d32ee4e2a280c7c05cb81bef71795432780981ff90e74e7d"
+    },
+    {
+      "id": 6,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "local_only_enabled",
+      "data_type": null,
+      "agent": null,
+      "detail": "",
+      "prev_hash": "a51ed06796aecae3d32ee4e2a280c7c05cb81bef71795432780981ff90e74e7d",
+      "hash": "1f5fbefabf2caf3b84af8dbef15a33f92f53561296eeaa0064014bf83d568a02"
+    },
+    {
+      "id": 7,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "local_only_disabled",
+      "data_type": null,
+      "agent": null,
+      "detail": "",
+      "prev_hash": "1f5fbefabf2caf3b84af8dbef15a33f92f53561296eeaa0064014bf83d568a02",
+      "hash": "687b69e8056fa8e8ed9ad3f5a16bb8bb26134fcc0a3d1948930db8d5635baca4"
+    },
+    {
+      "id": 8,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "purge_manual",
+      "data_type": null,
+      "agent": null,
+      "detail": "{'memories': 0, 'messages': 0, 'events': 0}",
+      "prev_hash": "687b69e8056fa8e8ed9ad3f5a16bb8bb26134fcc0a3d1948930db8d5635baca4",
+      "hash": "02309071d55c8a7a87fd3abc4c5a54c39a94df36832e37251b9e6b8c0bf2f556"
+    },
+    {
+      "id": 9,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "consent_granted",
+      "data_type": "memory",
+      "agent": null,
+      "detail": "",
+      "prev_hash": "02309071d55c8a7a87fd3abc4c5a54c39a94df36832e37251b9e6b8c0bf2f556",
+      "hash": "48820d0a0b29138098e18796734961900cc07114e031b865effa47e7f6faf230"
+    },
+    {
+      "id": 10,
+      "created_at": "2026-09-14T01:30:22+00:00",
+      "event_type": "consent_revoked",
+      "data_type": "memory",
+      "agent": null,
+      "detail": "",
+      "prev_hash": "48820d0a0b29138098e18796734961900cc07114e031b865effa47e7f6faf230",
+      "hash": "6dfc0287079f30400cf5a5a44530f7cd8500b24838ddaf62724ae7cca0bad25e"
+    }
+  ]
+}

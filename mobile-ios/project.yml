@@ -1,0 +1,109 @@
+# Projet XcodeGen de l'app iPhone IRIS (VELA).
+#
+# Sur un Mac : `brew install xcodegen`, puis `xcodegen generate` dans ce dossier ; ouvrir IRIS.xcodeproj.
+# Étapes complètes et vérifications : COMPILER-SUR-MAC.md.
+#
+# Écrit sur Windows le 2026-09-13, sans Xcode : la syntaxe suit la documentation de XcodeGen
+# (ProjectSpec), mais ce fichier n'a jamais été passé à `xcodegen generate`.
+
+name: IRIS
+
+options:
+  bundleIdPrefix: ca.velaglass
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: fr-CA
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Mettre ici l'identifiant d'équipe Apple Developer (10 caractères), ou le choisir dans Xcode
+    # (cible IRIS › Signing & Capabilities). Laissé vide exprès : aucun compte n'est encore ouvert.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    # Vérification de concurrence minimale : les avertissements Swift 6 ne bloquent pas la v1.
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  IRIS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: IRIS
+        excludes:
+          - "**/*.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ca.velaglass.iris
+        PRODUCT_NAME: IRIS
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_FILE: IRIS/Info.plist
+        ENABLE_PREVIEWS: YES
+    info:
+      path: IRIS/Info.plist
+      properties:
+        CFBundleDisplayName: IRIS
+        CFBundleDevelopmentRegion: fr-CA
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIUserInterfaceStyle: Dark
+        UIRequiredDeviceCapabilities:
+          - arm64
+        # L'app n'emploie que le chiffrement standard du système (HTTPS, WebSocket sécurisé, Trousseau) :
+        # exemption de la déclaration d'exportation, question posée par TestFlight à chaque envoi.
+        ITSAppUsesNonExemptEncryption: false
+
+        # ---------------------------------------------------------------- permissions (textes en français)
+        NSMicrophoneUsageDescription: >-
+          IRIS écoute le micro seulement quand l'app est ouverte à l'écran : pour entendre « Dis-moi Iris »,
+          vos commandes et les phrases de l'interprète. Le son est reconnu sur cet iPhone ; seul le texte
+          reconnu part à votre ordinateur.
+        NSSpeechRecognitionUsageDescription: >-
+          La reconnaissance de la parole se fait sur cet iPhone (sans envoi du son à Apple ni à VELA).
+          Elle transforme votre voix, ou celle de la personne que vous faites traduire, en texte.
+        NSCameraUsageDescription: >-
+          En attendant que la caméra des lunettes VELA soit confirmée, la photo à décrire ou à lire est
+          prise avec la caméra de cet iPhone, seulement quand vous le demandez.
+        NSBluetoothAlwaysUsageDescription: >-
+          Le Bluetooth relie cet iPhone à vos lunettes VELA : connexion, batterie, caméra et boutons.
+          IRIS ne cherche aucun autre appareil.
+        NSLocationWhenInUseUsageDescription: >-
+          La position sert à « Où suis-je ? », au guidage et à ajouter une zone sans mémoire là où vous êtes.
+          Elle reste sur cet iPhone, sauf quand vous créez une zone centrée ici.
+        NSLocationAlwaysAndWhenInUseUsageDescription: >-
+          Pour que vos zones sans mémoire marchent même quand l'app est fermée : l'iPhone détecte l'entrée
+          ou la sortie d'une zone et IRIS envoie à votre ordinateur seulement le nom de code de la zone,
+          jamais votre position.
+        NSLocalNetworkUsageDescription: >-
+          IRIS se connecte à votre ordinateur, qui fait le travail : à la maison par le réseau local,
+          dehors par votre réseau privé (Tailscale).
+
+        # ---------------------------------------------------------------- arrière-plan
+        # audio : la réponse lue continue si l'écran se verrouille pendant la lecture.
+        # bluetooth-central : l'iPhone garde le lien avec les lunettes et est réveillé par elles.
+        # location : les zones sans mémoire (surveillance de régions) réveillent l'app.
+        # Aucun de ces modes ne permet d'écouter « Dis-moi Iris » en arrière-plan : iOS le réserve à Siri.
+        UIBackgroundModes:
+          - audio
+          - bluetooth-central
+          - location
+
+        # ---------------------------------------------------------------- réseau
+        # HTTPS obligatoire vers l'extérieur (adresse Tailscale « https://….ts.net »). Le réseau local
+        # (adresse .local ou IP privée) est permis en HTTP pour le premier essai à la maison ; l'app
+        # l'affiche alors comme « non chiffré » et refuse l'HTTP vers toute autre adresse.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true

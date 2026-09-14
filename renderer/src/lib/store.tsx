@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { api, type BackendInfo, type IrisEvent } from './api'
+import { api, ApiError, EVT_LUNETTES_REQUISES, EVT_VERROUILLEE, type BackendInfo, type IrisEvent } from './api'
 import { PERSONAS_DEFAUT, type Persona } from './roles'
 
 /* =========================================================================
@@ -110,6 +110,74 @@ export interface PrefsLocales {
   assistant_intro_vue: boolean
 }
 
+/** Présence des lunettes VELA (GET /api/lunettes/presence, événement lunettes.presence). */
+export interface PresenceLunettes {
+  presentes: boolean
+  /** d'où vient la présence : ordinateur, téléphone appairé… (null = absentes) */
+  source: string | null
+  verrou_actif: boolean
+  nom: string | null
+  attestation_age_s: number | null
+  /** messages écrits restants de l'aperçu sans lunettes */
+  apercu_restant: number
+  apercu_total: number
+  acheter_url: string
+  limite?: string
+}
+
+/** Refus « cette fonction marche avec les lunettes VELA » à montrer (428 lunettes_requises ou garde d'écran). */
+export interface DemandeLunettes {
+  fonction?: string
+  message?: string
+  acheter_url?: string
+}
+
+/** Dernière alerte sonore reçue (événement alerte.sonore : « genre », jamais « type »). */
+export interface AlerteSonore {
+  id: number
+  genre: string
+  libelle: string
+  confiance: number
+  ts: number
+  test: boolean
+}
+
+/** Verrouillage d'IRIS (sur place ou à distance). */
+export interface EtatVerrou {
+  verrouille: boolean
+  depuis: string | null
+  /** « local », « distance »… tel que le service le dit */
+  raison: string | null
+  /** phrase du service quand le verrou a été découvert par un refus 401 */
+  message?: string
+}
+
+export interface EtatInvite {
+  actif: boolean
+  depuis: string | null
+  jusqua: string | null
+}
+
+export interface EtatZone {
+  dans_zone: boolean
+  zone_nom: string | null
+}
+
+/** État de l'écoute locale (GET /api/ecoute/etat, événement ecoute.etat). */
+export interface EtatEcoute {
+  sous_titres: boolean
+  journal: boolean
+  enregistrement: { actif: boolean; nom: string | null; secondes: number }
+  assistee: { actif: boolean; latence_ms: number | null }
+  alertes: boolean
+  modele_pret: boolean
+  raison: string | null
+  memoire_suspendue?: string | null
+  transcription_active?: boolean
+  demandes?: string[]
+  cours?: { id: string; titre: string; secondes: number; lignes: number } | null
+}
+
 export interface Nav {
   onglet: Onglet
   pile: Page[]
@@ -161,6 +229,26 @@ interface StoreValue {
   estFavori: (id: string) => boolean
   prefs: PrefsLocales
   setPref: <K extends keyof PrefsLocales>(cle: K, valeur: PrefsLocales[K]) => void
+  /* ---- lunettes d'abord */
+  /** null tant que le service n'a pas répondu (ou s'il ne connaît pas encore cette route) */
+  presence: PresenceLunettes | null
+  rafraichirPresence: () => Promise<void>
+  /** refus « lunettes requises » affiché par App.tsx (feuille), null sinon */
+  lunettesRequises: DemandeLunettes | null
+  demanderLunettes: (demande?: DemandeLunettes) => void
+  fermerLunettesRequises: () => void
+  /** garde d'écran : vrai si la fonction peut partir ; sinon ouvre la feuille « lunettes requises » et rend faux */
+  exigerLunettes: (fonction: string) => boolean
+  /* ---- accessibilité et confiance */
+  alerte: AlerteSonore | null
+  fermerAlerte: () => void
+  verrou: EtatVerrou | null
+  deverrouiller: (motDePasse: string) => Promise<void>
+  rafraichirVerrou: () => Promise<void>
+  invite: EtatInvite | null
+  zone: EtatZone | null
+  ecoute: EtatEcoute | null
+  rafraichirEcoute: () => Promise<void>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -228,7 +316,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
   const [appInfo, setAppInfo] = useState<StoreValue['appInfo']>(null)
   const [favoris, setFavoris] = useState<Favori[]>(() => lireListe<Favori>('iris.favoris'))
   const [prefs, setPrefs] = useState<PrefsLocales>(() => lireLocal('iris.prefs', PREFS_DEFAUT))
+  const [presence, setPresence] = useState<PresenceLunettes | null>(null)
+  const [lunettesRequises, setLunettesRequises] = useState<DemandeLunettes | null>(null)
+  const [alerte, setAlerte] = useState<AlerteSonore | null>(null)
+  const [verrou, setVerrou] = useState<EtatVerrou | null>(null)
+  const [invite, setInvite] = useState<EtatInvite | null>(null)
+  const [zone, setZone] = useState<EtatZone | null>(null)
+  const [ecoute, setEcoute] = useState<EtatEcoute | null>(null)
   const toastId = useRef(1)
+  const alerteId = useRef(1)
+  const minuterieAlerte = useRef<number | null>(null)
+  const minuteriePresence = useRef<number | null>(null)
+  // Lu par les écouteurs d'événements sans les réabonner à chaque changement.
+  const verrouRef = useRef<EtatVerrou | null>(null)
+  verrouRef.current = verrou
 
   const toast = useCallback((text: string, kind: Toast['kind'] = 'info') => {
     const id = toastId.current++
@@ -262,22 +363,152 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
     }
   }, [])
 
+  /* ------------------------------------------------------------ lunettes d'abord, confiance, écoute */
+  const rafraichirPresence = useCallback(async () => {
+    try {
+      const p = await api.get('/api/lunettes/presence')
+      if (p && typeof p.presentes === 'boolean') setPresence(p)
+    } catch {
+      /* service plus ancien ou verrouillé : on garde la dernière valeur connue */
+    }
+  }, [])
+  // Les preuves de présence changent par rafales (état des lunettes, écoute) : une seule relecture.
+  const presencePlusTard = useCallback(() => {
+    if (minuteriePresence.current) window.clearTimeout(minuteriePresence.current)
+    minuteriePresence.current = window.setTimeout(() => {
+      minuteriePresence.current = null
+      rafraichirPresence().catch(() => undefined)
+    }, 800)
+  }, [rafraichirPresence])
+  const rafraichirEcoute = useCallback(async () => {
+    try {
+      const e = await api.get('/api/ecoute/etat')
+      if (e && typeof e === 'object') setEcoute(e)
+    } catch {
+      /* module d'écoute absent : pas d'état */
+    }
+  }, [])
+  const chargerConfiance = useCallback(async () => {
+    try {
+      const i = await api.get('/api/confiance/invite')
+      setInvite({ actif: Boolean(i?.actif), depuis: i?.depuis ?? null, jusqua: i?.jusqua ?? null })
+    } catch {
+      /* module de confiance absent */
+    }
+    try {
+      const z = await api.get('/api/confiance/zones')
+      setZone({ dans_zone: Boolean(z?.zone_active), zone_nom: z?.zone_active?.nom ?? null })
+    } catch {
+      /* module de confiance absent */
+    }
+  }, [])
+  const lireVerrou = useCallback(async (): Promise<EtatVerrou | null> => {
+    try {
+      const v = await api.get('/api/confiance/verrou/etat')
+      return { verrouille: Boolean(v?.verrouille), depuis: v?.depuis ?? null, raison: v?.raison ?? null }
+    } catch {
+      return null
+    }
+  }, [])
+  const chargerSecondaires = useCallback(() => {
+    rafraichirLunettes().catch(() => undefined)
+    chargerPersonas().catch(() => undefined)
+    rafraichirPresence().catch(() => undefined)
+    rafraichirEcoute().catch(() => undefined)
+    chargerConfiance().catch(() => undefined)
+  }, [rafraichirLunettes, chargerPersonas, rafraichirPresence, rafraichirEcoute, chargerConfiance])
+
   const bootstrap = useCallback(
     async (backend: BackendInfo) => {
       api.connect(backend)
       setInfo(backend)
+      // Le verrou d'abord : c'est l'une des rares routes permises quand IRIS est verrouillée, et
+      // toutes les autres répondraient 401 — l'application afficherait une panne au lieu du verrou.
+      const v = await lireVerrou()
+      if (v?.verrouille) {
+        setVerrou(v)
+        setBackendState('ready')
+        return
+      }
       try {
         await Promise.all([refreshStatus(), refreshSettings(), refreshAgents()])
+        setVerrou(v)
         setBackendState('ready')
-        rafraichirLunettes().catch(() => undefined)
-        chargerPersonas().catch(() => undefined)
+        chargerSecondaires()
       } catch (err) {
+        if (err instanceof ApiError && err.status === 401 && /verrouill/i.test(err.message)) {
+          setVerrou({ verrouille: true, depuis: null, raison: null, message: err.message })
+          setBackendState('ready')
+          return
+        }
         setBackendState('failed')
         setBackendMessage(String(err))
       }
     },
-    [refreshAgents, refreshSettings, refreshStatus, rafraichirLunettes, chargerPersonas]
+    [refreshAgents, refreshSettings, refreshStatus, lireVerrou, chargerSecondaires]
   )
+
+  /** Après un déverrouillage (ici, sur le téléphone ou par un redémarrage) : tout recharger. */
+  const apresDeverrouillage = useCallback(async () => {
+    setVerrou((v) => (v ? { ...v, verrouille: false, message: undefined } : v))
+    api.reconnecter()
+    try {
+      await Promise.all([refreshStatus(), refreshSettings(), refreshAgents()])
+      setBackendState('ready')
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) {
+        setBackendState('failed')
+        setBackendMessage(String(err))
+      }
+    }
+    chargerSecondaires()
+  }, [refreshStatus, refreshSettings, refreshAgents, chargerSecondaires])
+
+  const rafraichirVerrou = useCallback(async () => {
+    const v = await lireVerrou()
+    if (!v) return
+    if (v.verrouille) setVerrou(v)
+    else if (verrouRef.current?.verrouille) await apresDeverrouillage()
+    else setVerrou(v)
+  }, [lireVerrou, apresDeverrouillage])
+
+  const deverrouiller = useCallback(
+    async (motDePasse: string) => {
+      // Les refus (mot de passe incorrect, trop de tentatives) remontent tels quels à l'écran.
+      await api.post('/api/confiance/deverrouiller', { mot_de_passe: motDePasse })
+      await apresDeverrouillage()
+    },
+    [apresDeverrouillage]
+  )
+
+  // Pendant le verrou, le WebSocket est fermé par le service : on relit l'état toutes les 5 s pour
+  // voir un déverrouillage fait ailleurs (téléphone, relais).
+  useEffect(() => {
+    if (!verrou?.verrouille) return
+    const t = window.setInterval(() => {
+      rafraichirVerrou().catch(() => undefined)
+    }, 5000)
+    return () => window.clearInterval(t)
+  }, [verrou?.verrouille, rafraichirVerrou])
+
+  const demanderLunettes = useCallback((demande?: DemandeLunettes) => setLunettesRequises(demande || {}), [])
+  const fermerLunettesRequises = useCallback(() => setLunettesRequises(null), [])
+  const exigerLunettes = useCallback(
+    (fonction: string) => {
+      // Présence inconnue (service qui ne répond pas encore) : on laisse partir, le service tranchera
+      // lui-même par un 428 que la feuille affichera de toute façon.
+      if (!presence || presence.presentes) return true
+      setLunettesRequises({ fonction, acheter_url: presence.acheter_url })
+      return false
+    },
+    [presence]
+  )
+
+  const fermerAlerte = useCallback(() => {
+    if (minuterieAlerte.current) window.clearTimeout(minuterieAlerte.current)
+    minuterieAlerte.current = null
+    setAlerte(null)
+  }, [])
 
   useEffect(() => {
     window.iris.appInfo().then(setAppInfo).catch(() => undefined)
@@ -308,6 +539,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
           setVoice(event.status.voice)
           setBackendState('ready')
           rafraichirLunettes().catch(() => undefined)
+          // Reconnexion : ce qui a pu changer pendant la coupure (présence, invité, zone, écoute, verrou).
+          rafraichirPresence().catch(() => undefined)
+          rafraichirEcoute().catch(() => undefined)
+          chargerConfiance().catch(() => undefined)
+          if (verrouRef.current?.verrouille) rafraichirVerrou().catch(() => undefined)
           break
         case 'ws.close':
           break
@@ -316,6 +552,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
           break
         case 'voice.state':
           setVoice(event)
+          // le micro des lunettes est aussi une preuve de présence (lunettes_presence.py)
+          presencePlusTard()
           break
         case 'tts.state':
           setTtsSpeaking(Boolean(event.speaking))
@@ -325,6 +563,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
           break
         case 'settings.updated':
           setSettings(event.settings)
+          presencePlusTard()
           break
         case 'agent.updated':
           setAgents((list) => list.map((a) => (a.name === event.agent.name ? event.agent : a)))
@@ -333,11 +572,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
         case 'glasses.state':
           // l'événement porte le statut complet des lunettes
           setLunettes((prev: any) => ({ ...(prev || {}), ...event, type: undefined }))
+          presencePlusTard()
           break
         case 'glasses.connected':
         case 'glasses.disconnected':
         case 'glasses.connecting':
           rafraichirLunettes().catch(() => undefined)
+          presencePlusTard()
           if (event.type === 'glasses.connected') toast('Lunettes connectées.', 'success')
           if (event.type === 'glasses.disconnected') toast('Lunettes déconnectées.', 'info')
           break
@@ -423,11 +664,75 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
         case 'voice.model_ready':
           toast(event.ready ? 'Modèle de reconnaissance vocale prêt.' : `Téléchargement échoué : ${event.error}`, event.ready ? 'success' : 'error')
           break
+        /* ---------------------------------------------------------------- lunettes d'abord */
+        case 'lunettes.presence': {
+          const { type: _t, ...etat } = event
+          if (typeof etat.presentes === 'boolean') setPresence(etat as PresenceLunettes)
+          break
+        }
+        case EVT_LUNETTES_REQUISES:
+          // Un écran a reçu un 428 : la feuille « Cette fonction marche avec les lunettes VELA » s'ouvre
+          // d'elle-même (App.tsx), et la présence est relue (elle a peut-être changé depuis).
+          setLunettesRequises({ fonction: event.fonction, message: event.message, acheter_url: event.acheter_url })
+          rafraichirPresence().catch(() => undefined)
+          break
+        /* ---------------------------------------------------------------- accessibilité */
+        case 'alerte.sonore': {
+          const id = alerteId.current++
+          setAlerte({
+            id,
+            genre: String(event.genre || ''),
+            libelle: String(event.libelle || 'Alerte sonore'),
+            confiance: Number(event.confiance) || 0,
+            ts: Number(event.ts) || Date.now() / 1000,
+            test: Boolean(event.test)
+          })
+          // 10 s à l'écran, sauf si une alerte plus récente l'a remplacée entre-temps.
+          if (minuterieAlerte.current) window.clearTimeout(minuterieAlerte.current)
+          minuterieAlerte.current = window.setTimeout(() => {
+            minuterieAlerte.current = null
+            setAlerte((a) => (a && a.id === id ? null : a))
+          }, 10000)
+          break
+        }
+        case 'ecoute.etat': {
+          const { type: _t, ...etat } = event
+          setEcoute(etat as EtatEcoute)
+          break
+        }
+        case 'voice.locuteur_refuse':
+          toast(`Commande vocale ignorée par le verrou vocal${event.raison ? ` : ${event.raison}` : ''}.`, 'error')
+          break
+        case 'rappel.contexte':
+          toast(`Rappel${event.personne ? ` pour ${event.personne}` : ''} : ${event.texte || ''}`, 'info')
+          break
+        case 'partage.message':
+          toast(`Message de votre proche : ${event.texte || ''}`, 'info')
+          break
+        /* ---------------------------------------------------------------- confiance */
+        case 'verrou.etat':
+          if (event.verrouille) {
+            setVerrou({ verrouille: true, depuis: event.depuis ?? null, raison: event.raison ?? null })
+          } else if (verrouRef.current?.verrouille) {
+            apresDeverrouillage().catch(() => undefined)
+          }
+          break
+        case EVT_VERROUILLEE:
+          // Refus 401 « IRIS est verrouillée » reçu par n'importe quelle requête.
+          setVerrou((v) => (v?.verrouille ? v : { verrouille: true, depuis: null, raison: null, message: event.message }))
+          rafraichirVerrou().catch(() => undefined)
+          break
+        case 'invite.etat':
+          setInvite({ actif: Boolean(event.actif), depuis: event.depuis ?? null, jusqua: event.jusqua ?? null })
+          break
+        case 'zone.etat':
+          setZone({ dans_zone: Boolean(event.dans_zone), zone_nom: event.zone_nom ?? null })
+          break
         default:
           break
       }
     })
-  }, [refreshStatus, toast, rafraichirLunettes])
+  }, [refreshStatus, toast, rafraichirLunettes, rafraichirPresence, presencePlusTard, rafraichirEcoute, chargerConfiance, rafraichirVerrou, apresDeverrouillage])
 
   const updateSettings = useCallback(async (patch: Record<string, unknown>) => {
     const next = await api.patch('/api/settings', patch)
@@ -518,10 +823,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }): JSX.
       basculerFavori,
       estFavori,
       prefs,
-      setPref
+      setPref,
+      presence,
+      rafraichirPresence,
+      lunettesRequises,
+      demanderLunettes,
+      fermerLunettesRequises,
+      exigerLunettes,
+      alerte,
+      fermerAlerte,
+      verrou,
+      deverrouiller,
+      rafraichirVerrou,
+      invite,
+      zone,
+      ecoute,
+      rafraichirEcoute
     }),
     // `micLevel` fait partie des dépendances : sans lui, le vumètre de la barre vocale reste figé.
-    [backendState, backendMessage, info, status, settings, agents, consent, capture, voice, micLevel, ttsSpeaking, lunettes, rafraichirLunettes, personas, nav, setView, toasts, toast, dismissToast, refreshStatus, refreshSettings, refreshAgents, updateSettings, setConsent, confirmRequest, answerConfirm, consentRequest, appInfo, favoris, basculerFavori, estFavori, prefs, setPref]
+    [backendState, backendMessage, info, status, settings, agents, consent, capture, voice, micLevel, ttsSpeaking, lunettes, rafraichirLunettes, personas, nav, setView, toasts, toast, dismissToast, refreshStatus, refreshSettings, refreshAgents, updateSettings, setConsent, confirmRequest, answerConfirm, consentRequest, appInfo, favoris, basculerFavori, estFavori, prefs, setPref, presence, rafraichirPresence, lunettesRequises, demanderLunettes, fermerLunettesRequises, exigerLunettes, alerte, fermerAlerte, verrou, deverrouiller, rafraichirVerrou, invite, zone, ecoute, rafraichirEcoute]
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

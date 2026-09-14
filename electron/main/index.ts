@@ -34,6 +34,11 @@ function applyAutoStart(enabled: boolean | undefined): void {
 }
 let privacyMode = false
 let micMuted = false
+let inviteActif = false
+let descriptionEnCours = false
+
+const URL_ACHAT_LUNETTES = 'https://velaglass.ca/lunettes.html'
+const MESSAGE_LUNETTES_REQUISES = 'Cette fonction marche avec les lunettes VELA. Connecte tes lunettes pour l’utiliser.'
 
 const APP_ICON = join(__dirname, '../../build/icon.png')
 
@@ -107,11 +112,13 @@ function buildTrayMenu(): Menu {
       label: voiceRunning ? 'Pause de l’écoute (10 min)' : 'Reprendre l’écoute vocale',
       click: () => link.send({ type: voiceRunning ? 'voice.pause' : 'voice.start', minutes: 10 })
     },
-    { label: 'Parler maintenant (Ctrl+Shift+Espace)', click: () => link.send({ type: 'voice.push_to_talk' }) },
+    { label: 'Parler maintenant (Ctrl+Maj+Espace)', click: () => link.send({ type: 'voice.push_to_talk' }) },
+    { label: 'Décrire devant moi (Ctrl+Maj+D)', click: () => decrireDevantMoi() },
     { label: 'Stop (couper la parole)', click: () => link.send({ type: 'tts.stop' }) },
-    { label: micMuted ? 'Réactiver le micro (Ctrl+Shift+M)' : 'Micro muet (Ctrl+Shift+M)', type: 'checkbox', checked: micMuted, click: () => link.send({ type: 'voice.toggle_mute' }) },
+    { label: micMuted ? 'Réactiver le micro (Ctrl+Maj+M)' : 'Micro muet (Ctrl+Maj+M)', type: 'checkbox', checked: micMuted, click: () => link.send({ type: 'voice.toggle_mute' }) },
     { type: 'separator' },
     { label: 'Mode confidentiel (micro coupé)', type: 'checkbox', checked: privacyMode, click: () => link.send({ type: 'privacy.toggle' }) },
+    { label: 'Mode invité (rien n’est mémorisé)', type: 'checkbox', checked: inviteActif, click: () => basculerInvite() },
     { type: 'separator' },
     { label: 'Quitter IRIS', click: () => app.quit() }
   ])
@@ -129,10 +136,126 @@ function registerShortcuts(): void {
   globalShortcut.register('CommandOrControl+Shift+I', () => showMainWindow())
   globalShortcut.register('CommandOrControl+Shift+M', () => link.send({ type: 'voice.toggle_mute' }))
   globalShortcut.register('CommandOrControl+Shift+S', () => link.send({ type: 'tts.stop' }))
+  // Un raccourci déjà pris par une autre application n'est pas une panne : on le note, sans plus.
+  if (!globalShortcut.register('CommandOrControl+Shift+D', () => decrireDevantMoi())) {
+    console.error('[iris] raccourci Ctrl+Maj+D indisponible (déjà utilisé par une autre application)')
+  }
 }
 
 function notify(title: string, body: string): void {
   if (Notification.isSupported()) new Notification({ title, body, icon: icon(64) }).show()
+}
+
+/* ---------------------------------------------------------------------------
+   Appels directs au service local, depuis le process principal : le raccourci et
+   la barre système marchent fenêtre fermée, là où le renderer ne tourne pas. Le
+   WebSocket (link.ts) ne porte que des commandes vocales ; décrire et le mode
+   invité sont des routes HTTP, appelées avec le même jeton de session.
+   --------------------------------------------------------------------------- */
+interface ReponseService {
+  ok: boolean
+  status: number
+  data: any
+}
+
+async function appelService(method: 'GET' | 'POST', path: string, body?: unknown, delaiMs = 15000): Promise<ReponseService> {
+  const info = backend?.info
+  if (!info) return { ok: false, status: 0, data: { detail: 'Le service IRIS n’est pas démarré.' } }
+  const controle = new AbortController()
+  const minuterie = setTimeout(() => controle.abort(), delaiMs)
+  try {
+    const res = await fetch(`${info.baseUrl}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${info.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controle.signal
+    })
+    let data: any = null
+    try {
+      data = await res.json()
+    } catch {
+      data = null
+    }
+    return { ok: res.ok, status: res.status, data }
+  } catch (err) {
+    const expire = (err as Error)?.name === 'AbortError'
+    return { ok: false, status: 0, data: { detail: expire ? 'IRIS n’a pas répondu à temps.' : 'Le service IRIS est injoignable.' } }
+  } finally {
+    clearTimeout(minuterie)
+  }
+}
+
+/** La phrase du service pour un refus, jamais du JSON brut. */
+function phraseRefus(data: any, repli: string): string {
+  const detail = data?.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message
+  return repli
+}
+
+/**
+ * « Décrire devant moi » (Ctrl+Maj+D et barre système). Lunettes d'abord : sans lunettes présentes,
+ * rien d'autre qu'une notification — aucune capture d'écran de repli, aucun appel de description.
+ */
+async function decrireDevantMoi(): Promise<void> {
+  if (descriptionEnCours) {
+    notify('IRIS', 'Une description est déjà en cours.')
+    return
+  }
+  descriptionEnCours = true
+  try {
+    const presence = await appelService('GET', '/api/lunettes/presence')
+    if (presence.status === 401) {
+      notify('IRIS', phraseRefus(presence.data, 'IRIS est verrouillée.'))
+      return
+    }
+    if (presence.ok && presence.data && presence.data.presentes === false) {
+      notify('IRIS — lunettes requises', `${MESSAGE_LUNETTES_REQUISES} ${presence.data.acheter_url || URL_ACHAT_LUNETTES}`)
+      return
+    }
+    if (!presence.ok) {
+      // Présence invérifiable (service injoignable, version sans cette route) : on ne capte rien.
+      notify('IRIS', phraseRefus(presence.data, 'La présence des lunettes n’a pas pu être vérifiée.'))
+      return
+    }
+    // Une photo des lunettes prend quelques secondes, puis la description : délai large.
+    const r = await appelService('POST', '/api/accessibilite/decrire', { mode: 'scene', source: 'lunettes', parler: true, memoriser: true }, 120000)
+    if (r.ok) {
+      const texte = String(r.data?.texte || '').trim()
+      // La description est lue à voix haute par IRIS ; la notification en garde une trace lisible.
+      if (texte) notify('IRIS — devant vous', texte.length > 240 ? `${texte.slice(0, 237)}…` : texte)
+      return
+    }
+    if (r.status === 428) {
+      notify('IRIS — lunettes requises', `${phraseRefus(r.data, MESSAGE_LUNETTES_REQUISES)} ${r.data?.detail?.acheter_url || URL_ACHAT_LUNETTES}`)
+      return
+    }
+    notify('IRIS — description impossible', phraseRefus(r.data, 'La description a échoué.'))
+  } finally {
+    descriptionEnCours = false
+  }
+}
+
+/** Mode invité depuis la barre système : permis sans lunettes (confidentialité). */
+async function basculerInvite(): Promise<void> {
+  const cible = !inviteActif
+  const r = await appelService('POST', cible ? '/api/confiance/invite/activer' : '/api/confiance/invite/desactiver', {})
+  if (r.ok) {
+    inviteActif = Boolean(r.data?.actif)
+    tray?.setContextMenu(buildTrayMenu())
+    return
+  }
+  notify('IRIS — mode invité', r.status === 404 ? 'Le mode invité n’est pas disponible dans cette version d’IRIS.' : phraseRefus(r.data, 'Le mode invité n’a pas pu changer.'))
+  tray?.setContextMenu(buildTrayMenu()) // la case à cocher revient à l'état réel
+}
+
+/** État initial du mode invité, pour que la case de la barre système dise vrai dès le démarrage. */
+async function lireInvite(): Promise<void> {
+  const r = await appelService('GET', '/api/confiance/invite')
+  if (r.ok) {
+    inviteActif = Boolean(r.data?.actif)
+    tray?.setContextMenu(buildTrayMenu())
+  }
 }
 
 function wireLink(): void {
@@ -170,6 +293,27 @@ function wireLink(): void {
     }
     if (event.type === 'chat.confirm') {
       showMainWindow()
+    }
+    // Notifications natives : elles arrivent même fenêtre fermée, pendant que le renderer dort.
+    if (event.type === 'alerte.sonore') {
+      const e = event as { libelle?: string; confiance?: number; test?: boolean }
+      const confiance = typeof e.confiance === 'number' ? ` (confiance ${Math.round(e.confiance * 100)} %)` : ''
+      notify(e.test ? 'IRIS — essai d’alerte sonore' : 'IRIS — alerte sonore', `${e.libelle || 'Son important détecté'}${confiance}. Vérifiez autour de vous.`)
+    }
+    if (event.type === 'rappel.contexte') {
+      const e = event as { personne?: string; texte?: string }
+      notify(e.personne ? `IRIS — rappel pour ${e.personne}` : 'IRIS — rappel', e.texte || '')
+    }
+    if (event.type === 'partage.message') {
+      const e = event as { texte?: string }
+      notify('IRIS — message de votre proche', e.texte || '')
+    }
+    if (event.type === 'invite.etat') {
+      inviteActif = Boolean((event as { actif?: boolean }).actif)
+      tray?.setContextMenu(buildTrayMenu())
+    }
+    if (event.type === 'hello') {
+      lireInvite().catch(() => undefined)
     }
   })
 }
