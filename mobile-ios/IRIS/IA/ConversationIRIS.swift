@@ -1,9 +1,12 @@
 // ConversationIRIS.swift — parler à IRIS : l'aller-retour avec le chat de l'ordinateur.
 //
 // Portage de la conversation de la page téléphone (mobile_static/js/coeur.js) : on s'abonne aux
-// événements AVANT d'envoyer, on attend chat.done (ou chat.error) et, parce que la liaison peut être
-// coupée, on sonde aussi GET /api/conversations/{id}. La latence est MESURÉE sur l'iPhone et
-// affichée ; elle n'est jamais promise.
+// événements AVANT d'envoyer, on attend chat.done (ou chat.error, ou chat.consent_required) et, SEULEMENT
+// quand la liaison d'événements a été coupée pendant l'attente, on sonde GET /api/conversations/{id}
+// (toutes les 4 s tant qu'elle est coupée, puis une dernière fois à son retour). Cette route rend toute la
+// conversation, déchiffrée message par message sur l'ordinateur : la sonder en continu coûtait données
+// mobiles, batterie et calcul pour rien. La latence est MESURÉE sur l'iPhone et affichée ; elle n'est
+// jamais promise.
 //
 // Les confirmations demandées par IRIS (chat.confirm : « j'envoie ce courriel ? ») s'affichent ici
 // et se répondent par POST /api/chat/confirm. Sans elles, une action à confirmer tournerait 180 s
@@ -42,6 +45,9 @@ final class ConversationIRIS {
 
     private static let cleConversation = "iris_conversation_iphone"
     private static let attenteMax: TimeInterval = 180
+    /// Au-delà, une conversation neuve est ouverte : chaque GET de la conversation rend tous ses messages.
+    static let messagesMax = 50
+    private static let intervalleSondage: Duration = .seconds(4)
 
     init(pont: ClientPontPC) {
         self.pont = pont
@@ -95,6 +101,17 @@ final class ConversationIRIS {
         bulles.append(Bulle(role: .info, texte: texte))
     }
 
+    /// Une phrase traitée par l'app elle-même (mode invité) : affichée dans le fil comme les autres, avec
+    /// d'où vient la réponse.
+    func ajouterEchangeLocal(demande: String, reponse: String) {
+        let propre = demande.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !propre.isEmpty else { return }
+        bulles.append(Bulle(role: .moi, texte: propre))
+        bulles.append(Bulle(role: .info, texte: reponse,
+                            meta: "Traité par l'app iPhone avec la route de ton ordinateur, sans le moteur VELA."))
+        if bulles.count > 80 { bulles.removeFirst(bulles.count - 80) }
+    }
+
     /// Envoie une demande et attend la réponse. Rend le texte à lire (réponse ou refus), ou nil.
     @discardableResult
     func envoyer(_ texte: String) async -> String? {
@@ -125,20 +142,41 @@ final class ConversationIRIS {
                 "/api/conversations/\(convId)/messages",
                 corps: EnvoiMessage(text: propre, agent: "auto", images: []), delai: 20)
 
+            // Si la liaison d'événements était ouverte à l'envoi et le reste, chat.done arrive par elle : aucun
+            // sondage. Coupée à un moment de l'attente, un événement a pu se perdre : on sonde tant qu'elle
+            // l'est, et une fois de plus à son retour (l'événement a pu tomber pendant la coupure).
+            // Une coupure brève entre deux sondages (liaison refermée puis rouverte) se voit au compteur
+            // d'ouvertures du pont.
+            let ouverteALEnvoi = pont.evenementsOuverts
+            let ouverturesALEnvoi = pont.ouverturesFlux
             let sondage = Task { [weak self] in
+                var rattrapageDu = !ouverteALEnvoi
+                var ouverturesVues = ouverturesALEnvoi
                 while !attente.termine {
-                    let evenementsOuverts = self?.pont.evenementsOuverts ?? false
-                    try? await Task.sleep(for: .seconds(evenementsOuverts ? 6 : 1.5))
+                    try? await Task.sleep(for: Self.intervalleSondage)
                     if Task.isCancelled || attente.termine { return }
                     if Date().timeIntervalSince(debut) > Self.attenteMax {
                         attente.conclure(.expire)
                         return
                     }
                     guard let self else { return }
-                    if let conv: Conversation = try? await self.pont.get("/api/conversations/\(convId)", delai: 20),
-                       let nouveau = conv.messages?.last(where: { $0.role == "assistant" && !attente.connus.contains($0.id) }) {
+                    let ouverte = self.pont.evenementsOuverts
+                    if self.pont.ouverturesFlux != ouverturesVues {
+                        ouverturesVues = self.pont.ouverturesFlux
+                        rattrapageDu = true
+                    }
+                    if ouverte && !rattrapageDu { continue }
+                    rattrapageDu = !ouverte
+                    guard let conv: Conversation = try? await self.pont.get("/api/conversations/\(convId)", delai: 20) else {
+                        continue
+                    }
+                    if let nouveau = conv.messages?.last(where: { $0.role == "assistant" && !attente.connus.contains($0.id) }) {
                         let contenu = (nouveau.text ?? "").isEmpty ? (nouveau.meta?.error ?? "") : (nouveau.text ?? "")
                         if !contenu.isEmpty { attente.conclure(.texte(contenu)) }
+                    } else if let phrase = AttenteReponse.phraseIssueNonGardee(conv.issueNonGardee, connus: attente.connus) {
+                        // Fin SANS message (consentement requis…) : l'événement s'est perdu pendant la coupure, mais
+                        // l'ordinateur la garde en mémoire pour ce sondage. Sans elle : 3 minutes, puis un faux motif.
+                        attente.conclure(.erreur(phrase))
                     }
                 }
             }
@@ -175,6 +213,102 @@ final class ConversationIRIS {
         }
     }
 
+    // MARK: - Commande parlée dans les lunettes
+
+    enum IssueCommandeVocale: Equatable {
+        /// Phrase à lire (réponse, refus exact), vide s'il n'y a rien à dire.
+        case phrase(String)
+        /// L'ordinateur ne connaît pas POST /api/voix/commande (version antérieure au 2026-09-14) : l'appelant
+        /// se replie sur l'ancien chemin (commandes locales, puis chat).
+        case routeAbsente
+    }
+
+    /// Une commande DITE dans les lunettes : POST /api/voix/commande. Sur l'ordinateur, elle passe par les mêmes
+    /// interceptions qu'une commande dite à son micro (« étape suivante », « série terminée », « mode invité »…),
+    /// avec la règle de la voix, au lieu d'arriver au modèle comme un message écrit, qui pouvait répondre
+    /// « d'accord » sans rien faire. La réponse est SYNCHRONE : un consentement manquant est dit même quand la
+    /// liaison d'événements est fermée.
+    func envoyerCommandeVocale(_ texte: String) async -> IssueCommandeVocale {
+        let propre = texte.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !propre.isEmpty else { return .phrase("") }
+        guard !occupe else { return .phrase("IRIS répond déjà à une demande : attends la fin, puis redis-le.") }
+        occupe = true
+        defer { occupe = false }
+
+        let bulleDemande = Bulle(role: .moi, texte: propre)
+        let bulleReponse = Bulle(role: .iris, texte: "IRIS réfléchit…", enAttente: true)
+        bulles.append(bulleDemande)
+        bulles.append(bulleReponse)
+        if bulles.count > 80 { bulles.removeFirst(bulles.count - 80) }
+        let debut = Date()
+
+        // La conversation de l'iPhone est nommée pour que les confirmations (chat.confirm) de cette commande
+        // s'affichent ici. Illisible : l'ordinateur prend sa propre conversation vocale.
+        let convId = try? await assurerConversation(titre: propre).0
+        do {
+            let reponse: ReponseCommandeVocale
+            do {
+                reponse = try await pont.post("/api/voix/commande",
+                                              corps: DemandeCommandeVocale(texte: propre, source: "iphone", conversationId: convId),
+                                              delai: 120)
+            } catch let erreur where convId != nil && Self.conversationIntrouvable(erreur) {
+                // Conversation effacée sur l'ordinateur entre-temps : sa conversation vocale fait l'affaire.
+                conversationId = nil
+                UserDefaults.standard.removeObject(forKey: Self.cleConversation)
+                reponse = try await pont.post("/api/voix/commande",
+                                              corps: DemandeCommandeVocale(texte: propre, source: "iphone", conversationId: nil),
+                                              delai: 120)
+            }
+            let phrase = Self.phraseCommandeVocale(reponse)
+            let mesure = "Réponse en \(FormatIRIS.secondes(ms: Date().timeIntervalSince(debut) * 1000)), mesuré sur cet iPhone."
+            if Self.estUnRefus(reponse) {
+                majBulle(bulleReponse.id, texte: phrase, enAttente: false, meta: mesure, role: .info)
+            } else {
+                majBulle(bulleReponse.id, texte: phrase.isEmpty ? "(fait, rien à dire)" : phrase, enAttente: false, meta: mesure)
+            }
+            return .phrase(phrase)
+        } catch {
+            if Self.routeVocaleAbsente(error) {
+                bulles.removeAll { $0.id == bulleDemande.id || $0.id == bulleReponse.id }
+                return .routeAbsente
+            }
+            let message: String
+            if let erreurPont = error as? ErreurPont, case .injoignable = erreurPont {
+                message = "Commande non envoyée : l'ordinateur ne répond pas."
+            } else {
+                message = error.localizedDescription
+            }
+            majBulle(bulleReponse.id, texte: message, enAttente: false, role: .info)
+            return .phrase(message)
+        }
+    }
+
+    /// La phrase à lire pour une réponse de /api/voix/commande (fonction pure, testée dans IRISTests).
+    nonisolated static func phraseCommandeVocale(_ reponse: ReponseCommandeVocale) -> String {
+        let texte = (reponse.texte ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if let type = reponse.consentementRequis, !type.isEmpty, texte.isEmpty {
+            return AttenteReponse.phraseConsentement(label: type)
+        }
+        return texte
+    }
+
+    /// Refus (consentement, lunettes, micro de la maison, voix non vérifiée) : affiché comme une information.
+    nonisolated static func estUnRefus(_ reponse: ReponseCommandeVocale) -> Bool {
+        reponse.consentementRequis != nil || reponse.lunettesRequises == true || reponse.refus != nil
+    }
+
+    /// 404 de FastAPI pour une route inconnue (« Not Found ») : ordinateur trop ancien. Pas la 404
+    /// « conversation introuvable » de la route elle-même.
+    nonisolated static func routeVocaleAbsente(_ erreur: Error) -> Bool {
+        guard let pont = erreur as? ErreurPont, case .refus(let statut, let message, _) = pont else { return false }
+        return statut == 404 && message.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Not Found") == .orderedSame
+    }
+
+    nonisolated static func conversationIntrouvable(_ erreur: Error) -> Bool {
+        guard let pont = erreur as? ErreurPont, case .refus(let statut, let message, _) = pont else { return false }
+        return statut == 404 && message.localizedCaseInsensitiveContains("conversation introuvable")
+    }
+
     private func majBulle(_ id: UUID, texte: String, enAttente: Bool, meta: String? = nil, role: Role? = nil) {
         guard let index = bulles.firstIndex(where: { $0.id == id }) else { return }
         bulles[index].texte = texte
@@ -188,9 +322,10 @@ final class ConversationIRIS {
             do {
                 let conv: Conversation = try await pont.get("/api/conversations/\(id)", delai: 20)
                 let messages = conv.messages ?? []
-                // Le service ne renvoie que les 500 premiers messages : au-delà, une réponse neuve
-                // deviendrait invisible au sondage. On en ouvre une neuve bien avant.
-                if messages.count < 400 {
+                // Chaque lecture de la conversation rend TOUS ses messages (500 au plus, déchiffrés un à
+                // un sur l'ordinateur) : au-delà de 50, on en ouvre une neuve pour garder ces lectures
+                // légères sur données mobiles.
+                if messages.count < Self.messagesMax {
                     return (id, Set(messages.map(\.id)))
                 }
             } catch ErreurPont.refus(let statut, _, _) where statut == 404 {
@@ -208,8 +343,9 @@ final class ConversationIRIS {
 
 // MARK: - Attente d'une réponse
 
+/// Non privée pour les tests (IRISTests) : c'est elle qui décide quand une demande est finie.
 @MainActor
-private final class AttenteReponse {
+final class AttenteReponse {
     enum Issue { case texte(String), erreur(String), expire }
 
     let convId: String
@@ -242,9 +378,28 @@ private final class AttenteReponse {
             conclure(.texte(texte.isEmpty ? erreur : texte))
         case "chat.error":
             conclure(.erreur(evenement.champs["message"]?.texte ?? "IRIS n'a pas pu répondre."))
+        case "chat.consent_required":
+            // Le service ne publie alors ni chat.done ni chat.error : sans ce cas, l'attente durait 3 minutes
+            // et finissait sur une fausse raison (« connexion perdue »).
+            conclure(.erreur(Self.phraseConsentement(label: evenement.champs["label"]?.texte ?? "cette donnée")))
         default:
             break
         }
+    }
+
+    nonisolated static func phraseConsentement(label: String) -> String {
+        "IRIS a besoin de ton accord pour « \(label) » : donne-le dans l'application IRIS de l'ordinateur, onglet Confidentialité."
+    }
+
+    /// La phrase qui conclut une demande finie sans message, lue par sondage (`issue_non_gardee`), ou nil si
+    /// l'issue manque ou concerne une demande plus ancienne (son message était déjà connu avant l'envoi).
+    nonisolated static func phraseIssueNonGardee(_ issue: IssueNonGardee?, connus: Set<String>) -> String? {
+        guard let issue, let apres = issue.apres, !apres.isEmpty, !connus.contains(apres) else { return nil }
+        if let consentement = issue.consentement {
+            return phraseConsentement(label: consentement.label ?? consentement.dataType ?? "cette donnée")
+        }
+        let message = (issue.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "IRIS n'a pas pu répondre." : message
     }
 
     func conclure(_ nouvelle: Issue) {

@@ -177,6 +177,11 @@ export function CoursDetailScreen({ params }: { params?: Record<string, any> }):
       const c = coursRef.current
       if (e.type === 'cours.etat' && String(e.id || '') === id) {
         if (!c) return
+        if (typeof e.erreur_generation === 'string' && e.erreur_generation) {
+          // Rédaction en arrière-plan en échec : le cours relu porte « erreur_generation », affichée telle quelle.
+          planifier()
+          return
+        }
         const actif = Boolean(e.actif)
         const etat = typeof e.etat === 'string' ? e.etat : c.etat
         if (c.actif !== actif || c.etat !== etat) {
@@ -189,7 +194,11 @@ export function CoursDetailScreen({ params }: { params?: Record<string, any> }):
                 ...x,
                 duree_s: Number(e.secondes ?? x.duree_s) || 0,
                 lignes: Number(e.lignes ?? x.lignes) || 0,
-                progression: typeof e.progression === 'number' ? e.progression : x.progression
+                progression: typeof e.progression === 'number' ? e.progression : x.progression,
+                generation:
+                  typeof e.fait === 'number' && typeof e.total === 'number'
+                    ? { quoi: String(e.quoi || ''), fait: e.fait, total: e.total }
+                    : x.generation
               }
             : x
         )
@@ -227,8 +236,18 @@ export function CoursDetailScreen({ params }: { params?: Record<string, any> }):
     setGeneration({ quoi, depuis: Date.now() })
     setRefus(null)
     try {
-      const d: CoursDetail = await api.post(`/api/cours/${encodeURIComponent(cours.id)}/generer`, { quoi })
+      const d: CoursDetail & { en_arriere_plan?: boolean; phrase?: string } = await api.post(
+        `/api/cours/${encodeURIComponent(cours.id)}/generer`,
+        { quoi }
+      )
       if (!vivant.current) return
+      if (d.en_arriere_plan) {
+        // 202 : long cours, la rédaction CONTINUE en arrière-plan. Rien n'est encore rédigé : on le dit, et le
+        // cours relu (etat « generation », progression par cours.etat) montre l'avancement réel.
+        toast(d.phrase || 'La rédaction continue en arrière-plan.', 'info')
+        await charger()
+        return
+      }
       setCours(d)
       setRetournees(new Set())
       setVue(quoi === 'questions' ? 'questions' : 'fiches')
@@ -334,6 +353,7 @@ export function CoursDetailScreen({ params }: { params?: Record<string, any> }):
   const questions = cours.questions || []
   const secondes = cours.actif ? cours.duree_s + Math.max(0, (tic - recuA) / 1000) : cours.duree_s
   const enTranscription = cours.etat === 'transcription'
+  const enRedaction = cours.etat === 'generation'
   const empechement = cours.actif
     ? 'Arrêtez d’abord le cours : les fiches et les questions porteront sur tout le cours.'
     : enTranscription
@@ -343,12 +363,21 @@ export function CoursDetailScreen({ params }: { params?: Record<string, any> }):
 
   const zoneGeneration = (quoi: 'fiches' | 'questions', existe: boolean): JSX.Element => (
     <div className="carte col" style={{ gap: 10 }}>
-      {generation ? (
+      {generation || enRedaction ? (
         <div className="col" style={{ gap: 8 }} aria-live="polite">
           <div style={{ fontWeight: 700 }}>
-            Rédaction par le moteur VELA en cours… <span className="muted">{dureeLisible(secondesGeneration)}</span>
+            Rédaction par le moteur VELA en cours…{' '}
+            {enRedaction && cours.generation ? (
+              <span className="muted">partie {Math.min(cours.generation.fait + 1, cours.generation.total)} sur {cours.generation.total}</span>
+            ) : (
+              <span className="muted">{dureeLisible(secondesGeneration)}</span>
+            )}
           </div>
-          <div className="progress indet"><div /></div>
+          {enRedaction && typeof cours.progression === 'number' ? (
+            <div className="progress"><div style={{ width: `${Math.round(cours.progression * 100)}%` }} /></div>
+          ) : (
+            <div className="progress indet"><div /></div>
+          )}
           <div className="q-note">
             Un long cours est découpé en parties, rédigées l’une après l’autre : comptez parfois plusieurs minutes. Vous pouvez quitter
             cet écran, la rédaction continue.
@@ -365,6 +394,9 @@ export function CoursDetailScreen({ params }: { params?: Record<string, any> }):
         </div>
       )}
       {empechement ? <div className="bloc-note attention">{empechement}</div> : null}
+      {cours.erreur_generation && !enRedaction ? (
+        <div className="bloc-note attention" role="status">La dernière rédaction n’a pas abouti : {cours.erreur_generation}</div>
+      ) : null}
       {refus ? <BlocRefus refus={refus} onFermer={() => setRefus(null)} onReessayer={() => generer(refus.quoi)} /> : null}
       <div className="q-note">
         La transcription est envoyée au moteur VELA avec votre accord « Texte de vos demandes », et l’envoi est inscrit au registre de

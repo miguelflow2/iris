@@ -67,6 +67,13 @@ LIMITES = [
 ]
 
 
+# Raisons affichées telles quelles (GET /api/ecoute/assistee, ecoute.etat, 409) : en français, sans détail
+# technique ; l'exception d'origine est écrite au journal.
+SORTIES_ILLISIBLES = "Les sorties audio ne peuvent pas être listées pour l'instant."
+SORTIE_REFUSEE = "La sortie audio choisie refuse de s'ouvrir : vérifiez que les lunettes sont connectées."
+ERREUR_AUDIO = "L'écoute assistée s'est arrêtée à cause d'une erreur audio. Relancez-la."
+
+
 class SortieIndisponible(Exception):
     """Aucune sortie audio acceptable pour l'écoute assistée ; le message est la raison exacte."""
 
@@ -255,7 +262,9 @@ class SortieLunettes:
             apis = sd.query_hostapis()
             peripheriques = list(sd.query_devices())
         except Exception as exc:
-            raise SortieIndisponible(f"Les sorties audio ne peuvent pas être listées : {exc}") from exc
+            # Le message de PortAudio (en anglais, technique) reste au journal : l'utilisateur lit une phrase claire.
+            log.warning("sorties audio illisibles : %s", exc)
+            raise SortieIndisponible(SORTIES_ILLISIBLES) from exc
         noms: list[str] = []
         scores: list[int] = []
         index: list[int] = []
@@ -521,8 +530,9 @@ class ServiceEcouteAssistee:
                         threading.Thread(target=self._arreter_depuis_le_fil, args=(arret, str(exc)), daemon=True).start()
                         return
                     except Exception as exc:
+                        log.warning("sortie audio de l'écoute assistée impossible à ouvrir : %s", exc)
                         threading.Thread(target=self._arreter_depuis_le_fil,
-                                         args=(arret, f"Sortie audio impossible à ouvrir : {exc}"), daemon=True).start()
+                                         args=(arret, SORTIE_REFUSEE), daemon=True).start()
                         return
                     if flux is None:
                         continue  # PortAudio occupé par une voix : bloc suivant
@@ -534,7 +544,7 @@ class ServiceEcouteAssistee:
                     self._publier_etat()
         except Exception as exc:
             log.warning("écoute assistée interrompue : %s", exc)
-            threading.Thread(target=self._arreter_depuis_le_fil, args=(arret, f"Écoute assistée interrompue : {exc}"),
+            threading.Thread(target=self._arreter_depuis_le_fil, args=(arret, ERREUR_AUDIO),
                              daemon=True).start()
         finally:
             if flux is not None:

@@ -42,7 +42,59 @@ const EVENT_LABEL: Record<string, string> = {
   web_navigation: 'Navigation web',
   lunettes_photo: 'Photo prise par les lunettes',
   courriel_envoye: 'Courriel envoyé',
-  identifiants_importes: 'Identifiants importés'
+  identifiants_importes: 'Identifiants importés',
+  // chantier du 2026-09-13 (accessibilité, écoute, confiance)
+  acces_proprietaire: 'Accès propriétaire (mot de passe vérifié)',
+  acces_proprietaire_fin: 'Accès propriétaire terminé',
+  appareil_lunettes_associe: 'Appareil associé aux lunettes',
+  album_exporte: 'Fichier de l’album exporté',
+  cle_recherche_effacee: 'Clé de recherche web supprimée',
+  cle_recherche_enregistree: 'Clé de recherche web enregistrée',
+  consentement_biometrique_accorde: 'Consentement biométrique accordé',
+  consentement_biometrique_retire: 'Consentement biométrique retiré',
+  cours_debut: 'Cours démarré',
+  cours_fin: 'Cours terminé',
+  cours_supprime: 'Cours supprimé',
+  deverrouillage: 'IRIS déverrouillée',
+  deverrouillage_refuse: 'Déverrouillage refusé',
+  effacement_a_distance: 'Effacement à distance',
+  empreinte_vocale_effacee: 'Empreinte vocale effacée',
+  enregistrement_audio_debut: 'Enregistrement audio démarré',
+  enregistrement_audio_fin: 'Enregistrement audio terminé',
+  entrainement_debut: 'Entraînement démarré',
+  entrainement_fin: 'Entraînement terminé',
+  journal_efface: 'Journal effacé',
+  memory_range_deleted: 'Souvenirs effacés (plage)',
+  mode_invite_active: 'Mode invité activé',
+  mode_invite_sortie_vocale_refusee: 'Sortie vocale du mode invité refusée',
+  mode_invite_termine: 'Mode invité terminé',
+  partage_vision_arrete: 'Vision partagée arrêtée',
+  partage_vision_demarre: 'Vision partagée démarrée',
+  partage_vision_prolonge: 'Vision partagée prolongée',
+  pas_a_pas_debut: 'Pas à pas démarré',
+  pas_a_pas_fin: 'Pas à pas terminé',
+  position_pc_lue: 'Position de l’ordinateur lue',
+  prix_comparaison: 'Comparaison de prix',
+  rappel_contexte_cree: 'Rappel lié à une personne créé',
+  rappel_contexte_declenche: 'Rappel lié à une personne déclenché',
+  recu_analyse: 'Reçu analysé',
+  verrou_code_defini: 'Code de secours défini',
+  verrou_distant_active: 'Verrouillage à distance activé',
+  verrou_distant_desactive: 'Verrouillage à distance désactivé',
+  verrou_distant_desactivation_refusee: 'Désactivation du verrouillage à distance refusée',
+  verrou_distant_refuse: 'Commande de verrouillage à distance refusée',
+  verrou_ouverture_active: 'Mot de passe demandé à l’ouverture d’IRIS',
+  verrou_ouverture_desactive: 'Mot de passe à l’ouverture retiré',
+  verrouillage: 'IRIS verrouillée',
+  vision_description: 'Description visuelle',
+  reglage_protege_refuse: 'Réglage protégé : modification refusée'
+}
+
+/** Libellé d'un type d'événement du registre. Jamais le type brut à l'écran : un type sans libellé
+ *  (événement ajouté plus tard) s'affiche comme « Événement technique ». Le type exact reste dans
+ *  l'export JSON/CSV, qui sert à l'audit. */
+function libelleEvenement(type?: string | null): string {
+  return (type && EVENT_LABEL[type]) || 'Événement technique'
 }
 
 /** Colonne « IA » du registre — masque de marque : jamais le nom brut d'un fournisseur à l'écran.
@@ -204,7 +256,11 @@ export function ConfidentialiteScreen({ params }: { params?: Record<string, any>
         />
         <CarteReglage
           titre="Mode 100 % local"
-          desc="Aucun moteur externe : tout est traité sur cet ordinateur."
+          desc={
+            settings?.verrou_distant_actif
+              ? 'Aucun moteur externe : tout est traité sur cet ordinateur. Exception, parce que vous avez activé le verrouillage à distance : IRIS garde une connexion au relais VELA qui ne transporte ni donnée ni commande du téléphone, seulement un bonjour signé et les commandes de verrouillage ou d’effacement.'
+              : 'Aucun moteur externe : tout est traité sur cet ordinateur.'
+          }
           on={localOnly}
           onChange={(v) => changerReglage({ local_only: v })}
         />
@@ -322,7 +378,7 @@ export function ConfidentialiteScreen({ params }: { params?: Record<string, any>
                 {events.map((e) => (
                   <tr key={e.id}>
                     <td className="small muted" style={{ whiteSpace: 'nowrap' }}>{formatDate(e.created_at)}</td>
-                    <td>{EVENT_LABEL[e.event_type] || e.event_type}</td>
+                    <td>{libelleEvenement(e.event_type)}</td>
                     <td className="small">{e.data_type || ''}</td>
                     <td className="small" title={e.agent || undefined}>{libelleIaRegistre(e.agent)}</td>
                     <td className="small muted" style={{ wordBreak: 'break-word', minWidth: 160 }}>{e.detail}</td>

@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranListeCours: View {
     @Environment(EnvironnementIRIS.self) private var env
     @State private var cours: [CoursResume] = []
@@ -42,7 +43,9 @@ struct EcranListeCours: View {
                 .listRowBackground(Couleurs.carte)
             }
 
-            if !env.coursHorsLigne.gardes.isEmpty {
+            // IRIS verrouillée : les copies gardées ne se relisent pas (l'écran de verrouillage passe déjà
+            // devant ; ceci ferme la porte si une vue restait ouverte derrière).
+            if !env.coursHorsLigne.gardes.isEmpty && !env.pont.verrouPersistant {
                 Section("Gardés sur cet iPhone") {
                     ForEach(env.coursHorsLigne.gardes) { g in
                         NavigationLink {
@@ -90,6 +93,7 @@ struct EcranListeCours: View {
     }
 }
 
+@MainActor
 private struct LigneCours: View {
     let titre: String
     let matiere: String?
@@ -110,6 +114,7 @@ private struct LigneCours: View {
     }
 }
 
+@MainActor
 struct EcranCoursDetail: View {
     @Environment(EnvironnementIRIS.self) private var env
     @Environment(\.dismiss) private var fermer
@@ -126,6 +131,8 @@ struct EcranCoursDetail: View {
     @State private var partie: Partie = .fiches
     @State private var erreur: Error? = nil
     @State private var generation: String? = nil
+    /// Réponse 202 de /generer (long cours) : la rédaction continue sur l'ordinateur ; rien n'est encore rédigé.
+    @State private var phraseArrierePlan: String? = nil
     @State private var reponsesVues: Set<Int> = []
     @State private var exportURL: URL? = nil
     @State private var confirmationSuppression = false
@@ -205,6 +212,12 @@ struct EcranCoursDetail: View {
             }
             if let erreurCours = cours.erreur, !erreurCours.isEmpty {
                 NoteVerite(texte: erreurCours, genre: .erreur)
+            }
+            if cours.etat == "generation" || phraseArrierePlan != nil {
+                NoteVerite(texte: phraseArrierePlan ?? "Rédaction en cours sur ton ordinateur : rouvre le cours pour voir les fiches et les questions.")
+            }
+            if let erreurGeneration = cours.erreurGeneration, !erreurGeneration.isEmpty, cours.etat != "generation" {
+                NoteVerite(texte: "La dernière rédaction n'a pas abouti : \(erreurGeneration)", genre: .erreur)
             }
             if let erreurCopie = env.coursHorsLigne.erreur {
                 NoteVerite(texte: erreurCopie, genre: .erreur)
@@ -326,7 +339,7 @@ struct EcranCoursDetail: View {
                 erreur = error
             }
         }
-        if let copie = env.coursHorsLigne.lire(coursId) {
+        if !env.pont.verrouPersistant, let copie = env.coursHorsLigne.lire(coursId) {
             cours = copie
             depuisCopie = true
             erreur = nil
@@ -338,7 +351,11 @@ struct EcranCoursDetail: View {
         defer { generation = nil }
         do {
             // La génération peut être longue (découpage des longues transcriptions) : délai large.
-            let _: ReponseIgnoree = try await env.pont.post("/api/cours/\(coursId)/generer", corps: DemandeGeneration(quoi: quoi), delai: 600)
+            let reponse: ReponseGeneration = try await env.pont.post("/api/cours/\(coursId)/generer", corps: DemandeGeneration(quoi: quoi), delai: 600)
+            // 202 {en_arriere_plan, phrase} : long cours rédigé en arrière-plan. Ce n'est PAS une fin de rédaction.
+            phraseArrierePlan = reponse.enArrierePlan == true
+                ? (reponse.phrase ?? "La rédaction continue en arrière-plan sur ton ordinateur.")
+                : nil
             await charger()
         } catch {
             erreur = error
@@ -370,6 +387,12 @@ struct EcranCoursDetail: View {
     }
 }
 
+/// Réponse de POST /api/cours/{id}/generer : le cours rédigé (200), ou 202 {en_arriere_plan: true, parties, phrase}.
+private struct ReponseGeneration: Decodable, Sendable {
+    let enArrierePlan: Bool?
+    let phrase: String?
+}
+
 /// POST /api/cours/{id}/generer {"quoi": "fiches"|"questions"|"tout"}
 private struct DemandeGeneration: Encodable {
     let quoi: String
@@ -377,6 +400,7 @@ private struct DemandeGeneration: Encodable {
 
 /// Markdown des fiches : titres, listes et gras rendus ligne par ligne (AttributedString ne gère que
 /// le Markdown « en ligne »).
+@MainActor
 struct TexteMarkdown: View {
     let texte: String
 

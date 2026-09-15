@@ -16,6 +16,10 @@ import pytest
 
 from iris import enregistrement_audio as ea
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 BLOC = (np.sin(np.arange(4000) * 2 * np.pi * 440 / 16000) * 5000).astype(np.int16).tobytes()
 
 
@@ -132,6 +136,43 @@ def test_le_mode_confidentiel_arrete_un_enregistrement_en_cours(ecoute, app, par
         assert not ctx.enregistreur.actif
     finally:
         ctx.settings.user.privacy_mode = False
+
+
+def test_la_suspension_de_la_memoire_arrete_un_enregistrement_en_cours(ecoute, app, paroles):
+    """Mode invité activé pendant l'enregistrement : plus un seul octet n'est écrit après la suspension."""
+    ctx = app.state.ctx
+    nom = ctx.enregistreur.demarrer()["nom"]
+    for _ in range(2):
+        ecoute.robinet.publier(BLOC)
+    assert attendre(lambda: ctx.enregistreur.session.octets_audio == 16000)
+    session = ctx.enregistreur.session
+    ctx.memory.suspendre("invite")
+    try:
+        for _ in range(4):
+            ecoute.robinet.publier(BLOC)
+        assert attendre(lambda: not session.actif, 3), "la session s'arrête au premier bloc après la suspension"
+        assert session.octets_audio == 16000
+        assert not ctx.enregistreur.actif
+        assert "invite" in (ctx.enregistreur.raison or "")
+        assert "invite" in (ctx.ecoute_etat()["raison"] or "")
+        with wave.open(str(ctx.settings.data_dir / "captures" / "audio" / nom), "rb") as w:
+            assert w.getnframes() == 8000, "ce qui précède la suspension est gardé, rien après"
+    finally:
+        ctx.memory.reprendre("invite")
+
+
+def test_le_tour_dentretien_arrete_lenregistrement_meme_sans_bloc(ecoute, app, paroles):
+    """Micro muet (aucun bloc) : c'est le tour d'entretien qui applique la suspension."""
+    ctx = app.state.ctx
+    ctx.enregistreur.demarrer()
+    ctx.memory.suspendre("zone:Clinique")
+    try:
+        ctx.ecoute_tic()
+        assert not ctx.enregistreur.actif
+        assert ctx.enregistreur.raison == ea.arret_par_suspension("zone:Clinique")
+        assert "enregistrement" not in ecoute.robinet.abonnes()
+    finally:
+        ctx.memory.reprendre("zone:Clinique")
 
 
 def test_retention_des_fichiers(tmp_path):

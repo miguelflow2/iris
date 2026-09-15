@@ -3,6 +3,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranHorsLigne: View {
     @Environment(EnvironnementIRIS.self) private var env
     @State private var verification = false
@@ -56,12 +57,14 @@ struct EcranHorsLigne: View {
                 Carte(titre: "Ce qui ne marche pas sans l'ordinateur") {
                     puce("Parler à IRIS (voix ou écrit) : c'est l'ordinateur qui comprend et répond.", ok: false)
                     puce("L'interprète : la traduction est faite par l'ordinateur.", ok: false)
+                    puce("Reçus, comparaison de prix, pas à pas, entraînement et résumé du jour : tout se passe sur l'ordinateur.", ok: false)
                     puce("Générer des fiches ou des questions de cours.", ok: false)
                     puce("Activer le mode invité, créer ou supprimer une zone.", ok: false)
                     puce("« Dis-moi Iris » : l'écoute ne démarre pas, puisque personne ne pourrait répondre.", ok: false)
                 }
 
                 Carte(titre: "Pistes") {
+                    puce("Sans Tailscale, l'app iPhone ne joint pas ton ordinateur hors de ton réseau local : elle ne passe pas par le relais VELA.", ok: false)
                     puce("Vérifie que Tailscale est connecté sur cet iPhone et sur l'ordinateur.", ok: nil)
                     puce("L'ordinateur doit être allumé, pas en veille, avec IRIS ouverte.", ok: nil)
                     puce("À l'école ou au travail, certains réseaux Wi-Fi bloquent ce genre de liaison : essaie avec les données cellulaires.", ok: nil)

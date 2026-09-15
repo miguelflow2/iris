@@ -93,6 +93,7 @@ class SecretStore:
             import keyring
 
             keyring.set_password(SERVICE, f"site:{name}", payload)
+            self._indexer_site(name, present=True)
         else:
             data = self._read_file()
             data[f"site:{name}"] = payload
@@ -124,10 +125,51 @@ class SecretStore:
                 keyring.delete_password(SERVICE, f"site:{name}")
             except Exception:
                 pass
+            self._indexer_site(name, present=False)
         else:
             data = self._read_file()
             data.pop(f"site:{name}", None)
             self._write_file(data)
+
+    # Contre-vérification du 2026-09-14 : les identifiants importés du navigateur (outil importer_identifiants)
+    # sont rangés sous « site:<domaine> » sans passer par le réglage `sites` ; l'effacement à distance, qui ne
+    # connaissait que ce réglage, les laissait en place. Le coffre tient donc lui-même la liste de ses sites :
+    # en fichier chiffré, ce sont ses propres clés ; dans le coffre système, qui ne sait pas énumérer, un index
+    # des NOMS seulement (jamais les mots de passe). Limite : un site rangé dans le coffre système avant cet
+    # index n'y figure pas (l'effacement retire aussi les noms connus par le réglage `sites`).
+    _INDEX_SITES = "site-index"
+
+    def _indexer_site(self, name: str, present: bool) -> None:
+        try:
+            import keyring
+
+            noms = set(self._lire_index_sites())
+            (noms.add if present else noms.discard)(name)
+            if noms:
+                keyring.set_password(SERVICE, self._INDEX_SITES, json.dumps(sorted(noms)))
+            else:
+                try:
+                    keyring.delete_password(SERVICE, self._INDEX_SITES)
+                except Exception:
+                    pass
+        except Exception as exc:
+            log.warning("index des sites du coffre non mis à jour : %s", type(exc).__name__)
+
+    def _lire_index_sites(self) -> list[str]:
+        try:
+            import keyring
+
+            brut = keyring.get_password(SERVICE, self._INDEX_SITES)
+            noms = json.loads(brut) if brut else []
+            return [str(n) for n in noms] if isinstance(noms, list) else []
+        except Exception:
+            return []
+
+    def sites_enregistres(self) -> list[str]:
+        """Noms de tous les comptes web rangés dans le coffre, quelle que soit leur origine."""
+        if self._use_keyring:
+            return self._lire_index_sites()
+        return sorted(k[len("site:"):] for k in self._read_file() if isinstance(k, str) and k.startswith("site:"))
 
     def has_api_key(self, agent: str) -> bool:
         return bool(self.get_api_key(agent))

@@ -4,6 +4,12 @@
 // - il cherche les lunettes (annonces dont le nom ou les services ressemblent à ceux de la famille VELA),
 //   s'y connecte, s'abonne à leurs notifications et lit la batterie (caractéristique standard si elle
 //   existe, sinon la trame maison 0xBC, seule source observée sur la vraie paire) ;
+// - un appareil RELIÉ n'est tenu pour des lunettes VELA (etat.verifiees) qu'une fois ses services
+//   découverts, et seulement s'il expose un service connu de cette famille (UUIDLunettes.servicesConnus).
+//   Un nom ne prouve rien : un bracelet « SmartBand » débloquait auparavant la voix et l'attestation.
+//   Limite, dite dans l'écran Lunettes : ae00 et ae30 sont des services de la puce audio (Jieli), présents
+//   aussi sur d'autres appareils bâtis sur elle ; l'ordinateur, lui, n'accepte l'attestation que pour les
+//   lunettes qu'il a déjà connues, avec leur nom exact, depuis un appareil associé ;
 // - il retient la paire et la reconnecte seul quand elle revient à portée (reconnexion automatique
 //   d'iOS 17 et restauration d'état : iOS peut relancer l'app en arrière-plan pour ça) ;
 // - le son (micro et haut-parleur des lunettes) ne passe PAS par ici : c'est le Bluetooth classique,
@@ -172,10 +178,21 @@ final class LunettesBLE: ServiceLunettes {
         rechercheEnCours = false
     }
 
-    private func ajouterTrouve(_ p: CBPeripheral, nom: String?, rssi: Int?, services: [CBUUID]) {
+    /// Vrai si au moins un service connu de la famille VELA figure parmi ceux de l'appareil.
+    nonisolated static func servicesReconnus(_ services: [CBUUID]) -> Bool {
+        services.contains { UUIDLunettes.servicesConnus.contains($0) }
+    }
+
+    /// Le nom annoncé ressemble-t-il à celui d'une paire VELA ? Filtre la LISTE seulement : la
+    /// vérification qui compte se fait après connexion, sur les services.
+    nonisolated static func nomRessemble(_ nom: String?) -> Bool {
         let bas = (nom ?? "").lowercased()
-        let parNom = UUIDLunettes.indicesNom.contains { bas.contains($0) }
-        let parService = services.contains { UUIDLunettes.servicesConnus.contains($0) }
+        return UUIDLunettes.indicesNom.contains { bas.contains($0) }
+    }
+
+    private func ajouterTrouve(_ p: CBPeripheral, nom: String?, rssi: Int?, services: [CBUUID]) {
+        let parNom = Self.nomRessemble(nom)
+        let parService = Self.servicesReconnus(services)
         guard parNom || parService else { return }
         vus[p.identifier] = p
         let affiche = (nom?.trimmingCharacters(in: .whitespaces).isEmpty == false) ? nom! : "Lunettes (sans nom)"
@@ -288,6 +305,8 @@ final class LunettesBLE: ServiceLunettes {
     private func preparerConnectee(_ p: CBPeripheral) {
         p.delegate = delegue
         etat.connectees = true
+        // Vérifiées seulement quand leurs services seront découverts (servicesDecouverts).
+        etat.verifiees = false
         etat.nom = p.name ?? paireMemorisee ?? "Lunettes VELA"
         etat.identifiant = p.identifier.uuidString
         etat.message = nil
@@ -302,6 +321,7 @@ final class LunettesBLE: ServiceLunettes {
 
     private func marquerDeconnectees(message: String?) {
         etat.connectees = false
+        etat.verifiees = false
         etat.batterie = nil
         etat.message = message
         ecritureCamera = nil
@@ -459,6 +479,10 @@ final class LunettesBLE: ServiceLunettes {
         servicesVus = services.map { $0.uuid.uuidString }
         cameraExposee = services.contains { $0.uuid == UUIDLunettes.serviceCamera }
         canalCommandeVu = services.contains { $0.uuid == UUIDLunettes.serviceCommande }
+        etat.verifiees = Self.servicesReconnus(services.map(\.uuid))
+        if !etat.verifiees {
+            etat.message = "Cet appareil n'expose aucun service connu des lunettes VELA : IRIS ne le reconnaît pas comme des lunettes."
+        }
         for service in services {
             p.discoverCharacteristics(nil, for: service)
         }

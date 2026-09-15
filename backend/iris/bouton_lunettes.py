@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import threading
 import time
 from collections import Counter
@@ -97,6 +98,9 @@ class ServiceBouton:
         self._dernier_declenchement = -1e9
         self._taches: set = set()
         self.derniere_action: dict | None = None
+        self._file_voix: "queue.Queue[str]" = queue.Queue()
+        self._verrou_voix = threading.Lock()
+        self._fil_voix: threading.Thread | None = None
 
     # ------------------------------------------------------------------ état
     def _connectees(self) -> bool:
@@ -145,13 +149,36 @@ class ServiceBouton:
         self.ctx.hub.publish("bouton.lunettes", **donnees)
 
     def _dire(self, texte: str) -> None:
+        """Dit une phrase SANS bloquer l'appelant. _dire est appelé depuis la boucle asyncio (apprentissage,
+        paquets des lunettes) ; or tts.speak peut attendre jusqu'à 15 s le premier démarrage de la voix
+        Windows et fait du travail synchrone (conversion des nombres, compteur en base). Un seul fil de
+        parole, dans l'ordre d'arrivée : « Appuyez maintenant… » passe avant « Bouton appris. »."""
         tts = getattr(self.ctx, "tts", None)
-        if tts is None or self.ctx.settings.user.privacy_mode:
+        if tts is None or self.ctx.settings.user.privacy_mode or not texte:
             return
-        try:
-            tts.speak(texte, force=True)
-        except Exception as exc:
-            log.debug("phrase du bouton non dite : %s", exc)
+        self._file_voix.put(texte)
+        with self._verrou_voix:
+            if self._fil_voix is None or not self._fil_voix.is_alive():
+                self._fil_voix = threading.Thread(target=self._parler_en_fond, name="iris-bouton-voix", daemon=True)
+                self._fil_voix.start()
+
+    def _parler_en_fond(self) -> None:
+        while True:
+            try:
+                texte = self._file_voix.get(timeout=5.0)
+            except queue.Empty:
+                with self._verrou_voix:
+                    # Vérifié sous verrou : une phrase déposée pendant qu'on s'apprêtait à partir n'est pas perdue.
+                    if self._file_voix.empty():
+                        self._fil_voix = None
+                        return
+                continue
+            tts = getattr(self.ctx, "tts", None)
+            try:
+                if tts is not None:
+                    tts.speak(texte, force=True)
+            except Exception as exc:
+                log.debug("phrase du bouton non dite : %s", exc)
 
     def _declencher(self, sig: str) -> None:
         u = self.ctx.settings.user

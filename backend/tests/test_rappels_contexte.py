@@ -20,6 +20,10 @@ import pytest
 
 import iris.rappels_contexte as rc
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 
 @pytest.fixture(scope="module")
 def _application(tmp_path_factory):

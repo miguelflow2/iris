@@ -6,6 +6,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranIA: View {
     @Environment(EnvironnementIRIS.self) private var env
     @State private var saisie = ""
@@ -165,7 +166,7 @@ struct EcranIA: View {
         let texte = saisie
         guard !texte.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         saisie = ""
-        let reponse = await env.conversation.envoyer(texte)
+        let reponse = await env.demander(texte)
         await env.attestation.rafraichirPresence()
         if lectureAuto, let reponse {
             await env.voix.parler(reponse)
@@ -187,7 +188,7 @@ struct EcranIA: View {
         do {
             let phrase = try await env.voix.ecouterUnePhrase(langue: env.voix.langueIRIS, delaiMax: 8)
             enEcoute = false
-            if let reponse = await env.conversation.envoyer(phrase) {
+            if let reponse = await env.demanderAVoix(phrase) {
                 await env.voix.parler(reponse)
             }
         } catch {
@@ -198,6 +199,7 @@ struct EcranIA: View {
     }
 }
 
+@MainActor
 struct VueBulle: View {
     let bulle: ConversationIRIS.Bulle
 

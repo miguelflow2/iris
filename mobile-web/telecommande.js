@@ -1,4 +1,4 @@
-/* Télécommande d'Iris — côté téléphone.
+/* Télécommande d'IRIS — côté téléphone (ancien site mobile-web, revérifiée le 2026-09-14).
  *
  * Ouvre un WebSocket vers le relais VELA, s'authentifie avec un jeton d'appareil (obtenu du relais)
  * ET le code d'appairage affiché par l'ordinateur, puis envoie des commandes. Les demandes d'accord
@@ -75,7 +75,15 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ machine: "telephone-web", email: email }),
       });
-      if (!r.ok) throw new Error("relais " + r.status);
+      if (!r.ok) {
+        // Le relais a répondu : on affiche SA raison (limitation 429, service indisponible 503…),
+        // pas « injoignable », qui enverrait l'utilisateur vérifier une adresse correcte.
+        var detail = "";
+        try { detail = (await r.json()).detail || ""; } catch (e2) {}
+        etat(typeof detail === "string" && detail ? detail : "Le relais a refusé la demande (" + r.status + ").", false);
+        els.connecter.disabled = false;
+        return;
+      }
       jeton = (await r.json()).jeton;
       if (!jeton) throw new Error("aucun jeton");
     } catch (e) {
@@ -88,14 +96,19 @@
     } catch (e) {
       etat("Connexion impossible.", false); els.connecter.disabled = false; return;
     }
-    ws.onopen = function () { ws.send(JSON.stringify({ type: "hello", jeton: jeton, pairing: code })); };
+    ws.onopen = function () {
+      etat("Connexion au relais…", null);
+      ws.send(JSON.stringify({ type: "hello", jeton: jeton, pairing: code }));
+    };
     ws.onmessage = function (ev) {
       var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       traiter(m);
     };
-    ws.onclose = function () {
+    ws.onclose = function (ev) {
+      // Aucune reconnexion automatique : un code refusé (4001) ou un relais arrêté ne doit pas
+      // être réessayé en rafale ; l'utilisateur reconnecte lui-même.
       connecte = false; els.envoyer.disabled = true; els.connecter.disabled = false;
-      etat("Déconnecté.", false);
+      etat(ev && ev.code === 4001 ? "Refusé par le relais : vérifie le courriel et le code d'appairage." : "Déconnecté.", false);
     };
     ws.onerror = function () { etat("Erreur de connexion.", false); };
   }
@@ -115,7 +128,7 @@
       els.carteAccord.hidden = false;
       els.carteAccord.scrollIntoView({ behavior: "smooth", block: "center" });
     } else if (m.type === "resultat") {
-      if (m.erreur) { bulle(m.message || "Iris n'a pas pu exécuter la commande.", "sys"); }
+      if (m.erreur) { bulle(m.message || "IRIS n'a pas pu exécuter la commande.", "sys"); }
       else { bulle(m.reponse || "(pas de réponse)", "iris"); }
       els.envoyer.disabled = !connecte;
     }

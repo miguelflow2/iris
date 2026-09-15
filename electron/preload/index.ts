@@ -20,7 +20,7 @@ const api = {
   onBackend: (cb: (info: BackendInfo) => void) => subscribe<BackendInfo>('iris:backend', cb),
   onBackendStatus: (cb: (status: { state: string; message?: string }) => void) =>
     subscribe<{ state: string; message?: string }>('iris:backend-status', cb),
-  appInfo: (): Promise<{ version: string; platform: string; userData: string; logPath: string }> =>
+  appInfo: (): Promise<{ version: string; platform: string; userData: string; logPath: string; isPackaged?: boolean }> =>
     ipcRenderer.invoke('iris:app'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('iris:openExternal', url),
   openPath: (path: string): Promise<string> => ipcRenderer.invoke('iris:openPath', path),

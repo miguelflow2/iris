@@ -71,13 +71,14 @@ function hote(url: string): string {
 }
 
 export function PrixScreen({ params: _params }: { params?: Record<string, any> }): JSX.Element {
-  const { toast, presence, exigerLunettes } = useStore()
+  const { nav, toast, presence, exigerLunettes } = useStore()
   const [requete, setRequete] = useState('')
   const [image, setImage] = useState<ImageChoisie | null>(null)
   const [parler, setParler] = useState(false)
   const [enCours, setEnCours] = useState<{ quoi: 'nom' | 'lunettes' | 'image'; depuis: number } | null>(null)
   const [resultat, setResultat] = useState<Comparaison | null>(null)
-  const [refus, setRefus] = useState<(Refus & { description: string | null; reessayer: () => void }) | null>(null)
+  // « configurer » : refus 409 du service faute de clé de recherche web, qui se règle dans Contrôle de l’ordinateur › Moteur avancé (écran reglages-pc).
+  const [refus, setRefus] = useState<(Refus & { description: string | null; reessayer: () => void; configurer?: boolean }) | null>(null)
   const vivant = useRef(true)
   const tic = useTic(Boolean(enCours))
 
@@ -117,7 +118,8 @@ export function PrixScreen({ params: _params }: { params?: Record<string, any> }
       const x = lireRefus(err)
       if (!x) return
       const description = err instanceof ApiError && err.detail && typeof err.detail === 'object' && typeof err.detail.description === 'string' ? err.detail.description : null
-      setRefus({ ...x, description, reessayer: () => comparer(quoi, img) })
+      const configurer = err instanceof ApiError && err.status === 409 && /pas configurée/i.test(err.message)
+      setRefus({ ...x, description, reessayer: () => comparer(quoi, img), configurer })
     } finally {
       if (vivant.current) setEnCours(null)
     }
@@ -162,11 +164,11 @@ export function PrixScreen({ params: _params }: { params?: Record<string, any> }
             <IcoRecherche /> {enCours?.quoi === 'nom' ? 'Recherche…' : 'Chercher les prix'}
           </Holo>
           <div className="q-grille-2">
-            <Holo taille="petit" variante="sombre" disabled={Boolean(enCours)} onClick={() => comparer('lunettes')}>
-              <IcoCamera /> {enCours?.quoi === 'lunettes' ? 'Photo en cours…' : 'Photo des lunettes'}
-            </Holo>
             <Holo taille="petit" variante="sombre" disabled={Boolean(enCours)} onClick={choisirImage}>
               <IcoImage /> {enCours?.quoi === 'image' ? 'Identification…' : 'Choisir une image'}
+            </Holo>
+            <Holo taille="petit" variante="sombre" disabled={Boolean(enCours)} onClick={() => comparer('lunettes')}>
+              <IcoCamera /> {enCours?.quoi === 'lunettes' ? 'Photo en cours…' : 'Photo des lunettes'}
             </Holo>
           </div>
           {image ? (
@@ -183,8 +185,8 @@ export function PrixScreen({ params: _params }: { params?: Record<string, any> }
           </div>
           <div className="q-note">
             Avec une photo, IRIS lit le nom, la marque, le format, le code-barres et le prix affiché s’ils sont lisibles ; le texte tapé sert
-            alors de précision. Si la caméra de votre paire n’est pas encore prise en charge, IRIS le dit : choisissez une photo prise avec
-            votre téléphone.
+            alors de précision. La caméra des lunettes n’est pas encore activée dans IRIS (protocole en cours de confirmation) : en attendant,
+            choisissez une photo prise avec votre téléphone.
           </div>
           {enCours ? (
             <div className="col" style={{ gap: 6 }} aria-live="polite">
@@ -198,6 +200,11 @@ export function PrixScreen({ params: _params }: { params?: Record<string, any> }
           {refus ? (
             <>
               <BlocRefus refus={refus} onFermer={() => setRefus(null)} onReessayer={refus.reessayer} />
+              {refus.configurer ? (
+                <Holo taille="petit" variante="blanc" style={{ alignSelf: 'flex-start' }} onClick={() => nav.ouvrir('reglages-pc')}>
+                  Configurer la recherche web
+                </Holo>
+              ) : null}
               {refus.description ? (
                 <div className="q-note">Ce que la photo montre selon IRIS : {refus.description}</div>
               ) : null}
@@ -285,7 +292,13 @@ export function PrixScreen({ params: _params }: { params?: Record<string, any> }
             <li>Les prix viennent d’extraits de résultats de recherche : ils peuvent dater de quelques jours, et le prix comme le stock en magasin peuvent différer. Vérifiez sur la page du marchand.</li>
             <li>Seuls les prix en dollars canadiens sont gardés (marchand canadien connu, site en .ca ou mention CAD) ; les rabais, prix barrés, frais de livraison et prix au kilo sont ignorés.</li>
             <li>La recherche quitte l’ordinateur, avec votre accord « Texte de vos demandes » ; une photo passe d’abord par la vision d’IRIS, qui demande l’accord « Images jointes » avant d’envoyer l’image au moteur VELA. Rien n’est conservé.</li>
-            <li>La comparaison exige que la recherche web soit configurée sur cet ordinateur ; elle ne marche ni en mode 100 % local, ni en mode confidentiel.</li>
+            <li>
+              La comparaison exige que la recherche web soit configurée sur cet ordinateur (
+              <button type="button" className="btn sm ghost" style={{ display: 'inline', padding: '0 4px' }} onClick={() => nav.ouvrir('reglages-pc')}>
+                Contrôle de l’ordinateur › Moteur avancé › Clé de recherche web
+              </button>
+              ) ; elle ne marche ni en mode 100 % local, ni en mode confidentiel.
+            </li>
           </ul>
         </div>
       </div>

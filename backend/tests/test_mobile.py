@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from fastapi import Request  # au niveau du module : les annotations sont des chaînes (from __future__)
 
 from iris import mobile
 from iris.mobile import AGENT_SERVICE, DOSSIER_STATIQUE, EMPREINTE_COQUILLE, MANIFESTE, PAGE, urls_locales
@@ -37,6 +38,26 @@ CSS = (DOSSIER_STATIQUE / "app.css").read_text(encoding="utf-8")
 COQUILLE = "\n".join((INDEX_HTML, CSS, API_JS, COEUR_JS))
 FICHIERS_COQUILLE = {"page servie (/m)": PAGE, "index.html": INDEX_HTML, "app.css": CSS, "js/api.js": API_JS,
                      "js/coeur.js": COEUR_JS, "sw.js": AGENT_SERVICE}
+# TOUS les scripts que le téléphone peut charger : la coquille ET les modules des fonctions (lunettes, guidage,
+# zones, partage, achats, invité, interprète). Un test qui ne regarde que la coquille laisse passer un octet
+# NUL, un nom de fournisseur ou une promesse absolue dans un module.
+SCRIPTS = {f"js/{f.name}": f.read_text(encoding="utf-8") for f in sorted((DOSSIER_STATIQUE / "js").glob("*.js"))}
+LUNETTES_JS = SCRIPTS["js/lunettes.js"]
+GUIDAGE_JS = SCRIPTS["js/guidage.js"]
+
+
+def _sans_commentaires(js: str) -> str:
+    """Le texte d'un script sans ses commentaires : les formulations absolues comptent dans ce qui s'affiche,
+    pas dans une explication pour le développeur (« arrêter reste toujours possible »)."""
+    js = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+    return re.sub(r"(^|[ \t;{}(),])//[^\n]*", r"\1", js, flags=re.M)
+
+
+def _corps_fonction(js: str, signature: str) -> str:
+    """Le corps d'une fonction de premier niveau : de sa signature à la prochaine fonction de premier niveau."""
+    debut = js.index(signature)
+    suite = re.search(r"^(?:async )?function ", js[debut + len(signature):], flags=re.M)
+    return js[debut:debut + len(signature) + (suite.start() if suite else len(js))]
 
 
 def _script_en_ligne(page: str) -> str:
@@ -76,11 +97,29 @@ def test_la_consigne_deconseille_ouvrir_un_port(client):
 
 
 # --------------------------------------------------------------------------- la page elle-même
+# Ce qui CHARGE une ressource (script, style, image, module, police). Un lien de navigation (« Acheter les
+# lunettes ») ou une connexion déclarée (OpenStreetMap, dans la politique de contenu) n'en est pas une.
+RESSOURCES_EXTERNES = (
+    r"""<script[^>]*\ssrc\s*=\s*["']?(?:https?:)?//""",
+    r"""<link[^>]*\shref\s*=\s*["']?(?:https?:)?//""",
+    r"""<img[^>]*\ssrc\s*=\s*["']?(?:https?:)?//""",
+    r"@import",
+    r"""url\(\s*["']?(?:https?:)?//""",
+    r"""^\s*import\b[^;\n]*from\s*["'](?:https?:)?//""",
+    r"""import\(\s*["'](?:https?:)?//""",
+    r"""\bsrc\s*[:=]\s*["'](?:https?:)?//""",
+    r"cdn\.",
+)
+
+
 def test_la_page_est_autonome():
-    """Elle doit fonctionner dans une voiture, sur un réseau incertain : aucune ressource externe."""
-    for nom, contenu in FICHIERS_COQUILLE.items():
-        for interdit in ("http://", "https://", "cdn", "@import"):
-            assert interdit not in contenu, f"ressource externe détectée dans {nom} : {interdit}"
+    """Elle doit fonctionner dans une voiture, sur un réseau incertain : aucune ressource externe chargée."""
+    for nom, contenu in {**FICHIERS_COQUILLE, **SCRIPTS}.items():
+        for motif in RESSOURCES_EXTERNES:
+            trouve = re.search(motif, contenu, flags=re.I | re.M)
+            assert not trouve, f"ressource externe chargée dans {nom} : {trouve.group(0)!r}"
+    # Le repli d'achat de la coquille est une adresse écrite en clair, plus une concaténation pour contourner ce test.
+    assert "'https:' + '//" not in COEUR_JS
 
 
 def test_la_page_contient_lessentiel():
@@ -417,16 +456,25 @@ def _mini_app(relais: str = "https://relais.exemple.ca", repli: str = ""):
     from iris.routes_mobile import creer_routeur
 
     ctx = SimpleNamespace(settings=SimpleNamespace(user=SimpleNamespace(relay_server=relais), relay_base_override=repli))
+    from iris.routes_mobile import reponse_page
+
     app = FastAPI()
     app.include_router(creer_routeur(ctx))
+
+    # /m comme main.py doit la servir (routes_mobile.reponse_page) : la politique ne compte que sur le document.
+    @app.get("/m")
+    def page(request: Request):
+        return reponse_page(ctx, request, PAGE)
+
     return ctx, TestClient(app, base_url="https://bureau.tail1234.ts.net")
 
 
 def test_la_politique_de_contenu_autorise_seulement_le_necessaire(monkeypatch):
     monkeypatch.setenv("VELA_RELAIS_REPLIS", "https://repli.exemple.ca")
     _ctx, c = _mini_app(repli="https://autre-repli.exemple.ca")
-    r = c.get("/m/js/coeur.js")
+    r = c.get("/m")
     assert r.status_code == 200
+    assert r.headers["x-frame-options"] == "DENY"
     csp = r.headers["content-security-policy"]
     directives = {d.split(" ", 1)[0]: d for d in csp.split("; ")}
     assert directives["script-src"] == f"script-src 'self' '{EMPREINTE_COQUILLE}'", \
@@ -446,16 +494,70 @@ def test_la_politique_de_contenu_autorise_seulement_le_necessaire(monkeypatch):
 
 def test_les_permissions_et_le_cache_court():
     _ctx, c = _mini_app()
-    r = c.get("/m/app.css")
-    permissions = r.headers["permissions-policy"]
-    for attendue in ("camera=(self)", "microphone=(self)", "geolocation=(self)", "screen-wake-lock=(self)"):
+    document = c.get("/m")
+    permissions = document.headers["permissions-policy"]
+    for attendue in ("camera=(self)", "microphone=(self)", "geolocation=(self)", "screen-wake-lock=(self)", "payment=()"):
         assert attendue in permissions, attendue
+    assert document.headers["referrer-policy"] == "same-origin", "le nom .ts.net ne part vers aucune autre origine"
+    assert document.headers["cache-control"] == "no-cache"
+    r = c.get("/m/app.css")
     age = re.search(r"max-age=(\d+)", r.headers["cache-control"])
     assert age and int(age.group(1)) <= 300, "une mise à jour d'IRIS doit atteindre le téléphone vite"
     # Revalidation bon marché : même contenu, 304 sans corps.
     r2 = c.get("/m/app.css", headers={"If-None-Match": r.headers["etag"]})
     assert r2.status_code == 304 and r2.content == b""
-    assert "content-security-policy" in r2.headers
+    assert r2.headers["x-content-type-options"] == "nosniff"
+
+
+def test_les_fichiers_ne_portent_plus_une_politique_sans_effet():
+    """Un navigateur ignore la politique de contenu et les permissions d'un fichier JS ou CSS : les y poser
+    faisait croire à une protection de la page qui n'existait pas (revue du 2026-09-14)."""
+    _ctx, c = _mini_app()
+    for chemin in ("/m/js/coeur.js", "/m/app.css"):
+        r = c.get(chemin)
+        assert r.status_code == 200
+        assert "content-security-policy" not in r.headers and "permissions-policy" not in r.headers, chemin
+        assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_les_reponses_pretes_pour_main_py():
+    """L'agent de service et le manifeste : ce que main.py doit poser (nosniff partout, politique du worker)."""
+    from iris.routes_mobile import entetes_securite, reponse_agent_service, reponse_manifeste
+
+    sw = reponse_agent_service(AGENT_SERVICE)
+    assert sw.headers["x-content-type-options"] == "nosniff" and "javascript" in sw.headers["content-type"]
+    politique_sw = sw.headers["content-security-policy"]
+    assert "connect-src 'self'" in politique_sw and "https:" not in politique_sw
+    manifeste = reponse_manifeste(MANIFESTE)
+    assert manifeste.headers["x-content-type-options"] == "nosniff"
+    assert "manifest+json" in manifeste.headers["content-type"]
+    # L'ancien nom reste utilisable, avec l'interdiction d'intégration dans un cadre.
+    from starlette.requests import Request
+
+    requete = Request({"type": "http", "method": "GET", "path": "/m", "headers": [(b"host", b"bureau.ts.net")]})
+    assert entetes_securite(_mini_app()[0], requete)["X-Frame-Options"] == "DENY"
+
+
+def test_la_page_m_porte_les_entetes(client_sans_jeton):
+    """LE test qui compte : les en-têtes sur le document réellement servi par IRIS. main.py pose ceux de
+    routes_mobile (reponse_page, reponse_agent_service, reponse_manifeste) sur /m, /sw.js et le manifeste ;
+    strict depuis le 2026-09-14 (il était « échec attendu » tant que main.py ne les posait pas)."""
+    r = client_sans_jeton.get("/m")
+    assert r.status_code == 200
+    assert "content-security-policy" in r.headers, "main.py sert /m sans en-têtes de sécurité"
+    csp = r.headers["content-security-policy"]
+    directives = {d.split(" ", 1)[0]: d for d in csp.split("; ")}
+    assert directives["frame-ancestors"] == "frame-ancestors 'none'"
+    connexions = directives["connect-src"].split()[1:]
+    for interdit in ("https:", "http:", "wss:", "ws:", "*"):
+        assert interdit not in connexions, f"connect-src ouvert : {interdit}"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "camera=(self)" in r.headers["permissions-policy"]
+    sw = client_sans_jeton.get("/sw.js")
+    assert sw.headers.get("x-content-type-options") == "nosniff"
+    assert "connect-src 'self'" in sw.headers.get("content-security-policy", "")
+    assert client_sans_jeton.get("/manifest.webmanifest").headers.get("x-content-type-options") == "nosniff"
 
 
 def test_un_hote_forge_ninjecte_aucune_directive():
@@ -489,6 +591,12 @@ def test_la_page_porte_sa_politique_et_seule_la_coquille_est_en_ligne():
     politique = meta.group(1)
     assert f"script-src 'self' '{EMPREINTE_COQUILLE}';" in politique and "object-src 'none'" in politique
     assert "unsafe-eval" not in politique and "script-src 'self' 'unsafe-inline'" not in politique
+    # Plus de « https: » ouvert à toute origine : seulement cette origine et les deux services du guidage.
+    connexions = re.search(r"connect-src ([^;]+);", politique).group(1).split()
+    assert "https:" not in connexions and "http:" not in connexions and "*" not in connexions
+    assert {"'self'", "https://nominatim.openstreetmap.org", "https://routing.openstreetmap.de"} <= set(connexions)
+    assert "frame-src 'none'" in politique
+    assert '<meta name="referrer" content="same-origin">' in PAGE
     code = _script_en_ligne(PAGE)
     assert EMPREINTE_COQUILLE == "sha256-" + base64.b64encode(hashlib.sha256(code.encode("utf-8")).digest()).decode()
     scripts = re.findall(r"<script[^>]*>", PAGE)
@@ -536,9 +644,14 @@ def test_la_composition_retombe_sur_les_fichiers_si_quelque_chose_cloche():
 
 
 def test_les_modules_sont_charges_dans_lordre_du_contrat():
-    ordre = ["api", "coeur", "guidage", "zones", "partage", "achats", "invite", "interprete"]
+    ordre = ["api", "coeur", "lunettes", "guidage", "zones", "partage", "achats", "invite", "interprete"]
     positions = [INDEX_HTML.index(f'<script type="module" src="/m/js/{nom}.js"></script>') for nom in ordre]
-    assert positions == sorted(positions), "api.js, coeur.js, puis les modules de fonctions"
+    assert positions == sorted(positions), "api.js, coeur.js, lunettes.js (EN PREMIER des modules), puis les fonctions"
+    # Tous les modules présents dans le dossier sont chargés par la page, et mis en cache par l'agent de service.
+    for nom in SCRIPTS:
+        assert f'src="/m/{nom}"' in INDEX_HTML, f"{nom} n'est pas chargé par la page"
+        if nom not in ("js/api.js", "js/coeur.js"):
+            assert f"'/m/{nom}'" in AGENT_SERVICE, f"{nom} absent de la coquille hors ligne"
     # Dans la page servie : la coquille en ligne d'abord, puis les modules, dans le même ordre.
     servie = [PAGE.index('<script type="module">')] + [
         PAGE.index(f'<script type="module" src="/m/js/{nom}.js"></script>') for nom in ordre[2:]]
@@ -638,20 +751,26 @@ def test_api_js_se_comporte_comme_promis(tmp_path):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node absent de cette machine")
 def test_la_syntaxe_des_scripts_est_valide():
-    for fichier in (DOSSIER_STATIQUE / "js" / "api.js", DOSSIER_STATIQUE / "js" / "coeur.js", DOSSIER_STATIQUE / "sw.js"):
+    fichiers = sorted((DOSSIER_STATIQUE / "js").glob("*.js")) + [DOSSIER_STATIQUE / "sw.js"]
+    assert len(fichiers) >= 10, "la coquille, les modules des fonctions et l'agent de service"
+    for fichier in fichiers:
+        assert b"\x00" not in fichier.read_bytes(), f"octet NUL dans {fichier.name}"
         sortie = subprocess.run(["node", "--check", str(fichier)], capture_output=True, text=True, timeout=30)
         assert sortie.returncode == 0, f"{fichier.name} : {sortie.stderr}"
 
 
 # --------------------------------------------------------------------------- honnêteté, marque, accessibilité
 def test_aucun_nom_de_fournisseur_ni_promesse_absolue():
-    for nom, contenu in FICHIERS_COQUILLE.items():
+    for nom, contenu in {**FICHIERS_COQUILLE, **SCRIPTS}.items():
         bas = contenu.lower()
         for fournisseur in ("claude", "anthropic", "openai", "gpt", "gemini", "elevenlabs", "vosk", "piper",
                             "google", "twilio", "openrouter", "mistral"):
             assert fournisseur not in bas, f"nom de fournisseur dans {nom} : {fournisseur}"
+        # Les modules expliquent parfois une règle en commentaire (« arrêter reste toujours possible ») : seul
+        # le texte qui peut s'afficher compte. La coquille, elle, est vérifiée en entier, comme avant.
+        visible = _sans_commentaires(bas) if nom in SCRIPTS and nom not in ("js/api.js", "js/coeur.js") else bas
         for absolu in ("toujours", "instantané", "entièrement", "parfait", "garanti"):
-            assert absolu not in bas, f"formulation absolue dans {nom} : {absolu}"
+            assert absolu not in visible, f"formulation absolue dans {nom} : {absolu}"
     assert "toujours" not in MANIFESTE["description"].lower() and "où que vous soyez" not in MANIFESTE["description"]
 
 
@@ -692,8 +811,492 @@ def test_la_page_de_repli_ne_fait_pas_semblant(monkeypatch, tmp_path):
     assert mobile._manifeste() == mobile.MANIFESTE_DEFAUT
     assert "pas installée correctement" in mobile.PAGE_ABSENTE and "<script" not in mobile.PAGE_ABSENTE
     assert "/api/" in mobile.AGENT_SERVICE_DEFAUT
+    # La composition réelle, avec le dossier absent : exactement ce que mobile.py calcule à l'import.
+    page, empreinte = mobile.composer_page(mobile.lire_statique("index.html"), mobile.lire_statique("js/api.js"),
+                                           mobile.lire_statique("js/coeur.js"), mobile.lire_statique("app.css"))
+    assert (page, empreinte) == (mobile.PAGE_ABSENTE, None)
+    # Dossier incomplet (gabarit seul) : la page en fichiers séparés, sans empreinte ni coquille en ligne.
+    (tmp_path / "index.html").write_text(INDEX_HTML, encoding="utf-8")
+    page, empreinte = mobile.composer_page(mobile.lire_statique("index.html"), mobile.lire_statique("js/api.js"),
+                                           mobile.lire_statique("js/coeur.js"), mobile.lire_statique("app.css"))
+    assert page == INDEX_HTML and empreinte is None and '<script type="module" src="/m/js/coeur.js">' in page
+    # Manifeste illisible : le manifeste par défaut, jamais une exception au démarrage.
+    (tmp_path / "manifest.webmanifest").write_text("{pas du json", encoding="utf-8")
+    assert mobile._manifeste() == mobile.MANIFESTE_DEFAUT
 
 
 def test_lempaquetage_embarque_la_coquille():
     spec = (Path(__file__).resolve().parents[1] / "iris-backend.spec").read_text(encoding="utf-8")
     assert '("iris/mobile_static", "iris/mobile_static")' in spec
+
+
+# --------------------------------------------------------------------------- lunettes d'abord dans la coquille (revue du 2026-09-14)
+def test_les_fonctions_de_la_coquille_passent_par_la_garde_des_lunettes():
+    """Sans lunettes, la vision n'ouvre pas l'appareil photo et n'envoie aucune photo pour se la faire refuser
+    ensuite ; « Où ai-je posé ? » et les sous-titres affichent l'invitation au lieu d'appeler l'ordinateur ;
+    un refus 428 est traité une seule fois (pas de message technique ET de panneau, pas de phrase lue deux fois)."""
+    for signature in ("async function ouvrirVision(ctx)", "async function ouvrirOuEst(ctx)", "async function ouvrirSousTitres(ctx)"):
+        corps = _corps_fonction(COEUR_JS, signature)
+        assert "await gardeLunettes(ctx, {" in corps, f"garde absente : {signature}"
+        assert "contenu" in corps and "hidden: true" in corps, f"contenu visible avant la vérification : {signature}"
+        assert "garde.refus(err" in corps, f"refus 428 non traité : {signature}"
+        assert "garde.fermer()" in corps, f"garde jamais fermée : {signature}"
+    garde = _corps_fonction(COEUR_JS, "async function gardeLunettes(ctx, options)")
+    assert "window.IRIS.lunettes" in garde and "outil.garde(ctx, options)" in garde
+    assert "reste fermée" in garde, "sans lunettes.js, la fonction reste fermée"
+    vision = _corps_fonction(COEUR_JS, "async function ouvrirVision(ctx)")
+    photo = vision[vision.index("function prendrePhoto(m)"):]
+    assert photo.index("garde.presentes() !== true") < photo.index("entree.click()"), "l'appareil photo s'ouvrirait sans lunettes"
+    assert "La caméra des lunettes arrive ; en attendant, la photo est prise avec ce téléphone." in vision
+    # Le repli d'achat ne passe plus par une concaténation, et l'adresse de l'ordinateur prime.
+    assert "function adresseAchat(proposee)" in COEUR_JS and "URL_ACHAT_LUNETTES" in COEUR_JS
+
+
+def test_les_sous_titres_ne_laissent_pas_le_micro_de_la_maison_ouvert():
+    """Démarrer depuis le téléphone ouvre le micro d'une pièce de la maison : accord explicite d'abord, et arrêt
+    par une requête qui survit à la suspension dès que la page quitte l'écran."""
+    corps = _corps_fonction(COEUR_JS, "async function ouvrirSousTitres(ctx)")
+    clic = corps[corps.index("bascule.addEventListener('click'"):]
+    assert clic.index("confirmer(") < clic.index("/api/ecoute/sous-titres/demarrer"), "le micro s'ouvrirait sans accord"
+    assert "Ouvrir le micro" in clic and "n'ont rien accepté" in clic
+    assert "document.addEventListener('visibilitychange', surVisibilite)" in corps
+    assert "window.addEventListener('pagehide', arreterDepuisIci)" in corps
+    assert "{ keepalive: true" in corps and "document.removeEventListener('visibilitychange', surVisibilite)" in corps
+    assert "keepalive: !!opts.keepalive" in API_JS, "api.js doit transmettre keepalive au navigateur"
+
+
+def test_le_chat_montre_lapercu_et_ne_deguise_pas_un_refus_en_reponse():
+    assert 'id="apercu-lunettes"' in INDEX_HTML
+    envoi = _corps_fonction(COEUR_JS, "async function envoyer(texte)")
+    refus = envoi[envoi.index("if (r.lunettes) {"):envoi.index("reponse.textContent = r.texte || '(réponse vide)';")]
+    assert "afficherLunettesRequises(" in refus and "return;" in refus
+    assert "mesuré sur ce téléphone" not in refus, "un refus n'a pas de délai de réponse mesuré"
+    assert COEUR_JS.count("glasses_required") == 2, "par les événements ET par le sondage"
+    assert "apercu_restant" in COEUR_JS and "majApercu();" in _corps_fonction(COEUR_JS, "function entrer()")
+
+
+def test_la_carte_dehors_dit_la_regle_des_lunettes():
+    reglages = _corps_fonction(COEUR_JS, "function ouvrirReglages(ctx)")
+    for phrase in ("exigent vos lunettes VELA", "passera par l'app IRIS, qui n'est pas encore disponible",
+                   "un aperçu de 10 messages", "Sans lunettes"):
+        assert phrase in reglages, f"manque : {phrase}"
+    assert "ils sont reliés à l'ordinateur par Bluetooth" not in reglages, "phrase contredite par lunettes.js"
+
+
+def test_le_guidage_nenvoie_pas_le_nom_de_la_machine_a_openstreetmap():
+    assert "referrerPolicy: 'no-referrer'" in GUIDAGE_JS
+    assert "strict-origin-when-cross-origin" not in GUIDAGE_JS
+    assert "'email=' + encodeURIComponent(CONTACT_APPLICATION)" in GUIDAGE_JS
+    assert "il peut limiter ou refuser les demandes" in GUIDAGE_JS
+    assert "© contributeurs OpenStreetMap" in GUIDAGE_JS, "mention ODbL obligatoire"
+
+
+# --------------------------------------------------------------------------- comportement réel de lunettes.js (Node, faux Bluetooth)
+SCRIPT_LUNETTES = r"""
+globalThis.window = globalThis;
+window.isSecureContext = true;
+const stock = new Map();
+globalThis.localStorage = { getItem: (k) => (stock.has(k) ? stock.get(k) : null), setItem: (k, v) => stock.set(k, String(v)), removeItem: (k) => stock.delete(k) };
+globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} };
+const ecouteursFenetre = [];
+globalThis.addEventListener = (type, fn) => ecouteursFenetre.push([type, fn]);
+const intervalles = [];
+globalThis.setInterval = (fn, ms) => { intervalles.push({ fn, ms }); return intervalles.length; };
+globalThis.clearInterval = () => {};
+const fetchs = [];
+globalThis.fetch = async (url, init) => { fetchs.push({ url, init }); return new Response('{}'); };
+
+// Le geste de l'utilisateur : Chrome n'ouvre la liste que pendant une activation « transitoire ».
+let activation = false;
+const demandes = [];
+function appareil(id, nom) {
+  const ecouteurs = {};
+  const gatt = { connected: false, connect() { gatt.connected = true; return Promise.resolve(gatt); },
+                 disconnect() { gatt.connected = false; }, getPrimaryService() { return Promise.reject(new Error('pas de batterie')); } };
+  return { id, name: nom, gatt, addEventListener(t, fn) { (ecouteurs[t] = ecouteurs[t] || []).push(fn); },
+           declencher(t) { (ecouteurs[t] || []).forEach((fn) => fn()); } };
+}
+let prochain = null;
+Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: {
+  userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/128.0 Mobile Safari/537.36',
+  bluetooth: {
+    requestDevice(options) {
+      demandes.push({ options, geste: activation });
+      if (!activation) return Promise.reject(new DOMException('Must be handling a user gesture', 'SecurityError'));
+      return Promise.resolve(prochain);
+    },
+    getAvailability: async () => true,
+    getDevices: async () => [],
+  },
+} });
+
+const appels = [];
+let presence = { presentes: false, source: null, nom: 'VELA K900', apercu_restant: 7, apercu_total: 10, acheter_url: 'https://velaglass.ca/lunettes.html' };
+let getBloque = false;
+let refuser = false;
+let nonAssocie = false;
+const api = {
+  base: 'https://iris.test',
+  jeton: () => 'session-1',
+  get: (chemin) => { appels.push(['GET', chemin]); return getBloque ? new Promise(() => {}) : Promise.resolve(presence); },
+  post: async (chemin, corps) => {
+    appels.push(['POST', chemin, corps]);
+    if (refuser) { const e = new Error('Ces lunettes ne sont pas celles associées à votre IRIS.'); e.status = 403; throw e; }
+    if (nonAssocie && chemin === '/api/lunettes/attestation') {
+      const e = new Error("Ce téléphone n'est pas encore associé à tes lunettes sur cet IRIS."); e.status = 403; e.code = 'appareil_non_associe'; throw e;
+    }
+    return Object.assign({}, presence, { presentes: true, source: 'telephone' });
+  },
+  delete: async (chemin) => { appels.push(['DELETE', chemin]); return Object.assign({}, presence, { presentes: false, source: null }); },
+};
+const modules = [];
+window.IRIS = { api, bus: { on: () => () => {}, emit() {} }, enregistrer: (m) => modules.push(m.id), etat: () => ({ pret: true }), ui: { toast() {} }, voix: { parler: async () => true } };
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const res = {};
+
+await import(process.argv[2]);
+const L = window.IRIS.lunettes;
+await pause(20);                       // la présence lue dès que la session est prête : le nom est en cache
+res.contrat = [typeof L.connecter, typeof L.deconnecter, typeof L.garde, L.disponible, modules.includes('lunettes')];
+
+// 1. Connexion : la liste s'ouvre DANS le geste, filtrée sur le nom connu et le service des lunettes.
+prochain = appareil('appareil-1', 'VELA K900');
+activation = true; let p = L.connecter(); activation = false;
+await p;
+res.demande1 = demandes[0];
+const postes = () => appels.filter((a) => a[0] === 'POST');
+res.attestation = postes()[0];
+res.intervalle60 = intervalles.filter((i) => i.ms === 60000).length;
+intervalles.filter((i) => i.ms === 60000).pop().fn();   // une minute plus tard
+await pause(10);
+res.postsApresMinute = postes().length;
+
+// 2. Coupure Bluetooth : l'attestation de CES lunettes est retirée, avec leur identifiant.
+prochain.gatt.connected = false;
+prochain.declencher('gattserverdisconnected');
+await pause(10);
+res.retrait = appels.filter((a) => a[0] === 'DELETE').map((a) => a[1]);
+await L.deconnecter();
+
+// 3. Page fermée : le retrait part par une requête qui survit à la fermeture, avec l'identifiant.
+activation = true; p = L.connecter(); activation = false;
+await p;
+ecouteursFenetre.filter(([t]) => t === 'pagehide').forEach(([, fn]) => fn());
+res.pagehide = fetchs.map((f) => [f.url, f.init.method, f.init.keepalive]);
+await L.deconnecter();
+
+// 4. Deuxième copie, ordinateur qui ne répond pas encore : aucune liste de n'importe quels appareils, on le dit.
+getBloque = true;
+await import(process.argv[3]);
+const L2 = window.IRIS.lunettes;
+res.deuxiemeCopie = L2 !== L;
+prochain = appareil('appareil-2', 'VELA K900');
+const demandesAvant = demandes.length;
+activation = true; p = L2.connecter(); activation = false;
+try { await p; res.sansNom = 'accepté'; } catch (e) { res.sansNom = e.message; }
+res.demandesSansNom = demandes.length - demandesAvant;
+getBloque = false;
+
+// 5. Lunettes refusées par l'ordinateur (403) : on coupe, sans nouvel essai et sans retirer l'attestation d'un autre.
+refuser = true;
+const avant = { posts: postes().length, deletes: appels.filter((a) => a[0] === 'DELETE').length, intervalles: intervalles.length };
+prochain = appareil('appareil-3', 'Autres lunettes');
+activation = true; p = L.connecter(); activation = false;
+try { await p; res.refus = 'accepté'; } catch (e) { res.refus = e.status; }
+await pause(30);
+res.apresRefus = {
+  posts: postes().length - avant.posts,
+  deletes: appels.filter((a) => a[0] === 'DELETE').length - avant.deletes,
+  intervalles: intervalles.length - avant.intervalles,
+  gatt: prochain.gatt.connected,
+  connectees: L.connectees,
+};
+
+// 5 bis. Bonnes lunettes, téléphone pas encore associé (403 codé) : le lien reste ouvert, puis l'association avec le
+// mot de passe du propriétaire reprend les attestations (constat du 2026-09-14).
+refuser = false;
+nonAssocie = true;
+prochain = appareil('appareil-4', 'VELA K900');
+const intervallesAvant = intervalles.length;
+activation = true; p = L.connecter(); activation = false;
+try { await p; res.nonAssocie = 'accepté'; } catch (e) { res.nonAssocie = e.status; }
+res.apresNonAssocie = { connectees: L.connectees, gatt: prochain.gatt.connected, intervalles: intervalles.length - intervallesAvant };
+nonAssocie = false;
+res.association = await L.associer('mdp-proprio').then((s) => s.attestation_acceptee).catch((e) => e.message);
+res.appelAssociation = appels.filter((a) => a[1] === '/api/lunettes/association').map((a) => a[2]);
+await L.deconnecter();
+
+// 6. Sans geste : l'erreur du navigateur est traduite, sans jargon.
+refuser = false;
+try { await L.connecter(); } catch (e) { res.sansGeste = e.message; }
+process.stdout.write(JSON.stringify(res));
+process.exit(0);
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node absent de cette machine")
+def test_lunettes_js_se_comporte_comme_promis(tmp_path):
+    script = tmp_path / "essai_lunettes.mjs"
+    script.write_text(SCRIPT_LUNETTES, encoding="utf-8")
+    # Deux copies .mjs du VRAI fichier : sans import ni export, Node chargerait lunettes.js comme un module
+    # CommonJS, mis en cache par nom de fichier (une adresse « ?copie=2 » rendrait la même copie).
+    copies = []
+    for n in (1, 2):
+        copie = tmp_path / f"lunettes-{n}.mjs"
+        copie.write_text(LUNETTES_JS, encoding="utf-8")
+        copies.append(copie.as_uri())
+    sortie = subprocess.run(["node", str(script), *copies],
+                            capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert sortie.returncode == 0, sortie.stderr
+    res = json.loads(sortie.stdout)
+    assert res["contrat"] == ["function", "function", "function", True, True]
+    assert res["demande1"]["geste"] is True, "requestDevice doit être appelé sans attente préalable"
+    # Constat du 2026-09-14 : plus de filtre « service 0xae00 » seul, annoncé par bien d'autres objets Bluetooth.
+    assert res["demande1"]["options"]["filters"] == [{"name": "VELA K900"}, {"namePrefix": "VELA"}]
+    assert 0xAE00 in res["demande1"]["options"]["optionalServices"]
+    _, chemin, corps = res["attestation"]
+    assert chemin == "/api/lunettes/attestation"
+    assert corps["source"] == "android" and corps["identifiant"] == "appareil-1" and corps["nom"] == "VELA K900"
+    assert res["intervalle60"] == 1 and res["postsApresMinute"] == 2, "réattestation toutes les 60 s"
+    assert res["retrait"] == ["/api/lunettes/attestation?identifiant=appareil-1"], "retrait de SES lunettes seulement"
+    assert res["pagehide"] == [["https://iris.test/api/lunettes/attestation?identifiant=appareil-1", "DELETE", True]]
+    assert res["deuxiemeCopie"] is True
+    assert res["demandesSansNom"] == 0, "nom inconnu : aucune liste ouverte sur un simple service Bluetooth"
+    assert "nom de vos lunettes" in res["sansNom"]
+    assert res["refus"] == 403
+    assert res["apresRefus"] == {"posts": 1, "deletes": 0, "intervalles": 0, "gatt": False, "connectees": False}
+    assert "geste" in res["sansGeste"] and "SecurityError" not in res["sansGeste"]
+    assert res["nonAssocie"] == 403
+    assert res["apresNonAssocie"] == {"connectees": True, "gatt": True, "intervalles": 0}, "lien gardé, rien ne réatteste"
+    assert res["association"] is True
+    assert res["appelAssociation"] == [{"nom": "VELA K900", "identifiant": "appareil-4", "mot_de_passe": "mdp-proprio"}]
+
+
+SCRIPT_CADRE = r"""
+globalThis.window = globalThis;
+window.self = window;
+window.top = {};                          // la page est dans un cadre : top n'est pas elle-même
+globalThis.location = { origin: 'https://iris.test', search: '', protocol: 'https:', host: 'iris.test', pathname: '/m' };
+globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+const corps = { enfants: [], textContent: 'formulaire', append(n) { this.enfants.push(n); } };
+globalThis.document = { hidden: false, body: corps, addEventListener() {}, createElement: () => ({ className: '', textContent: '' }) };
+globalThis.addEventListener = () => {};
+const res = {};
+try { await import(process.argv[2]); res.importe = true; } catch (e) { res.erreur = e.message; }
+res.iris = typeof window.IRIS;
+res.corps = corps.enfants.map((n) => n.textContent);
+process.stdout.write(JSON.stringify(res));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node absent de cette machine")
+def test_la_coquille_refuse_de_demarrer_dans_un_cadre(tmp_path):
+    """Détournement de clic : dans le cadre d'un autre site, rien ne démarre (ni formulaire, ni window.IRIS)."""
+    script = tmp_path / "essai_cadre.mjs"
+    script.write_text(SCRIPT_CADRE, encoding="utf-8")
+    sortie = subprocess.run(["node", str(script), (DOSSIER_STATIQUE / "js" / "coeur.js").as_uri()],
+                            capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert sortie.returncode == 0, sortie.stderr
+    res = json.loads(sortie.stdout)
+    assert "cadre" in res.get("erreur", ""), res
+    assert res["iris"] == "undefined", "le contrat window.IRIS ne doit pas exister dans un cadre"
+    assert res["corps"] and "ne s'ouvre pas à l'intérieur d'une autre page" in res["corps"][0]
+    assert COEUR_JS.index("if (dansUnCadre)") < COEUR_JS.index("window.IRIS = IRIS;")
+
+
+def test_lunettes_js_dit_ce_que_la_connexion_peut_couper():
+    assert "peut couper leur liaison avec l'ordinateur" in LUNETTES_JS
+    assert "function relieesAuPc()" in LUNETTES_JS and "if (relieesAuPc()) { suspendreReconnexion(); return; }" in LUNETTES_JS
+    connecter = _corps_fonction(LUNETTES_JS, "async function connecter()")
+    avant_liste = connecter[:connecter.index("navigator.bluetooth.requestDevice(")]
+    assert "await" not in avant_liste, "aucune attente avant l'ouverture de la liste Bluetooth"
+
+
+
+# --------------------------------------------------------------------------- guidage : services cartographiques
+# Contre-vérification mobile du 2026-09-14 : la limite d'une requête par seconde des services publics
+# d'OpenStreetMap vaut pour la SOMME des utilisateurs, et aucun code dans des téléphones indépendants ne peut la
+# tenir ; le mandataire sur le relais est écarté (pas de position GPS sur les serveurs VELA). La page était
+# câblée en dur sur ces services : une instance propre ou un fournisseur sous contrat exigeait de changer le
+# code, la politique de contenu et la balise meta. Ils se branchent désormais par deux réglages de l'ordinateur.
+def test_adresse_des_services_cartographiques_validee():
+    from iris.config import UserSettings, adresse_service_cartographique as adresse
+
+    assert adresse("https://carto.exemple.ca/") == "https://carto.exemple.ca"
+    assert adresse("https://carto.exemple.ca/route/v1/foot", dossier=True) == "https://carto.exemple.ca/route/v1/foot/"
+    assert adresse("http://127.0.0.1:8080/r") == "http://127.0.0.1:8080/r"
+    for mauvaise in ("http://carto.exemple.ca", "https://u:p@carto.exemple.ca", "https://carto.exemple.ca/?cle=1",
+                     "javascript:alert(1)", "https://carto.exemple.ca; script-src *", "https://x.ca:99999", "ftp://x.ca"):
+        assert adresse(mauvaise) == "", mauvaise
+    u = UserSettings(guidage_recherche="https://carto.exemple.ca/", guidage_itineraire="https://x.ca/route/v1/foot")
+    assert (u.guidage_recherche, u.guidage_itineraire) == ("https://carto.exemple.ca", "https://x.ca/route/v1/foot/")
+    assert UserSettings(guidage_recherche="http://exterieur.ca").guidage_recherche == ""
+    assert (UserSettings().guidage_recherche, UserSettings().guidage_itineraire) == ("", "")
+
+
+def test_la_politique_de_contenu_suit_les_services_du_guidage():
+    from iris.routes_mobile import politique_contenu, services_guidage
+
+    ctx, c = _mini_app()
+    publics = services_guidage(ctx)
+    assert publics["recherche_publique"] and publics["itineraire_public"]
+    connexions = re.search(r"connect-src ([^;]+)", politique_contenu(ctx, "bureau.ts.net")).group(1).split()
+    assert {"https://nominatim.openstreetmap.org", "https://routing.openstreetmap.de"} <= set(connexions)
+
+    ctx.settings.user.guidage_recherche = "https://carto.vela-essai.ca"
+    ctx.settings.user.guidage_itineraire = "https://itineraire.vela-essai.ca:8443/route/v1/foot/"
+    connexions = re.search(r"connect-src ([^;]+)", politique_contenu(ctx, "bureau.ts.net")).group(1).split()
+    assert "https://carto.vela-essai.ca" in connexions and "https://itineraire.vela-essai.ca:8443" in connexions
+    assert "https://nominatim.openstreetmap.org" not in connexions, "la position ne peut plus partir vers le public"
+    # La balise meta de /m s'applique EN PLUS de l'en-tête : elle doit nommer les mêmes services.
+    r = c.get("/m")
+    meta = re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]+)">', r.text).group(1)
+    assert "https://carto.vela-essai.ca https://itineraire.vela-essai.ca:8443" in meta
+    assert "nominatim.openstreetmap.org" not in meta
+    assert f"'{EMPREINTE_COQUILLE}'" in r.headers["content-security-policy"], "la coquille en ligne reste admise"
+    # Une adresse écrite à la main dans settings.json est revalidée : rien d'injecté dans la politique.
+    ctx.settings.user.guidage_recherche = "https://x.ca; script-src *"
+    assert "script-src *" not in politique_contenu(ctx, "bureau.ts.net")
+    assert services_guidage(ctx)["recherche_publique"] is True
+
+
+SCRIPT_GUIDAGE = r"""
+globalThis.window = globalThis;
+window.isSecureContext = true;
+class Node {
+  constructor(balise) { this.balise = balise; this.enfants = []; this.ecouteurs = {}; this.attributs = {}; this.style = {}; this.dataset = {}; this.classList = { add() {}, remove() {}, toggle() {} }; this.hidden = false; this.disabled = false; this._texte = ''; this.value = ''; }
+  append(...n) { for (const e of n) this.enfants.push(e); }
+  appendChild(e) { this.enfants.push(e); return e; }
+  setAttribute(k, v) { this.attributs[k] = v; }
+  addEventListener(t, fn) { (this.ecouteurs[t] = this.ecouteurs[t] || []).push(fn); }
+  removeEventListener() {}
+  focus() {}
+  scrollIntoView() {}
+  get textContent() { return this._texte + this.enfants.map((e) => e.textContent).join(''); }
+  set textContent(v) { this._texte = String(v); this.enfants = []; }
+}
+globalThis.Node = Node;
+const stock = new Map();
+globalThis.localStorage = { getItem: (k) => (stock.has(k) ? stock.get(k) : null), setItem: (k, v) => stock.set(k, String(v)), removeItem: (k) => stock.delete(k) };
+globalThis.document = { hidden: false, createElement: (b) => new Node(b), createTextNode: (t) => { const n = new Node('#texte'); n._texte = String(t); return n; },
+  addEventListener() {}, removeEventListener() {} };
+globalThis.addEventListener = () => {};
+globalThis.removeEventListener = () => {};
+Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: {
+  userAgent: 'essai', geolocation: { getCurrentPosition: (ok) => ok({ coords: { latitude: 45.5, longitude: -73.56, accuracy: 8 } }),
+  watchPosition: () => 1, clearWatch() {} } } });
+const fetchs = [];
+globalThis.fetch = async (url, init) => {
+  fetchs.push({ url: String(url), referrer: init && init.referrerPolicy });
+  return new Response(JSON.stringify({ display_name: 'Rue essai', address: { road: 'Rue Essai', city: 'Montréal' } }), { status: 200 });
+};
+let reglages = {};
+const confirmations = [];
+const modules = [];
+window.IRIS = {
+  enregistrer: (m) => modules.push(m),
+  api: { get: async (chemin) => { if (chemin !== '/api/settings') throw new Error('inattendu ' + chemin); return reglages; } },
+  ui: { toast() {}, confirmer: async (texte) => { confirmations.push(texte); return true; } },
+  voix: { parler: async () => true },
+  lunettes: { garde: (ctx, o) => { if (o.contenu) o.contenu.hidden = false; return { verifier: async () => true, refus: () => false, presentes: () => true, etat: () => null, fermer() {} }; } },
+};
+const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+function trouver(n, texte) {
+  if (n.balise === 'button' && n.textContent === texte) return n;
+  for (const e of n.enfants) { const t = trouver(e, texte); if (t) return t; }
+  return null;
+}
+async function ouSuisJe() {
+  const corps = new Node('div');
+  modules[0].ouvrir({ corps, fermer() {} });
+  await attendre(20);
+  const bouton = trouver(corps, 'Où suis-je ?');
+  const avant = fetchs.length;
+  for (const fn of bouton.ecouteurs.click) await fn();
+  for (let i = 0; i < 400 && fetchs.length === avant; i++) await attendre(10);
+  await attendre(20);
+  return { url: fetchs.slice(avant).map((f) => f.url), texte: corps.textContent };
+}
+await import(process.argv[2]);
+const res = {};
+reglages = { guidage_recherche: 'https://carto.vela-essai.ca', guidage_itineraire: 'https://itineraire.vela-essai.ca/route/v1/foot/' };
+res.configure = await ouSuisJe();
+res.confirmationsConfigure = confirmations.length;
+res.retenu = JSON.parse(localStorage.getItem('iris_guidage_services'));
+// Même services : l'accord déjà donné vaut, aucune nouvelle question.
+res.memeServices = await ouSuisJe();
+res.confirmationsMemeServices = confirmations.length;
+// Retour aux services publics : l'accord ne portait pas sur eux, il est redemandé.
+reglages = { guidage_recherche: '', guidage_itineraire: '' };
+res.publics = await ouSuisJe();
+res.confirmationsPublics = confirmations.length;
+res.referrers = [...new Set(fetchs.map((f) => f.referrer))];
+res.derniereConfirmation = confirmations[confirmations.length - 1];
+process.stdout.write(JSON.stringify(res));
+process.exit(0);
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node absent de cette machine")
+def test_le_guidage_utilise_les_services_configures_sur_lordinateur(tmp_path):
+    script = tmp_path / "essai_guidage.mjs"
+    script.write_text(SCRIPT_GUIDAGE, encoding="utf-8")
+    copie = tmp_path / "guidage.mjs"
+    copie.write_text(GUIDAGE_JS, encoding="utf-8")
+    (tmp_path / "lunettes.js").write_text("export {};\n", encoding="utf-8")  # import('./lunettes.js') du module
+    sortie = subprocess.run(["node", str(script), copie.as_uri()], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert sortie.returncode == 0, sortie.stderr
+    res = json.loads(sortie.stdout)
+    configure = res["configure"]["url"]
+    assert len(configure) == 1 and configure[0].startswith("https://carto.vela-essai.ca/reverse?"), configure
+    assert "email=" not in configure[0], "le contact de l'application n'est destiné qu'au service public"
+    assert "openstreetmap" not in " ".join(configure)
+    assert res["confirmationsConfigure"] == 1
+    assert res["retenu"] == {"recherche": "https://carto.vela-essai.ca", "itineraire": "https://itineraire.vela-essai.ca/route/v1/foot/"}
+    assert "service cartographique choisi dans les réglages de votre IRIS" in res["configure"]["texte"]
+    assert "vela-essai" not in res["configure"]["texte"], "aucun nom d'hôte affiché au client"
+    assert res["memeServices"]["url"][0].startswith("https://carto.vela-essai.ca/")
+    assert res["confirmationsMemeServices"] == 1
+    publics = res["publics"]["url"]
+    assert len(publics) == 1 and publics[0].startswith("https://nominatim.openstreetmap.org/reverse?")
+    assert "email=contact%40velaglass.ca" in publics[0]
+    assert res["confirmationsPublics"] == 2, "changer de service redemande l'accord"
+    assert "il peut limiter ou refuser les demandes" in res["derniereConfirmation"]
+    assert res["referrers"] == ["no-referrer"]
+
+
+# --------------------------------------------------------------------------- finition du 2026-09-14
+def test_aucun_texte_ne_presente_lapp_iphone_comme_disponible():
+    """L'app IRIS pour iPhone n'a jamais été compilée ni distribuée (docs/MODE-DEHORS.md §2.2) : aucun texte de la
+    page téléphone ne dit de « l'utiliser » ni qu'elle « se connecte » ou « peut » faire quelque chose aujourd'hui."""
+    for nom, js in SCRIPTS.items():
+        texte = _sans_commentaires(js)
+        for interdit in ("utilisez l'app IRIS", "c'est l'app IRIS qui se connecte", "c'est elle qui se connecte",
+                         "L'application IRIS pour iPhone, elle, peut"):
+            assert interdit not in texte, f"{nom} : « {interdit} » présente l'app iPhone comme disponible"
+    assert "n'est pas encore disponible" in _sans_commentaires(LUNETTES_JS)
+    assert "n'est pas encore disponible" in _corps_fonction(COEUR_JS, "function ouvrirReglages(ctx)")
+
+
+def test_les_sous_titres_ferment_la_garde_si_le_panneau_est_ferme_pendant_son_chargement():
+    """Le nettoyage du panneau tourne avant que gardeLunettes ne rende la garde : sans drapeau vérifié après l'await,
+    la garde, son sondage et ses écouteurs restaient actifs derrière un panneau fermé."""
+    corps = _corps_fonction(COEUR_JS, "async function ouvrirSousTitres(ctx)")
+    nettoyage = corps[corps.index("surFermeture(() => {"):]
+    assert "panneauFerme = true;" in nettoyage[:nettoyage.index("});")]
+    apres = corps[corps.index("garde = await gardeLunettes(ctx, {"):]
+    apres = apres[apres.index("});") + 3:]
+    assert apres.index("if (panneauFerme) { garde.fermer(); return; }") < apres.index("garde.verifier()")
+
+
+def test_la_documentation_ne_dit_plus_que_les_entetes_de_m_manquent():
+    """main.py pose les en-têtes de /m (test_la_page_m_porte_les_entetes, strict) : la documentation et les
+    commentaires ne doivent plus dire le contraire."""
+    racine = Path(__file__).resolve().parents[2]
+    guide = (racine / "docs" / "MODE-DEHORS.md").read_text(encoding="utf-8")
+    assert "l'ordinateur ne les pose pas encore" not in guide and "échec attendu" not in guide
+    assert "test_la_page_m_porte_les_entetes" in guide
+    import iris.routes_mobile as routes_mobile
+
+    assert "TANT QUE main.py ne les appelle pas" not in (routes_mobile.__doc__ or "")
+    assert "que doit poser l'ordinateur" not in COEUR_JS and "que l'ordinateur doit poser" not in INDEX_HTML

@@ -552,16 +552,16 @@ export function RecusScreen({ params: _params }: { params?: Record<string, any> 
         <div className="carte col" style={{ gap: 12 }}>
           <h3 style={{ margin: 0 }}>Photographier un reçu</h3>
           <div className="q-grille-2">
-            <Holo disabled={Boolean(analyse)} onClick={() => analyser('lunettes')}>
-              <IcoCamera /> {analyse?.source === 'lunettes' ? 'Photo en cours…' : 'Photo des lunettes'}
-            </Holo>
-            <Holo variante="sombre" disabled={Boolean(analyse)} onClick={() => analyser('image')}>
+            <Holo disabled={Boolean(analyse)} onClick={() => analyser('image')}>
               <IcoImage /> {analyse?.source === 'image' ? 'Lecture…' : 'Choisir une image'}
+            </Holo>
+            <Holo variante="sombre" disabled={Boolean(analyse)} onClick={() => analyser('lunettes')}>
+              <IcoCamera /> {analyse?.source === 'lunettes' ? 'Photo en cours…' : 'Photo des lunettes'}
             </Holo>
           </div>
           <div className="q-note">
-            La photo des lunettes prend quelques secondes. Si la caméra de votre paire n’est pas encore prise en charge, IRIS le dit : prenez
-            alors la photo avec votre téléphone et choisissez-la ici. Posez le reçu à plat, bien éclairé.
+            La caméra des lunettes n’est pas encore activée dans IRIS (protocole en cours de confirmation) : en attendant, prenez la photo
+            avec votre téléphone et choisissez-la ici. Posez le reçu à plat, bien éclairé.
           </div>
           {analyse ? (
             <div className="col" style={{ gap: 6 }} aria-live="polite">

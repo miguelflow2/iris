@@ -15,6 +15,10 @@ import pytest
 
 from iris import sous_titres as st
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 PAROLE = (np.sin(np.arange(4000) * 2 * np.pi * 220 / 16000) * 9000).astype(np.int16).tobytes()
 SILENCE = np.zeros(4000, dtype=np.int16).tobytes()
 
@@ -248,3 +252,37 @@ def test_transcrire_pcm_date_les_phrases_depuis_le_debut():
     progres: list[float] = []
     st.transcrire_pcm(FauxReconnaisseur(["a b", "c d"]), pcm, progression=progres.append)
     assert progres and progres == sorted(progres) and progres[-1] < 1.0
+
+
+def test_sous_titres_demarres_a_distance_sarretent_sans_consultation(ecoute, client, app, monkeypatch):
+    """Demande de la revue mobile (2026-09-14) : des sous-titres démarrés par une session distante (téléphone,
+    mot de passe) n'ouvrent pas le micro de la maison sans limite. Sans consultation de cette session pendant
+    DUREE_MAX_DISTANT_S, l'entretien les arrête et le dit ; une consultation renouvelle le bail ; démarrés sur
+    l'ordinateur (jeton maître), ils n'ont pas de bail."""
+    from iris import routes_ecoute
+
+    ctx = app.state.ctx
+    service = _brancher(ctx, ["bonjour"])
+    client.post("/api/compte", json={"nouveau": "motdepasse-2026", "nom": "Miguel"})
+    session = client.post("/api/compte/connexion", json={"mot_de_passe": "motdepasse-2026"}).json()["session"]
+    distant = {"Authorization": f"Bearer {session}"}
+    monkeypatch.setattr(routes_ecoute, "DUREE_MAX_DISTANT_S", 0.4)
+    try:
+        assert client.post("/api/ecoute/sous-titres/demarrer", headers=distant).status_code == 200
+        time.sleep(0.25)
+        assert client.get("/api/ecoute/transcription", headers=distant).status_code == 200  # renouvelle le bail
+        time.sleep(0.25)
+        ctx.ecoute_tic()
+        assert "ecran" in service.demandes(), "une consultation distante récente garde les sous-titres"
+        time.sleep(0.5)
+        ctx.ecoute_tic()
+        assert "ecran" not in service.demandes() and attendre(lambda: not service.actif)
+        assert ctx.ecoute_etat()["raison"] == routes_ecoute.ARRET_DISTANT
+        # Démarrés sur l'ordinateur : aucun bail, même longtemps après.
+        assert client.post("/api/ecoute/sous-titres/demarrer").status_code == 200
+        assert ctx.ecoute_etat()["raison"] is None
+        time.sleep(0.5)
+        ctx.ecoute_tic()
+        assert "ecran" in service.demandes()
+    finally:
+        service.arreter_tout()

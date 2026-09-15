@@ -4,7 +4,7 @@
  */
 import { spawn, ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
-import { existsSync, mkdirSync, createWriteStream, WriteStream } from 'fs'
+import { existsSync, mkdirSync, createWriteStream, WriteStream, statSync, renameSync, readdirSync, unlinkSync } from 'fs'
 import { join, resolve } from 'path'
 import { app } from 'electron'
 
@@ -18,21 +18,73 @@ export interface BackendInfo {
 }
 
 const READY_TIMEOUT_MS = 60_000
+// Journal technique (constat du 2026-09-14) : il n'est pas chiffré. Il tourne donc : un fichier par jour,
+// au plus JOURNAL_MAX_OCTETS chacun, et rien de plus vieux que JOURNAL_JOURS jours n'est gardé. Le service
+// reçoit son dossier (IRIS_JOURNAL_TECHNIQUE) pour le vider à l'effacement à distance et à la rétention.
+const JOURNAL_MAX_OCTETS = 5 * 1024 * 1024
+const JOURNAL_JOURS = 7
 
 export class BackendProcess extends EventEmitter {
   info: BackendInfo | null = null
   private child: ChildProcess | null = null
   private log: WriteStream | null = null
+  private logOctets = 0
   private stopping = false
   readonly dataDir: string
   readonly logPath: string
+  readonly logDir: string
 
   constructor(userData: string) {
     super()
     this.dataDir = join(userData, 'iris-data')
     const logDir = join(userData, 'logs')
     mkdirSync(logDir, { recursive: true })
+    this.logDir = logDir
     this.logPath = join(logDir, 'backend.log')
+  }
+
+  /** Met de côté le journal courant (backend-<horodatage>.log) quand il date d'un autre jour ou devient trop
+   *  gros, puis supprime les journaux mis de côté depuis plus de JOURNAL_JOURS jours. Ne lève jamais : un
+   *  journal qui ne tourne pas ne doit pas empêcher IRIS de démarrer. */
+  private tournerJournal(force = false): void {
+    try {
+      if (existsSync(this.logPath)) {
+        const infos = statSync(this.logPath)
+        const autreJour = new Date(infos.mtimeMs).toDateString() !== new Date().toDateString()
+        if (force || autreJour || infos.size > JOURNAL_MAX_OCTETS) {
+          const horodatage = new Date().toISOString().replace(/[:.]/g, '-')
+          renameSync(this.logPath, join(this.logDir, `backend-${horodatage}.log`))
+        }
+      }
+      const limite = Date.now() - JOURNAL_JOURS * 24 * 3600 * 1000
+      for (const nom of readdirSync(this.logDir)) {
+        if (!/^backend-.*\.log$/.test(nom)) continue
+        const chemin = join(this.logDir, nom)
+        try {
+          if (statSync(chemin).mtimeMs < limite) unlinkSync(chemin)
+        } catch {
+          /* fichier occupé : il partira au prochain démarrage */
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private ecrireJournal(texte: string): void {
+    if (!this.log) return
+    this.log.write(texte)
+    this.logOctets += Buffer.byteLength(texte)
+    if (this.logOctets > JOURNAL_MAX_OCTETS) {
+      // Trop gros en cours de route : on ferme, on met de côté et on repart d'un fichier vide.
+      const ancien = this.log
+      this.log = null
+      this.logOctets = 0
+      ancien.end(() => {
+        this.tournerJournal(true)
+        this.log = createWriteStream(this.logPath, { flags: 'a' })
+      })
+    }
   }
 
   private resolveCommand(): { cmd: string; args: string[]; cwd: string } {
@@ -58,8 +110,10 @@ export class BackendProcess extends EventEmitter {
   start(): Promise<BackendInfo> {
     this.stopping = false
     const { cmd, args, cwd } = this.resolveCommand()
+    this.tournerJournal()
     this.log = createWriteStream(this.logPath, { flags: 'a' })
-    this.log.write(`\n[${new Date().toISOString()}] start: ${cmd} ${args.join(' ')}\n`)
+    this.logOctets = 0
+    this.ecrireJournal(`\n[${new Date().toISOString()}] start: ${cmd} ${args.join(' ')}\n`)
 
     return new Promise<BackendInfo>((resolvePromise, reject) => {
       let settled = false
@@ -77,7 +131,13 @@ export class BackendProcess extends EventEmitter {
           // IRIS_AUTO_SETUP : autorise le backend à préparer une vraie session (modèle vocal, accès
           // VELA). Réservé au lancement par l'application : ni les tests ni les scripts ne
           // doivent télécharger 41 Mo ni joindre le relais.
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1', IRIS_AUTO_SETUP: '1' },
+          env: {
+            ...process.env,
+            PYTHONIOENCODING: 'utf-8',
+            PYTHONUNBUFFERED: '1',
+            IRIS_AUTO_SETUP: '1',
+            IRIS_JOURNAL_TECHNIQUE: this.logDir
+          },
           stdio: ['ignore', 'pipe', 'pipe']
         })
       } catch (err) {
@@ -90,7 +150,8 @@ export class BackendProcess extends EventEmitter {
       let buffer = ''
       child.stdout?.setEncoding('utf-8')
       child.stdout?.on('data', (chunk: string) => {
-        this.log?.write(chunk)
+        // L'annonce IRIS_READY porte le jeton maître local : elle n'entre jamais dans le journal.
+        this.ecrireJournal(chunk.replace(/IRIS_READY [^\n]*/g, 'IRIS_READY (annonce reçue, jeton non journalisé)'))
         buffer += chunk
         let idx: number
         while ((idx = buffer.indexOf('\n')) >= 0) {
@@ -113,23 +174,24 @@ export class BackendProcess extends EventEmitter {
               this.emit('ready', info)
               resolvePromise(info)
             } catch (err) {
-              fail(new Error(`Annonce backend illisible: ${line}`))
+              // Jamais la ligne brute (elle contient le jeton) dans le message d'erreur.
+              fail(new Error('Annonce du backend illisible.'))
             }
           }
         }
       })
       child.stderr?.setEncoding('utf-8')
       child.stderr?.on('data', (chunk: string) => {
-        this.log?.write(chunk)
+        this.ecrireJournal(chunk)
         if (!app.isPackaged) process.stderr.write(`[backend] ${chunk}`)
       })
       child.on('error', (err) => {
-        this.log?.write(`spawn error: ${err.message}\n`)
+        this.ecrireJournal(`spawn error: ${err.message}\n`)
         clearTimeout(timer)
         fail(new Error(`Impossible de lancer le backend IRIS (${cmd}) : ${err.message}`))
       })
       child.on('exit', (code, signal) => {
-        this.log?.write(`[${new Date().toISOString()}] exit code=${code} signal=${signal}\n`)
+        this.ecrireJournal(`[${new Date().toISOString()}] exit code=${code} signal=${signal}\n`)
         clearTimeout(timer)
         this.child = null
         const wasReady = this.info !== null

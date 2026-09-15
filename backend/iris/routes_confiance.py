@@ -6,6 +6,9 @@ zones.py, mode_invite.py et verrou.py ; ce fichier traduit HTTP <-> services, br
 la télécommande. Chaque service est construit séparément : un module en panne ne retire que ses propres
 routes, jamais celles des autres (ni le démarrage d'IRIS).
 
+Verrouillage à distance : POST /api/confiance/verrou/distant {actif, mot_de_passe} l'active (permis) ou le
+désactive (mot de passe du propriétaire exigé) ; le réglage verrou_distant_actif n'en est que le reflet.
+
 Attachés à ctx : ctx.verrou_vocal, ctx.zones, ctx.mode_invite, ctx.verrou (lu par main.raison_de_refus).
 ctx.verrou est posé DÈS la construction du routeur : une IRIS verrouillée avant son redémarrage doit
 refuser la toute première requête, pas celle d'après le démarrage.
@@ -18,6 +21,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from .lunettes_presence import exiger_lunettes_pc
 
 log = logging.getLogger("iris.confiance.routes")
 
@@ -64,6 +69,16 @@ class MotDePasseIn(BaseModel):
     mot_de_passe: str = ""
 
 
+class DistantIn(BaseModel):
+    actif: bool = False
+    mot_de_passe: str | None = None
+
+
+class OuvertureIn(BaseModel):
+    actif: bool = False
+    mot_de_passe: str | None = None
+
+
 def _refus(exc: Any) -> HTTPException:
     return HTTPException(getattr(exc, "code", 409), getattr(exc, "message", str(exc)))
 
@@ -82,10 +97,22 @@ def _routes_voix(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list, r
 
     @routeur.post("/api/confiance/voix/consentement")
     def voix_consentement(body: ConsentementIn):
+        # Retirer son consentement (donc effacer) reste toujours permis ; l'accorder attend que VELA ait
+        # déclaré le processus biométrique (voir verrou_vocal.fonction_offerte).
+        if body.accepte:
+            _exiger_empreinte_offerte()
         return service.definir_consentement(bool(body.accepte))
+
+    def _exiger_empreinte_offerte() -> None:
+        from .verrou_vocal import NON_OFFERTE, fonction_offerte
+
+        if not fonction_offerte():
+            raise HTTPException(409, NON_OFFERTE)
 
     @routeur.post("/api/confiance/voix/echantillon")
     async def voix_echantillon(body: SecondesIn | None = None):
+        exiger_lunettes_pc(ctx, "empreinte_vocale")  # micro de l'ordinateur
+        _exiger_empreinte_offerte()
         if service.consentement() is None:
             raise HTTPException(403, "Consentement biométrique requis avant d'enregistrer votre voix.")
         try:
@@ -96,6 +123,8 @@ def _routes_voix(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list, r
 
     @routeur.post("/api/confiance/voix/tester")
     async def voix_tester(body: SecondesIn | None = None):
+        exiger_lunettes_pc(ctx, "empreinte_vocale")  # micro de l'ordinateur
+        _exiger_empreinte_offerte()
         if not service.pret:
             raise HTTPException(409, "Empreinte incomplète : enregistrez d'abord vos échantillons.")
         try:
@@ -203,7 +232,8 @@ def _routes_invite(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list,
 
 
 # ---------------------------------------------------------------------------- verrouillage
-def _routes_verrou(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list, taches: list) -> None:
+def _routes_verrou(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list, taches: list,
+                   reglages: list) -> None:
     from .verrou import RefusVerrou, VerrouIRIS
 
     service = VerrouIRIS(ctx)
@@ -222,6 +252,32 @@ def _routes_verrou(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list,
             return service.definir_code(body.code, body.mot_de_passe)
         except RefusVerrou as exc:
             raise _refus(exc)
+
+    @routeur.post("/api/confiance/verrou/distant")
+    def verrou_distant(body: DistantIn):
+        # Activer : permis. Désactiver : mot de passe du propriétaire (403 sinon, 429 après trop d'essais).
+        try:
+            return service.definir_distant(bool(body.actif), body.mot_de_passe)
+        except RefusVerrou as exc:
+            raise _refus(exc)
+
+    @routeur.post("/api/confiance/verrou/ouverture")
+    def verrou_ouverture(body: OuvertureIn):
+        # Activer : un mot de passe doit exister (409). Désactiver : ce mot de passe (403, 429 après trop d'essais).
+        try:
+            return service.definir_ouverture(bool(body.actif), body.mot_de_passe)
+        except RefusVerrou as exc:
+            raise _refus(exc)
+
+    def synchroniser() -> None:
+        try:
+            service.synchroniser_reglage()
+        except RefusVerrou as exc:
+            log.info("verrou : réglage à distance non appliqué (%s)", exc.message)
+        except Exception as exc:  # ne prive pas les autres services de l'événement de réglages
+            log.warning("verrou : synchronisation du réglage à distance en erreur (%s)", exc)
+
+    reglages.append(synchroniser)
 
     @routeur.post("/api/confiance/verrouiller")
     async def verrouiller():
@@ -257,7 +313,7 @@ def creer_routeur(ctx: Any) -> APIRouter:
     taches: list = []  # coroutines de fond (sans argument)
     # Le verrou d'abord : s'il plante, les autres restent ; s'il marche, il protège dès maintenant.
     for nom, brancher in (
-        ("verrouillage", lambda: _routes_verrou(routeur, ctx, demarrages, arrets, taches)),
+        ("verrouillage", lambda: _routes_verrou(routeur, ctx, demarrages, arrets, taches, reglages)),
         ("mode invité", lambda: _routes_invite(routeur, ctx, demarrages, arrets, taches)),
         ("zones sans mémoire", lambda: _routes_zones(routeur, ctx, demarrages, arrets, reglages)),
         ("empreinte vocale", lambda: _routes_voix(routeur, ctx, demarrages, arrets, reglages)),

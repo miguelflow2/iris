@@ -158,6 +158,8 @@ html.grand-texte input, html.grand-texte textarea, html.grand-texte select { fon
 .bulle-meta { display: block; margin-top: 6px; font-size: 0.8125rem; color: var(--muted); white-space: normal; }
 .info { align-self: center; font-size: 0.9375rem; color: var(--text-2); text-align: center; padding: 0 8px; }
 
+/* Aperçu du chat sans lunettes : le compte restant, sous le champ. */
+.apercu-lunettes { text-align: center; }
 .pied {
   flex: none; display: flex; flex-direction: column; gap: 10px;
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
@@ -219,6 +221,8 @@ textarea.champ { resize: vertical; min-height: 6rem; line-height: 1.4; }
 }
 
 /* ------------------------------------------------------------- éléments de panneau */
+/* Contenu d'une fonction de la coquille, caché par la garde des lunettes tant qu'elles ne sont pas confirmées. */
+.panneau-fonction { display: flex; flex-direction: column; gap: 14px; }
 .carte { background: var(--surface); border-radius: var(--r-xl); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .carte h3 { font-size: 1.125rem; }
 .note { color: var(--text-2); font-size: 0.9375rem; line-height: 1.45; }

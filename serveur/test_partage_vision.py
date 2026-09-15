@@ -147,17 +147,125 @@ def test_le_lien_suit_l_adresse_publique_du_mandataire(banc, relais):
     assert corps["ws_emetteur"] == "wss://relais.velaglass.ca/partage/emetteur"
 
 
-def test_deux_partages_par_compte_le_plus_vieux_est_remplace(banc, relais):
+def test_une_session_abandonnee_est_remplacee_apres_une_minute(banc, relais, horloge):
     client, etat = banc
     premier = creer(client, relais)
     with client.websocket_connect(f"/partage/spectateur/{premier['code']}") as spectateur:
         recevoir_json(spectateur, "etat")
         creer(client, relais)
+        horloge["t"] += 61  # aucun émetteur depuis plus d'une minute : la plus vieille peut céder sa place
         creer(client, relais)
         fin = recevoir_json(spectateur, "fin")
         assert fin["raison"] == "remplacee"
         assert fermeture(spectateur) == 4010
     assert premier["code"] not in etat["sessions"] and len(etat["sessions"]) == 2
+
+
+def test_un_partage_en_service_nest_jamais_ferme_par_une_creation(banc, relais, horloge):
+    """Constat du 2026-09-14 : un tiers qui connaît le courriel fermait en boucle, par des créations, le partage
+    d'une personne malvoyante en pleine aide à distance. Une session dont l'émetteur est connecté reste."""
+    client, etat = banc
+    en_service = creer(client, relais)
+    with client.websocket_connect(f"/partage/emetteur?jeton={en_service['jeton_emetteur']}") as emetteur:
+        recevoir_json(emetteur, "pret")
+        creer(client, relais)
+        horloge["t"] += 120  # deux minutes plus tard, l'émetteur est toujours là
+        # Finition B : la limite de 2 sessions est comptée par (compte, adresse de création) ; on crée donc depuis
+        # la même adresse que les deux premières (celle par défaut de creer()).
+        seconde = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais)},
+                              headers={"X-Forwarded-For": "198.51.100.7"})
+        assert seconde.status_code == 200, "la session sans émetteur, vieille, cède sa place"
+        refus = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais)},
+                            headers={"X-Forwarded-For": "198.51.100.7"})
+        assert refus.status_code == 409 and "déjà en cours" in refus.json()["detail"]
+        assert en_service["code"] in etat["sessions"] and not etat["sessions"][en_service["code"]].fermee
+        # Depuis une autre adresse, la création passe, sans rien fermer.
+        ailleurs = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais)},
+                               headers={"X-Forwarded-For": "203.0.113.51"})
+        assert ailleurs.status_code == 200, ailleurs.text
+        assert not etat["sessions"][en_service["code"]].fermee
+
+
+def test_un_tiers_depuis_une_adresse_ne_bloque_pas_la_victime(banc, relais, horloge):
+    """Finition B du 2026-09-14 : depuis UNE adresse, un tiers gardait 2 partages avec émetteurs connectés et la victime
+    (compte sans ordinateur lié) recevait 409 « réessayez dans une minute », faux, aussi longtemps qu'il renouvelait."""
+    client, etat = banc
+    victime = "malvoyant@vela.app"
+    tiers = [client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, victime)},
+                         headers={"X-Forwarded-For": "203.0.113.9"}).json() for _ in range(2)]
+    connexions = []
+    try:
+        for session in tiers:
+            cm = client.websocket_connect(f"/partage/emetteur?jeton={session['jeton_emetteur']}")
+            ws = cm.__enter__()
+            connexions.append(cm)
+            recevoir_json(ws, "pret")
+        horloge["t"] += 600
+        r = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, victime)},
+                        headers={"X-Forwarded-For": "198.51.100.1"})
+        assert r.status_code == 200, r.text
+        # Le tiers, lui, atteint sa limite ; et on ne lui promet pas une minute qui ne libérera rien.
+        refus = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, victime)},
+                            headers={"X-Forwarded-For": "203.0.113.9"})
+        assert refus.status_code == 409
+        assert "une minute" not in refus.json()["detail"] and "connectés" in refus.json()["detail"]
+        assert all(not etat["sessions"][s["code"]].fermee for s in tiers)
+    finally:
+        for cm in connexions:
+            cm.__exit__(None, None, None)
+
+
+def test_cinq_creations_au_plus_par_compte(banc, relais):
+    """Cinq créations au plus par 15 minutes pour un compte depuis une même adresse. Contre-vérification du
+    2026-09-14 : compté par compte seul, ce quota était épuisé par un tiers (cinq adresses) et la victime
+    recevait 429 ; le tiers n'entame plus le quota de la victime."""
+    client, _ = banc
+    statuts = []
+    for i in range(6):
+        r = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais)},
+                        headers={"X-Forwarded-For": "203.0.113.7"})
+        statuts.append(r.status_code)
+        if r.status_code == 200:
+            client.post("/api/partage/fermer", json={"jeton_emetteur": r.json()["jeton_emetteur"]})
+    assert statuts == [200] * 5 + [429]
+    # Un tiers qui a épuisé SON quota pour ce compte ne bloque pas la victime, qui crée depuis son adresse.
+    victime = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais)},
+                          headers={"X-Forwarded-For": "198.51.100.1"})
+    assert victime.status_code == 200, victime.text
+
+
+def _lier(relais, courriel: str, cle: bytes) -> None:
+    ident = "liaison-test"
+    relais._ecrire(relais.FICHIER_LIAISONS, {courriel: {
+        "id": ident, "cle": relais._b64(relais._xor(cle, relais._cle_emballage(courriel, ident))), "machine": "pc",
+        "confirme_le": "2026-09-14T08:00:00+00:00", "sel": None, "iterations": None}})
+
+
+def test_un_ordinateur_lie_doit_prouver_sa_cle_pour_creer(banc, relais):
+    import hashlib
+    import hmac
+
+    client, _ = banc
+    cle = b"k" * 32
+    courriel = "proche@exemple.com"
+    _lier(relais, courriel, cle)
+    sans = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, courriel)})
+    assert sans.status_code == 403 and "lié" in sans.json()["detail"]
+    instant = int(time.time())
+
+    def preuve(avec: bytes) -> dict:
+        message = f"vela-partage-creer|v1|{courriel}|{instant}".encode()
+        return {"horodatage": instant, "preuve": relais._b64(hmac.new(avec, message, hashlib.sha256).digest())}
+
+    fausse = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, courriel),
+                                                     "preuve_pc": preuve(b"x" * 32)})
+    assert fausse.status_code == 403
+    bonne = preuve(cle)
+    assert client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, courriel),
+                                                   "preuve_pc": bonne}).status_code == 200
+    rejouee = client.post("/api/partage/creer", json={"jeton_appareil": jeton_appareil(relais, courriel),
+                                                      "preuve_pc": bonne})
+    assert rejouee.status_code == 403, "une preuve ne sert qu'une fois"
 
 
 # --------------------------------------------------------------------------- images

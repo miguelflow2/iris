@@ -289,7 +289,8 @@ class WatchService:
         if engageante:
             annonce += " Je ne fais rien sans ton accord : tu confirmes ?"
 
-        log.info("veille « %s » : %s (%s)", w["name"], etat, resume[:90])
+        # Le résumé est chiffré dans la base : le journal technique, lui, n'en garde que la longueur.
+        log.info("veille « %s » : %s (résumé de %d caractères)", w["name"], etat, len(resume))
         self.hub.publish(
             "watch.alert",
             watch_id=w["id"],

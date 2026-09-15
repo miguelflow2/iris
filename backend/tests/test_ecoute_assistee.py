@@ -26,6 +26,10 @@ from iris.config import Settings
 from iris.voice.elevenlabs import VERROU_PORTAUDIO
 from iris.voice.robinet import RobinetAudio
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 TAUX = 16000
 DECALAGE = ea.TRAME - ea.PAS
 

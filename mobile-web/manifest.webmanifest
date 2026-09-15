@@ -1,7 +1,7 @@
 {
   "name": "IRIS — par VELA",
   "short_name": "IRIS",
-  "description": "Parlez à Iris, l'assistante vocale de VELA, depuis votre téléphone.",
+  "description": "Ancienne page téléphone d'IRIS, plus utilisée : IRIS s'ouvre à l'adresse de votre propre ordinateur.",
   "lang": "fr-CA",
   "dir": "ltr",
   "start_url": "./",

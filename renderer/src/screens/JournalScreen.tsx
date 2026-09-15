@@ -47,6 +47,33 @@ function libelleRetention(jours: number): string {
   return `${jours} jours`
 }
 
+/* Constat du 2026-09-14 : le journal continu transcrit et garde chaque phrase entendue, y compris celle de
+   personnes qui n'ont rien accepté. La limite légale est dite près de l'interrupteur, et la première
+   activation sur cet ordinateur exige une confirmation qui la cite. Repris par SousTitresScreen. */
+export const AVERTISSEMENT_CONVERSATIONS =
+  'Enregistrer ou transcrire une conversation à laquelle vous ne participez pas est illégal. Prévenez les personnes présentes : elles ont des droits sur ce qui les concerne.'
+const CLE_AVERTISSEMENT_JOURNAL = 'iris.journal-continu.avertissement-accepte'
+
+/** Vrai si l'activation peut continuer : avertissement déjà accepté sur cet ordinateur, ou accepté maintenant. */
+export function confirmerJournalContinu(): boolean {
+  try {
+    if (window.localStorage.getItem(CLE_AVERTISSEMENT_JOURNAL) === 'oui') return true
+  } catch {
+    /* stockage indisponible : on redemande, c'est le choix prudent */
+  }
+  const accepte = window.confirm(
+    `Activer le journal continu ?\n\n${AVERTISSEMENT_CONVERSATIONS}\n\nTant que ce réglage reste actif, IRIS transcrit et garde sur cet ordinateur chaque phrase qu’elle entend.`
+  )
+  if (accepte) {
+    try {
+      window.localStorage.setItem(CLE_AVERTISSEMENT_JOURNAL, 'oui')
+    } catch {
+      /* ignore */
+    }
+  }
+  return accepte
+}
+
 export function JournalScreen({ params: _params }: { params?: Record<string, any> }): JSX.Element {
   const { settings, updateSettings, toast, exigerLunettes, ecoute, rafraichirEcoute, invite, zone } = useStore()
   const [q, setQ] = useState('')
@@ -83,6 +110,7 @@ export function JournalScreen({ params: _params }: { params?: Record<string, any
 
   const basculerJournal = (v: boolean): void => {
     if (v && !exigerLunettes('Journal continu')) return
+    if (v && !confirmerJournalContinu()) return
     updateSettings({ journal_continu: v }).catch((err: unknown) => toast(messageErreur(err), 'error'))
   }
 
@@ -141,6 +169,7 @@ export function JournalScreen({ params: _params }: { params?: Record<string, any
           on={Boolean(settings?.journal_continu)}
           onChange={basculerJournal}
         />
+        <div className="bloc-note attention" role="note">{AVERTISSEMENT_CONVERSATIONS}</div>
         {suspendue ? (
           <div className="bloc-note attention" role="status">Mémorisation suspendue ({suspendue}) : le journal n’écrit rien en ce moment.</div>
         ) : null}

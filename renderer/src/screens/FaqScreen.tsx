@@ -127,7 +127,7 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
           q: 'Comment prendre une photo ?',
           r: (
             <>
-              Le bouton avant des lunettes prend la photo dans la mémoire des lunettes ; IRIS ne la récupère pas. Depuis IRIS (accueil, album, ou « {mot}, prends
+              Une photo prise avec le bouton des lunettes est gérée par les lunettes elles-mêmes : IRIS ne la récupère pas (ce qu’elles en font n’est pas documenté par le fabricant). Depuis IRIS (accueil, album, ou « {mot}, prends
               une photo »), la photo est demandée par Bluetooth : cette commande n’est pas encore confirmée sur les lunettes vendues, et tant qu’elle ne l’est pas,
               IRIS refuse et le dit. En attendant, les fonctions de vision acceptent une photo du téléphone ou l’écran de l’ordinateur.
             </>
@@ -225,7 +225,20 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
             <>
               Désactivé par défaut. Activé, il garde mot pour mot, chiffrées, les phrases entendues par les sous-titres, pour retrouver « ce qui a été dit mardi ».
               La recherche se fait sur l’ordinateur, la durée de conservation s’applique, rien n’est écrit quand la mémoire est suspendue, et vous effacez une plage
-              de dates ou tout le journal.
+              de dates ou tout le journal. Il transcrit aussi les personnes autour de vous : enregistrer ou transcrire une conversation à laquelle vous ne
+              participez pas est illégal. Prévenez les personnes présentes.
+            </>
+          )
+        },
+        {
+          q: 'Puis-je enregistrer ou transcrire les personnes autour de moi ?',
+          r: (
+            <>
+              Pas n’importe comment. Enregistrer ou transcrire une conversation à laquelle vous ne participez pas est interdit par le Code criminel. Les personnes
+              enregistrées ont des droits sur leur voix et leurs propos (Code civil du Québec) ; dans un usage professionnel, la loi sur la protection des
+              renseignements personnels s’applique aussi. Prévenez les personnes présentes. Pour un cours, demandez l’autorisation de l’enseignant :
+              l’établissement peut interdire l’enregistrement, et le contenu du cours est protégé par le droit d’auteur. Ces règles s’appliquent au journal
+              continu, aux sous-titres gardés, à l’enregistrement audio et au mode cours. En cas de doute, renseignez-vous auprès d’un juriste.
             </>
           )
         },
@@ -254,7 +267,8 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
             <>
               IRIS enregistre le cours (fichier WAV stocké sur cet ordinateur) et le transcrit sur place ; la transcription est chiffrée et approximative. Sur
               demande et avec votre accord, le moteur VELA en tire des fiches et des questions de révision, qui peuvent contenir des erreurs : vérifiez-les avec vos
-              notes. L’import accepte les fichiers WAV seulement.
+              notes. L’import accepte les fichiers WAV seulement. Demandez l’autorisation de l’enseignant : l’établissement peut interdire l’enregistrement, et le
+              contenu du cours reste protégé par le droit d’auteur.
             </>
           )
         }
@@ -360,8 +374,8 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
           q: 'Et sur iPhone ?',
           r: (
             <>
-              Safari n’a pas de Bluetooth : la page web ne peut pas signaler vos lunettes. Dehors, sur iPhone, il faut l’app IRIS, qui appaire les lunettes et les
-              signale à l’ordinateur toutes les 60 secondes. Son code est écrit mais n’a pas encore été compilé ni essayé sur un iPhone. Sur Android, Chrome peut
+              Safari n’a pas de Bluetooth : la page web ne peut pas signaler vos lunettes. Sur iPhone, il faudra l’app IRIS, qui appairera les lunettes et les
+              signalera à l’ordinateur toutes les 60 secondes. Elle n’est pas encore disponible : son code est écrit mais n’a pas encore été compilé ni essayé sur un iPhone. Sur Android, Chrome peut
               signaler les lunettes depuis la page IRIS.
             </>
           )
@@ -385,9 +399,10 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
           r: (
             <>
               Une vérification de base qui ne laisse passer que votre voix pour les commandes vocales, calculée et chiffrée sur cet ordinateur ; aucun son n’est
-              gardé. Une voix proche ou un enregistrement peuvent la tromper : le mot de passe reste la vraie protection. C’est une donnée biométrique : la fonction
-              est livrée désactivée, exige votre consentement exprès, et sa mise en marché demande une déclaration à la Commission d’accès à l’information du Québec.
-              Enregistrez-la avec le micro que vous utilisez.
+              gardé. Une voix proche ou un enregistrement peuvent la tromper : le mot de passe reste la vraie protection. C’est une donnée biométrique : au Québec,
+              la vérification d’identité par la voix et la banque d’empreintes doivent être déclarées à la Commission d’accès à l’information au moins 60 jours
+              avant leur mise en service (LCCJTI, art. 44 et 45). La fonction n’est donc pas encore offerte : VELA doit d’abord faire cette déclaration. Elle exigera
+              ensuite votre consentement exprès, et personne ne sera obligé de l’utiliser : le mot de passe reste une autre façon de s’identifier.
             </>
           )
         },
@@ -406,8 +421,9 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
           r: (
             <>
               Il suspend la mémoire pendant qu’une autre personne utilise IRIS, puis efface à la sortie les conversations et les messages de la session. Il ne cache
-              pas vos souvenirs existants dans l’application, et n’efface ni les rappels ni les tâches créés pendant la session. Il se termine seul après le délai
-              choisi.
+              pas vos souvenirs existants dans l’application, et n’efface ni les rappels ni les tâches créés pendant la session. Pendant le mode, IRIS ne consulte
+              pas vos souvenirs pour répondre (« où j’ai posé mes clés » compris). IRIS ne sait pas qui parle dans les lunettes : la phrase « fin du mode invité »
+              est refusée, et le mode se termine depuis l’application ou seul, après le délai choisi.
             </>
           )
         },
@@ -417,8 +433,14 @@ export function FaqScreen({ params: _params }: { params?: Record<string, any> })
             <>
               Depuis la page de verrouillage du relais VELA, avec votre courriel et votre code de secours : « Verrouiller » arrête l’écoute, coupe les lunettes et les fonctions qui captent, et
               IRIS reste verrouillée jusqu’à votre mot de passe, même après un redémarrage. « Effacer » supprime la mémoire, le journal, les cours, les reçus, les
-              conversations, les tâches, rappels et surveillances, les photos et l’audio, l’empreinte vocale, les zones et les accès enregistrés. Restent : votre compte et votre
-              mot de passe, l’accès de l’ordinateur au relais, les fichiers exportés hors d’IRIS, ce que le téléphone garde, et la mémoire interne des lunettes.
+              conversations, les tâches, rappels et surveillances, les photos et l’audio, l’empreinte vocale, les zones, l’état du mode invité, les copies de
+              secours des réglages, les clés et accès enregistrés et le journal technique d’IRIS. Restent : votre compte et votre mot de passe, l’accès de
+              l’ordinateur au relais, les fichiers exportés hors d’IRIS, ce que le téléphone garde, et la mémoire interne des lunettes. L’ordinateur doit
+              d’abord être lié à votre compte : à l’activation, un courriel de confirmation est envoyé, et sa page demande de recopier le code affiché dans
+              IRIS, ce qui empêche une autre machine de prendre sa place. Tant que ce lien n’est pas confirmé, la fonction est activée mais pas encore
+              utilisable (l’écran Verrouillage à distance le dit), et le relais doit pouvoir envoyer ce courriel.
+              Votre code ne quitte pas le navigateur de la page : seule une preuve à usage unique transite, vérifiée par l’ordinateur, et un succès n’est
+              affiché que s’il est confirmé par lui. Choisissez un code long : une preuve permet d’essayer des codes hors ligne.
               Rien ne se passe si l’ordinateur est éteint ou hors ligne, et un outil de récupération peut retrouver des données sur un disque non chiffré. Le verrou
               s’applique à l’application IRIS, pas à Windows.
             </>

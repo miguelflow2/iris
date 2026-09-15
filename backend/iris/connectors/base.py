@@ -52,6 +52,15 @@ class ConnectorError(Exception):
         self.fatal_key = fatal_key
 
 
+class MoteurTropLent(ConnectorError):
+    """Le moteur n'a pas répondu dans le délai accordé. Sous-classe de ConnectorError : tout appelant qui
+    traite déjà une panne du moteur (message neutre, repli local) traite aussi la lenteur, sans code en plus."""
+
+    def __init__(self, delai_s: float):
+        super().__init__(f"Le moteur VELA n'a pas répondu en {delai_s:.0f} s.", retryable=True)
+        self.delai_s = delai_s
+
+
 class BaseConnector(ABC):
     name: str = "base"
     supports_tools: bool = False

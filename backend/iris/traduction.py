@@ -56,8 +56,9 @@ cette personne-là n'a rien consenti, ne sait pas qu'IRIS existe, et ne peut rie
 produit vendu sur la confidentialité prouvable, ce n'est pas un détail d'implémentation mais une
 décision de produit. Ce module fait donc trois choses, et refuse d'en faire moins :
   - il REFUSE de démarrer quand le mode local est actif, et explique pourquoi (`pourquoi_impossible`) ;
-  - il inscrit chaque envoi au registre chaîné — la langue et la LONGUEUR, jamais le contenu, comme
-    `telephonie._tracer` : un registre qui s'exporte en CSV n'a pas à conserver ce qu'un inconnu a dit ;
+  - il inscrit chaque envoi au registre chaîné AVANT qu'il parte (réussi ou non), avec le moteur
+    réellement joint — la langue et la LONGUEUR, jamais le contenu, comme `telephonie._tracer` : un
+    registre qui s'exporte en CSV n'a pas à conserver ce qu'un inconnu a dit ;
   - il ne garde RIEN au-delà du strict nécessaire : le fil vit en mémoire vive, plafonné à
     `MEMOIRE_TOURS` tours, périmé après `DUREE_MEMOIRE` d'inactivité, effacé à la fermeture du mode
     par `oublier()`. Rien n'est écrit sur le disque par ce fichier — ni base, ni journal, ni fichier
@@ -480,11 +481,14 @@ class ServiceTraduction:
         self.bidirectionnel = False
         self.interprete: Any = None  # ServiceInterprete, branché par routes_interprete
         # Vérifie que le texte a le droit de partir (ctx.consent.check("transcript")). Lève quand
-        # l'envoi est refusé. None = aucune vérification (tests de ce module, sans registre réel).
-        self.verifier_envoi: Callable[[], None] | None = None
+        # l'envoi est refusé. Appelée avec LE message qui partira : le moteur qui le recevra dépend de
+        # son contenu (voir routes_interprete.fabriquer_verificateur) ; rend alors (moteur, local), ou
+        # None si le moteur est inconnu (l'envoi est alors tracé comme externe). Appelée avec None :
+        # vérification préalable (ouverture, écran), sans rien envoyer.
+        # None = aucune vérification (tests de ce module, sans registre réel).
+        self.verifier_envoi: Callable[[str | None], tuple[str | None, bool] | None] | None = None
         # Appelées à la fermeture d'un mode interprète, quel que soit le chemin (voix, bouton, API).
         self.a_la_fermeture: list[Callable[[str], None]] = []
-        self._refus = ""  # raison du dernier envoi refusé AVANT le réseau (consentement)
 
     # ------------------------------------------------------------ état
     @property
@@ -589,7 +593,6 @@ class ServiceTraduction:
         self.actif = True
         self.bidirectionnel = bool(bidirectionnel)
         self.erreur = ""
-        self._refus = ""
         self._echecs = 0
         self._derniere_parole = self._horloge()
         self._publier("voice.traduction", etat="ouvert", langue=self.langue_entendue,
@@ -684,7 +687,7 @@ class ServiceTraduction:
         systeme = self._systeme(source, cible, avec_reponse=avec_reponse)
         message = self._message(texte, self._contexte())
         depart = self._horloge()
-        brut = await self._appeler(systeme, message)
+        brut, refus = await self._appeler(systeme, message, source, cible)
         latence = self._horloge() - depart
         self._latences.append(latence)
         self._derniere_parole = self._horloge()
@@ -692,7 +695,7 @@ class ServiceTraduction:
         if brut is None:
             self._echecs += 1
             return Traduction(ok=False, original=texte, langue_source=source, langue_cible=cible,
-                              raison=self._refus or "Je n'ai pas réussi à traduire cette phrase-là. Demande-lui de la répéter.",
+                              raison=refus or "Je n'ai pas réussi à traduire cette phrase-là. Demande-lui de la répéter.",
                               latence=latence)
 
         traduction, suggestion, suggestion_traduite = lire_reponse_modele(brut)
@@ -706,7 +709,6 @@ class ServiceTraduction:
 
         self._echecs = 0
         self._retenir("interlocuteur", texte, traduction)
-        self._tracer(texte, source, cible)
         if not self.latence_tenable():
             log.warning("Traduction lente : %.1f s en moyenne (visé %.1f s).", self.latence_moyenne, LATENCE_VISEE)
         return Traduction(ok=True, original=texte, traduction=traduction, reponse_suggeree=suggestion,
@@ -727,13 +729,13 @@ class ServiceTraduction:
                               raison="Dis-moi ce que tu veux lui répondre.")
 
         depart = self._horloge()
-        brut = await self._appeler(self._systeme(source, cible, avec_reponse=False),
-                                   self._message(propre, self._contexte()))
+        brut, refus = await self._appeler(self._systeme(source, cible, avec_reponse=False),
+                                          self._message(propre, self._contexte()), source, cible)
         latence = self._horloge() - depart
         self._derniere_parole = self._horloge()
         if brut is None:
             return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
-                              raison=self._refus or "Je n'ai pas réussi à traduire ta réponse.", latence=latence)
+                              raison=refus or "Je n'ai pas réussi à traduire ta réponse.", latence=latence)
 
         traduction, _s, _st = lire_reponse_modele(brut)
         probleme = self._verifier(traduction, source, cible)
@@ -741,7 +743,6 @@ class ServiceTraduction:
             return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
                               raison="Je n'ai pas réussi à traduire ta réponse.", latence=latence)
         self._retenir("moi", propre, traduction)
-        self._tracer(propre, source, cible)
         return Traduction(ok=True, original=propre, traduction=traduction, langue_source=source,
                           langue_cible=cible, latence=latence)
 
@@ -764,12 +765,13 @@ class ServiceTraduction:
                               raison="Les deux langues doivent être différentes.")
         meme_conversation = self.actif and {source, cible} == {self.langue_moi, self.langue_entendue}
         depart = self._horloge()
-        brut = await self._appeler(self._systeme(source, cible, avec_reponse=False),
-                                   self._message(propre, self._contexte() if meme_conversation else ""))
+        brut, refus = await self._appeler(self._systeme(source, cible, avec_reponse=False),
+                                          self._message(propre, self._contexte() if meme_conversation else ""),
+                                          source, cible)
         latence = self._horloge() - depart
         if brut is None:
             return Traduction(ok=False, original=propre, langue_source=source, langue_cible=cible,
-                              raison=self._refus or "Je n'ai pas réussi à traduire ce texte.", latence=latence)
+                              raison=refus or "Je n'ai pas réussi à traduire ce texte.", latence=latence)
         traduction, _s, _st = lire_reponse_modele(brut)
         probleme = self._verifier(traduction, source, cible)
         if probleme:
@@ -778,7 +780,6 @@ class ServiceTraduction:
         if meme_conversation:
             self._derniere_parole = self._horloge()
             self._retenir("moi" if source == self.langue_moi else "interlocuteur", propre, traduction)
-        self._tracer(propre, source, cible)
         return Traduction(ok=True, original=propre, traduction=traduction, langue_source=source,
                           langue_cible=cible, latence=latence)
 
@@ -817,54 +818,69 @@ class ServiceTraduction:
         parts.append("À traduire :\n<<<" + (texte or "").strip() + ">>>")
         return "\n".join(parts)
 
-    def _refus_envoi(self) -> str:
-        """La raison pour laquelle le texte n'a PAS le droit de partir, ou « ».
+    def _refus_envoi(self, message: str) -> tuple[str, str | None, bool]:
+        """(raison du refus ou « », moteur qui recevra le message, moteur local ?).
 
         Même règle que partout dans IRIS : rien ne quitte l'ordinateur sans le consentement du type
         de donnée (ici « transcript »). Dans le doute — vérification qui plante — on ne l'envoie pas.
         Typage par nom plutôt qu'import : ce module reste testable sans base ni registre réels."""
         verifier = self.verifier_envoi
         if verifier is None:
-            return ""
+            return "", None, False
         try:
-            verifier()
-            return ""
+            choix = verifier(message)
         except Exception as exc:
             if type(exc).__name__ == "LocalOnlyMode":
                 return ("Le mode local est actif : traduire exige d'envoyer le texte à un service en "
-                        "ligne, ce que le mode local interdit.")
+                        "ligne, ce que le mode local interdit."), None, False
+            if type(exc).__name__ == "NoAgentAvailable":
+                # Le détail du routeur peut nommer un logiciel tiers : il reste au journal.
+                log.info("Aucun moteur pour traduire : %s", exc)
+                return "Aucun moteur n'est prêt pour traduire en ce moment.", None, False
             data_type = getattr(exc, "data_type", None)
             if data_type:
                 libelle = getattr(exc, "reason", "") or data_type
                 return (f"Pour traduire, IRIS doit envoyer le texte au moteur VELA : autorise « {libelle} » "
-                        "dans Confidentialité.")
+                        "dans Confidentialité."), None, False
             log.warning("Vérification du consentement impossible, rien n'est envoyé : %s", exc)
-            return "Je ne peux pas vérifier ton accord d'envoi en ce moment, alors je ne traduis pas."
+            return "Je ne peux pas vérifier ton accord d'envoi en ce moment, alors je ne traduis pas.", None, False
+        if isinstance(choix, tuple) and len(choix) == 2:
+            return "", choix[0], bool(choix[1])
+        return "", None, False
 
-    async def _appeler(self, systeme: str, message: str) -> str | None:
-        """Un aller-retour, borné dans le temps. Rend None sur échec ; ne lève jamais."""
-        self._refus = self._refus_envoi()
-        if self._refus:
+    async def _appeler(self, systeme: str, message: str, source: str, cible: str) -> tuple[str | None, str]:
+        """Un aller-retour, borné dans le temps. Rend (texte ou None sur échec, raison d'un refus
+        AVANT l'envoi ou « »). Ne lève jamais.
+
+        Le refus est RENDU, pas rangé dans un attribut : la boucle vocale et la route /texte du
+        téléphone partagent ce service en même temps, et l'un dirait sinon la raison de l'autre."""
+        refus, agent, local = self._refus_envoi(message)
+        if refus:
             # Refusé AVANT le réseau : aucun octet ne part, et la raison sera dite telle quelle.
-            self.erreur = self._refus
-            log.info("Traduction refusée avant l'envoi : %s", self._refus)
-            return None
+            self.erreur = refus
+            log.info("Traduction refusée avant l'envoi : %s", refus)
+            return None, refus
+        if not local:
+            # Tracé AVANT l'envoi : un délai dépassé, une réponse rejetée ou une panne n'effacent pas
+            # le fait que le texte a quitté l'ordinateur.
+            self._tracer(message, source, cible, agent)
         try:
             resultat = self._interroger(systeme, message)
             if inspect.isawaitable(resultat):
                 resultat = await asyncio.wait_for(resultat, timeout=DELAI_MODELE)
             texte = (resultat or "").strip() if isinstance(resultat, str) else str(resultat or "").strip()
             self.erreur = ""
-            return texte or None
+            return (texte or None), ""
         except asyncio.TimeoutError:
             # Passé ce délai la conversation a avancé : une traduction en retard est un bruit de plus.
             self.erreur = f"Le modèle a mis plus de {DELAI_MODELE:.0f} secondes à répondre."
             log.warning("Traduction abandonnée : dépassement de %.0f s.", DELAI_MODELE)
-            return None
+            return None, ""
         except Exception as exc:
-            self.erreur = f"Traduction indisponible : {exc}"
+            # Le détail (qui peut nommer le fournisseur) reste au journal ; l'état affiche un message neutre.
+            self.erreur = "Traduction indisponible : le moteur VELA n'a pas répondu."
             log.warning("Traduction impossible : %s", exc)
-            return None
+            return None, ""
 
     @staticmethod
     def _verifier(traduction: str, source: str, cible: str) -> str:
@@ -885,21 +901,22 @@ class ServiceTraduction:
         return ""
 
     # ------------------------------------------------------------ traces
-    def _tracer(self, texte: str, source: str, cible: str) -> None:
-        """Inscrit l'envoi au registre chaîné. La LONGUEUR, jamais le contenu.
+    def _tracer(self, message: str, source: str, cible: str, agent: str | None) -> None:
+        """Inscrit l'envoi au registre chaîné, juste AVANT qu'il parte. La LONGUEUR, jamais le contenu.
 
         Même règle que `telephonie._tracer`, et pour une raison plus forte ici : ce que le registre
         consignerait ne serait pas les mots du propriétaire, mais ceux de quelqu'un qui n'a rien
-        demandé. Ce qu'il faut prouver, c'est qu'un envoi a eu lieu, vers quoi, et quand.
+        demandé. Ce qu'il faut prouver, c'est qu'un envoi a eu lieu, vers quel moteur, et quand —
+        qu'il ait réussi ou non. La longueur est celle du message envoyé (contexte compris).
         """
         if self.registre is None:
             return
         try:
             self.registre.log(
-                "traduction",
+                "external_send",
                 data_type="transcript",
-                agent="traduction",
-                detail=f"{source} vers {cible}, {len(texte or '')} caractères",
+                agent=agent,
+                detail=f"traduction {source} vers {cible}, {len(message or '')} caractères",
             )
         except Exception as exc:  # une trace qui échoue ne doit pas empêcher IRIS de traduire
             log.warning("Registre indisponible pour la traduction : %s", exc)
@@ -1372,7 +1389,7 @@ class ServiceInterprete:
         if verifier is None:
             return None
         try:
-            verifier()
+            verifier(None)  # vérification préalable : aucun message, rien ne part
             return None
         except Exception as exc:
             if type(exc).__name__ == "LocalOnlyMode":

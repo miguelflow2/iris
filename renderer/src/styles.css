@@ -17,7 +17,7 @@
 
   --text: #ffffff;
   --text-2: #d1d1d6;
-  --muted: #8e8e93;
+  --muted: #a1a1a6; /* texte atténué : contraste AA (≥ 4,5:1) sur --bg, --bg-2 et --surface, même valeur que l’iPhone (Style.swift) */
 
   --blue: #0a84ff;
   --blue-2: #4aa3ff;

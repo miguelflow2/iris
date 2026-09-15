@@ -9,6 +9,7 @@ import SwiftUI
 import UIKit
 
 /// Ligne d'accès à une fonction : icône, titre, précision (où se fait le travail).
+@MainActor
 struct LigneAccessibilite: View {
     let icone: String
     let titre: String
@@ -81,6 +82,7 @@ struct ApercuCamera: UIViewRepresentable {
 }
 
 /// Pastille « en cours » (alertes, guidage, partage) avec son action d'arrêt.
+@MainActor
 struct BandeauEnCours: View {
     let icone: String
     let texte: String
@@ -106,6 +108,7 @@ struct BandeauEnCours: View {
 }
 
 /// Plein écran d'une alerte sonore : grand texte, fond rouge, un seul bouton.
+@MainActor
 struct AlertePleinEcran: View {
     let alerte: AlerteSonore
     let fermer: () -> Void

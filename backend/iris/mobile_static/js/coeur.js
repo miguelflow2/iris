@@ -19,7 +19,27 @@
  */
 import { api, bus, memoire, retenir, oublier } from './api.js';
 
-const VERSION_COQUILLE = '2026-09-13';
+const VERSION_COQUILLE = '2026-09-14';
+
+// ------------------------------------------------------------------ jamais dans un cadre
+// Un site tiers qui intégrerait cette page dans un cadre invisible pourrait faire toucher « Se connecter »
+// ou « Autoriser » à l'insu de l'utilisateur (détournement de clic). La vraie barrière est l'en-tête
+// frame-ancestors que pose l'ordinateur sur /m (routes_mobile.reponse_page) ; une balise meta ne peut pas
+// la porter. En second rideau, si la page était servie sans cet en-tête (module routes_mobile absent, copie
+// servie ailleurs), la coquille refuse de démarrer dans un cadre : sans elle, aucun bouton ne fait
+// rien (le formulaire de connexion reste caché, window.IRIS n'existe pas, aucun module ne s'enregistre).
+let dansUnCadre = true;
+try { dansUnCadre = window.top !== window.self; } catch (e) { dansUnCadre = true; }
+if (dansUnCadre) {
+  try {
+    const avis = document.createElement('p');
+    avis.className = 'noscript';
+    avis.textContent = "Par sécurité, IRIS ne s'ouvre pas à l'intérieur d'une autre page. Ouvrez son adresse directement dans le navigateur.";
+    document.body.textContent = '';
+    document.body.append(avis);
+  } catch (e) { /* rien à afficher : la page reste inerte */ }
+  throw new Error('IRIS refuse de démarrer dans un cadre.');
+}
 
 // ------------------------------------------------------------------ où sommes-nous ? (iPadOS se déguise en Mac, d'où le test tactile)
 const UA = navigator.userAgent || '';
@@ -132,6 +152,39 @@ function dateLisible(iso) {
 }
 function lectureAuto() { return memoire('iris_lecture_auto') !== 'non'; }
 function lire(texte) { if (lectureAuto() && texte) parler(texte); }
+
+// ------------------------------------------------------------------ lunettes d'abord (garde des fonctions de la coquille)
+// lunettes.js est chargé par la page juste après ce fichier ; on l'attend ici par son adresse absolue (la
+// même que la balise de la page, donc une seule copie), parce que cette coquille peut être évaluée en ligne
+// dans /m, où une adresse relative ne mènerait nulle part. Sans lui, rien ne peut être vérifié : la
+// fonction reste fermée, au lieu de prendre et d'envoyer une photo qui serait refusée ensuite.
+const chargementLunettes = import('/m/js/lunettes.js').catch(() => null);
+const URL_ACHAT_LUNETTES = 'https://velaglass.ca/lunettes.html';   // repli si l'ordinateur n'en donne pas
+
+async function gardeLunettes(ctx, options) {
+  await chargementLunettes;
+  const outil = window.IRIS && window.IRIS.lunettes;
+  if (outil && typeof outil.garde === 'function') {
+    try { return outil.garde(ctx, options); } catch (e) { /* repli ci-dessous : fonction fermée */ }
+  }
+  if (options.contenu) options.contenu.hidden = true;
+  ctx.corps.prepend(el('p', { class: 'resultat-erreur', role: 'alert' },
+    "La vérification des lunettes VELA n'a pas pu se charger sur cette page : rechargez-la. Cette fonction reste fermée d'ici là."));
+  return { verifier: () => Promise.resolve(false), refus: () => false, presentes: () => false, etat: () => null, fermer() {} };
+}
+
+/** L'adresse d'achat : celle de l'ordinateur (seulement en https), sinon le repli. */
+function adresseAchat(proposee) {
+  const candidates = [proposee];
+  const outil = window.IRIS && window.IRIS.lunettes;
+  if (outil && typeof outil.statut === 'function') {
+    try { candidates.push(((outil.statut() || {}).presence || {}).acheter_url); } catch (e) { /* statut illisible */ }
+  }
+  for (const c of candidates) {
+    try { if (c && new URL(String(c)).protocol === 'https:') return String(c); } catch (e) { /* adresse invalide */ }
+  }
+  return URL_ACHAT_LUNETTES;
+}
 
 // ------------------------------------------------------------------ modules et tuiles
 function enregistrer(module) {
@@ -248,7 +301,12 @@ function ouvrirPanneau(titre) {
   return {
     corps,
     fermer,
-    surFermeture: (fonction) => { if (typeof fonction === 'function') nettoyages.push(fonction); },
+    surFermeture: (fonction) => {
+      if (typeof fonction !== 'function') return;
+      // Un module asynchrone peut rendre son nettoyage après la fermeture : on l'exécute tout de suite.
+      if (!ouvert) { try { fonction(); } catch (e) { /* nettoyage raté : rien à bloquer */ } return; }
+      nettoyages.push(fonction);
+    },
     element: section,
   };
 }
@@ -668,7 +726,7 @@ function attendreReponse(convId, connus, bulleEnCours, debut) {
   desabonnements.push(bus.on('chat.done', (ev) => {
     const m = ev.message || {};
     if (ev.conversation_id === convId && m.role === 'assistant' && !connus.has(m.id)) {
-      terminer({ texte: m.text || (m.meta && m.meta.error) || '' });
+      terminer({ texte: m.text || (m.meta && m.meta.error) || '', lunettes: !!(m.meta && m.meta.glasses_required) });
     }
   }));
   desabonnements.push(bus.on('chat.error', (ev) => {
@@ -681,7 +739,7 @@ function attendreReponse(convId, connus, bulleEnCours, debut) {
       const d = await api.get('/api/conversations/' + encodeURIComponent(convId), { delai: 20000 });
       const nouveau = (d.messages || []).filter((m) => m.role === 'assistant' && !connus.has(m.id)).pop();
       if (nouveau && (nouveau.text || (nouveau.meta || {}).error)) {
-        terminer({ texte: nouveau.text || nouveau.meta.error });
+        terminer({ texte: nouveau.text || nouveau.meta.error, lunettes: !!(nouveau.meta && nouveau.meta.glasses_required) });
         return;
       }
     } catch (e) { /* le prochain tour réessaiera */ }
@@ -731,6 +789,19 @@ async function envoyer(texte) {
       return;
     }
     if (r.erreur) { reponse.textContent = r.erreur; lire(r.erreur); return; }
+    if (r.lunettes) {
+      // Refus « lunettes d'abord » (aperçu écrit épuisé) : ce n'est pas une réponse d'IRIS. Pas de délai
+      // mesuré sous la bulle, et l'invitation avec ses deux actions au lieu d'une bulle ordinaire.
+      reponse.className = 'bulle info';
+      reponse.textContent = "IRIS n'a pas répondu : l'aperçu par écrit sans lunettes est terminé.";
+      if (!panneauLunettes) {
+        afficherLunettesRequises({
+          titre: 'IRIS s’utilise avec les lunettes VELA',
+          texte: "L'aperçu par écrit sans lunettes est terminé. Connectez vos lunettes VELA à ce téléphone ou à votre ordinateur pour continuer à parler à IRIS.",
+        });
+      }
+      return;
+    }
     reponse.textContent = r.texte || '(réponse vide)';
     ajouterMeta(reponse, 'Réponse en ' + secondes(performance.now() - debut) +
       (r.premier !== null ? ' (premiers mots après ' + secondes(r.premier) + ')' : '') + ', mesuré sur ce téléphone.');
@@ -747,8 +818,44 @@ async function envoyer(texte) {
     // IRIS vient peut-être de déposer un texto : on l'affiche tout de suite, sans attendre le
     // sondage. Sans annonce : sa réponse vient d'être lue, elle dit déjà où le trouver.
     sonderBrouillons(false);
+    majApercu();   // sans lunettes, ce message vient de consommer l'aperçu
   }
 }
+
+// ------------------------------------------------------------------ aperçu du chat sans lunettes
+// Sans lunettes, chaque message écrit ou dicté depuis ce téléphone consomme un message de l'aperçu
+// (ChatService._verrou_lunettes_chat, compteur de toute l'installation). Le compte est visible ici,
+// sous le champ, dès que les lunettes sont absentes : on ne le découvre pas au dixième message.
+const zoneApercu = $('apercu-lunettes');
+function afficherApercu(d) {
+  if (!zoneApercu || !d || typeof d.presentes !== 'boolean') return;
+  const montrer = d.presentes === false && typeof d.apercu_restant === 'number';
+  const avant = zoneApercu.hidden;
+  zoneApercu.hidden = !montrer;
+  if (montrer) {
+    const total = Number(d.apercu_total) || 0;
+    zoneApercu.textContent = d.apercu_restant > 0
+      ? 'Aperçu sans lunettes : ' + d.apercu_restant + ' message(s) écrit(s) restant(s) sur ' + total + ' pour cette installation d’IRIS.'
+      : "Aperçu sans lunettes terminé : IRIS répond ici quand vos lunettes VELA sont connectées.";
+  }
+  if (avant !== zoneApercu.hidden) ajusterHauteur();
+}
+let minuterieApercu = null;
+function majApercu() {
+  clearTimeout(minuterieApercu);
+  minuterieApercu = setTimeout(async () => {
+    if (phase !== 'pret' || !api.jeton()) return;
+    try {
+      await chargementLunettes;
+      const outil = window.IRIS && window.IRIS.lunettes;
+      afficherApercu(outil && typeof outil.presence === 'function'
+        ? await outil.presence({ frais: true })
+        : await api.get('/api/lunettes/presence', { delai: 15000 }));
+    } catch (e) { /* ordinateur ancien ou injoignable : rien d'affirmé */ }
+  }, 300);
+}
+bus.on('lunettes.presence', afficherApercu);
+bus.on('iris.lunettes', (s) => { if (s && s.presence) afficherApercu(s.presence); });
 
 // ------------------------------------------------------------------ brouillons de SMS et d'appel (telephonie.py, voie « iphone »)
 // IRIS ne peut pas envoyer un texto depuis un programme : Apple ne le permet à personne. Elle le
@@ -1005,6 +1112,7 @@ function entrer() {
   verifier();
   chargerReglages();
   majMemoire();
+  majApercu();
   sonderBrouillons(false);
   if (memoire('iris_eveil') === 'oui') eveil('reglage', true);
   if (!bouclesLancees) {
@@ -1035,21 +1143,23 @@ bus.on('iris.lunettes_requises', (ev) => {
   }, 0);
 });
 
+/** ev : {acheter_url, titre, texte} — titre et texte facultatifs (le chat a les siens). */
 function afficherLunettesRequises(ev) {
+  const e = ev || {};
   const p = ouvrirPanneau('Lunettes VELA');
   panneauLunettes = p;
   p.surFermeture(() => { panneauLunettes = null; });
-  // L'adresse d'achat vient du service (detail.acheter_url) ; seule une adresse https est suivie. La page
-  // n'écrit aucune adresse absolue en dur (test_la_page_est_autonome) : le repli est composé.
-  let acheter = 'https:' + '//velaglass.ca/lunettes.html';
-  try { if (new URL(String(ev.acheter_url || '')).protocol === 'https:') acheter = String(ev.acheter_url); } catch (e) { /* repli */ }
+  // L'adresse d'achat vient du service (detail.acheter_url, ou la présence déjà lue) ; seule une adresse
+  // https est suivie.
+  const acheter = adresseAchat(e.acheter_url);
   const lunettes = window.IRIS && window.IRIS.lunettes;
-  p.corps.append(el('h3', {}, 'Cette fonction marche avec les lunettes VELA'));
+  const titre = e.titre || 'Cette fonction marche avec les lunettes VELA';
+  p.corps.append(el('h3', {}, titre));
   p.corps.append(el('p', { class: 'note', role: 'status' },
-    'Connectez vos lunettes VELA à ce téléphone ou à votre ordinateur pour utiliser cette fonction.'));
+    e.texte || 'Connectez vos lunettes VELA à ce téléphone ou à votre ordinateur pour utiliser cette fonction.'));
   if (!(lunettes && lunettes.disponible)) {
     p.corps.append(el('p', { class: 'note-faible' }, (lunettes && lunettes.ios) || !('bluetooth' in navigator)
-      ? "Dehors, sur iPhone, utilisez l'app IRIS : Safari ne peut pas se connecter aux lunettes. Ici, ces fonctions marchent quand les lunettes sont connectées à votre ordinateur."
+      ? "Safari ne peut pas se connecter aux lunettes. Sur iPhone, la connexion aux lunettes passera par l'app IRIS, qui n'est pas encore disponible. D'ici là, ces fonctions marchent dans Safari quand les lunettes sont connectées à votre ordinateur."
       : "Ce navigateur ne peut pas se connecter aux lunettes. Sur Android, ouvrez cette page dans Chrome, ou connectez les lunettes à votre ordinateur."));
   }
   const actions = el('div', { class: 'ligne' });
@@ -1070,7 +1180,7 @@ function afficherLunettesRequises(ev) {
   }
   actions.append(el('a', { class: 'bouton-contour', href: acheter, target: '_blank', rel: 'noopener noreferrer' }, 'Acheter les lunettes'));
   p.corps.append(actions);
-  lire('Cette fonction marche avec les lunettes VELA.');
+  lire(titre + '.');
 }
 
 bus.on('iris.session_refusee', async (ev) => {
@@ -1093,7 +1203,7 @@ bus.on('iris.ws', (ev) => {
   connexion.ws = !!ev.ouvert;
   majLiaison();
   if (ev.refuse) verifier();          // verrouillage ou session : /api/status dira lequel
-  if (ev.ouvert) majMemoire();
+  if (ev.ouvert) { majMemoire(); majApercu(); }
 });
 bus.on('hello', () => { if (phase === 'pret') marquerConnecte(); });
 bus.on('verrou.etat', (ev) => {
@@ -1204,16 +1314,20 @@ function reduireImage(fichier, coteMax) {
 // l'ordinateur resté à la maison : il reste dans l'application de bureau.
 const MODES_PHOTO = ['scene', 'lecture', 'billets', 'objet', 'couleur', 'personnes', 'affichage'];
 
-function ouvrirVision(ctx) {
+async function ouvrirVision(ctx) {
   const corps = ctx.corps;
-  corps.append(el('p', { class: 'note' },
+  // Tout le contenu de la fonction reste caché tant que les lunettes ne sont pas confirmées : sans elles,
+  // l'appareil photo ne s'ouvre pas et aucune photo ne part vers l'ordinateur pour y être refusée.
+  const contenu = el('div', { class: 'panneau-fonction', hidden: true });
+  corps.append(contenu);
+  contenu.append(el('p', { class: 'note' },
     "Choisissez ce que vous voulez savoir, puis prenez la photo avec ce téléphone. Elle est réduite ici, envoyée à votre ordinateur, puis décrite. " +
     "C'est la description d'une photo, pas une surveillance en direct : elle ne signale pas un obstacle qui apparaît ensuite."));
 
   const question = el('input', { id: 'vision-question', class: 'champ', type: 'text', autocomplete: 'off', placeholder: 'Ex. : est-ce du lait ?' });
   const retenirCase = el('input', { type: 'checkbox', id: 'vision-retenir' });
   retenirCase.checked = true;
-  corps.append(el('div', { class: 'carte' },
+  contenu.append(el('div', { class: 'carte' },
     el('label', { for: 'vision-question', class: 'etiquette' }, 'Question précise (facultatif)'),
     question,
     el('label', { class: 'case', for: 'vision-retenir' }, retenirCase, el('span', {}, 'Retenir la description sur l’ordinateur, pour « Où ai-je posé ? »')),
@@ -1222,7 +1336,12 @@ function ouvrirVision(ctx) {
   const liste = el('div', { class: 'liste-boutons', role: 'group', 'aria-labelledby': 'vision-modes-titre' },
     el('p', { class: 'note-faible' }, 'Chargement des modes…'));
   const resultat = el('div', { class: 'resultat', 'aria-live': 'polite', hidden: true });
-  corps.append(el('h3', { id: 'vision-modes-titre', class: 'etiquette' }, 'Que voulez-vous savoir ?'), liste, resultat);
+  contenu.append(el('h3', { id: 'vision-modes-titre', class: 'etiquette' }, 'Que voulez-vous savoir ?'), liste, resultat);
+
+  const garde = await gardeLunettes(ctx, {
+    fonction: 'vision', libelle: 'la description de photos', contenu,
+    noteSecours: 'La caméra des lunettes arrive ; en attendant, la photo est prise avec ce téléphone.',
+  });
 
   let enCours = false;
   const boutons = [];
@@ -1252,6 +1371,9 @@ function ouvrirVision(ctx) {
 
   function prendrePhoto(m) {
     if (enCours) return;
+    // Présence pas (ou plus) confirmée : on revérifie au lieu d'ouvrir l'appareil photo. Le test est
+    // synchrone : l'ouverture de l'appareil photo doit rester dans le geste, sinon iOS la refuse.
+    if (garde.presentes() !== true) { garde.verifier({ depuisAction: true }); return; }
     const entree = $('photo');
     entree.value = '';
     entree.onchange = () => {
@@ -1295,6 +1417,8 @@ function ouvrirVision(ctx) {
     } catch (err) {
       clearInterval(chrono);
       resultat.textContent = '';
+      // 428 : l'invitation « lunettes VELA » s'affiche dans ce panneau (et y est lue) ; rien d'autre à dire.
+      if (garde.refus(err)) { resultat.hidden = true; return; }
       resultat.append(el('h3', {}, m.nom), el('p', { class: 'resultat-erreur' }, (err && err.message) || String(err)));
       if (err && err.code === 'consentement') {
         resultat.append(el('p', { class: 'note' }, "Cette autorisation se donne sur l'ordinateur, dans IRIS › Confidentialité."));
@@ -1305,21 +1429,25 @@ function ouvrirVision(ctx) {
       boutons.forEach((b) => { b.disabled = false; });
     }
   }
+  return () => garde.fermer();
 }
 
 // ------------------------------------------------------------------ fonction : où ai-je posé ?
-function ouvrirOuEst(ctx) {
+async function ouvrirOuEst(ctx) {
   const corps = ctx.corps;
-  corps.append(el('p', { class: 'note' },
+  const contenu = el('div', { class: 'panneau-fonction', hidden: true });
+  corps.append(contenu);
+  contenu.append(el('p', { class: 'note' },
     "IRIS cherche dans ce qu'elle a décrit ou dans ce que vous lui avez dit, avec la date. Elle ne peut pas savoir où se trouve " +
     "un objet qu'elle n'a jamais vu, et l'objet a pu être déplacé depuis."));
   const champQ = el('input', { id: 'ouest-question', class: 'champ', type: 'text', autocomplete: 'off', placeholder: 'Ex. : mes clés', enterkeyhint: 'search' });
   const dicter = el('button', { type: 'button', class: 'bouton-sombre' }, 'Dicter');
   const chercher = el('button', { type: 'button', class: 'holo' }, 'Chercher');
   const resultat = el('div', { class: 'resultat', 'aria-live': 'polite', hidden: true });
-  corps.append(el('div', { class: 'carte' },
+  contenu.append(el('div', { class: 'carte' },
     el('label', { for: 'ouest-question', class: 'etiquette' }, 'Quel objet cherchez-vous ?'),
     el('div', { class: 'ligne' }, champQ, dicter)), chercher, resultat);
+  const garde = await gardeLunettes(ctx, { fonction: 'ou_est', libelle: '« Où ai-je posé ? »', contenu });
 
   dicter.addEventListener('click', async () => {
     dicter.disabled = true;
@@ -1340,6 +1468,7 @@ function ouvrirOuEst(ctx) {
   async function lancer() {
     const q = champQ.value.trim();
     if (!q) { toast("Dites ou écrivez l'objet à chercher.", 'info'); champQ.focus(); return; }
+    if (garde.presentes() !== true) { garde.verifier({ depuisAction: true }); return; }
     chercher.disabled = true;
     resultat.hidden = false;
     resultat.textContent = '';
@@ -1361,23 +1490,29 @@ function ouvrirOuEst(ctx) {
       lire(r.reponse);
     } catch (err) {
       resultat.textContent = '';
+      if (garde.refus(err)) { resultat.hidden = true; return; }
       resultat.append(el('p', { class: 'resultat-erreur' }, err.message));
     } finally {
       chercher.disabled = false;
     }
   }
+  return () => garde.fermer();
 }
 
 // ------------------------------------------------------------------ fonction : sous-titres géants
-function ouvrirSousTitres(ctx) {
+async function ouvrirSousTitres(ctx) {
   const { corps, surFermeture } = ctx;
-  corps.append(
+  const contenu = el('div', { class: 'panneau-fonction', hidden: true });
+  corps.append(contenu);
+  contenu.append(
     el('p', { class: 'note' },
       "Les sous-titres affichent ce qu'entend le micro de votre ordinateur, ou celui des lunettes quand elles sont reliées à l'ordinateur. " +
       'La reconnaissance se fait sur l’ordinateur, sans Internet.'),
     el('p', { class: 'note' },
       "Dehors, l'ordinateur resté à la maison n'entend pas votre conversation : cette fonction sert près de lui. " +
-      'Transcription approximative : noms propres, accents marqués, bruit et voix superposées sont mal reconnus ; pas de ponctuation, et IRIS n’indique pas qui parle.'));
+      'Transcription approximative : noms propres, accents marqués, bruit et voix superposées sont mal reconnus ; pas de ponctuation, et IRIS n’indique pas qui parle.'),
+    el('p', { class: 'note' },
+      'Enregistrer ou transcrire une conversation à laquelle vous ne participez pas est illégal. Prévenez les personnes présentes : elles ont des droits sur ce qui les concerne.'));
   const etat = el('p', { class: 'note', role: 'status' }, "Vérification de l'écoute sur l'ordinateur…");
   const bascule = el('button', { type: 'button', class: 'holo' }, 'Démarrer les sous-titres');
   const moins = el('button', { type: 'button', class: 'bouton-sombre', 'aria-label': 'Réduire le texte' }, 'A−');
@@ -1387,8 +1522,10 @@ function ouvrirSousTitres(ctx) {
   const lignes = el('div', { 'aria-live': 'polite' });
   const partiel = el('p', { class: 'st-partiel', 'aria-hidden': 'true' });
   ecran.append(vide, lignes, partiel);
-  corps.append(etat, bascule, el('div', { class: 'ligne' }, moins, plus),
-    el('p', { class: 'note-faible' }, 'Fermer ce panneau arrête les sous-titres démarrés d’ici.'), ecran);
+  contenu.append(etat, bascule, el('div', { class: 'ligne' }, moins, plus),
+    el('p', { class: 'note-faible' },
+      'Fermer ce panneau, quitter cet écran ou verrouiller le téléphone arrête les sous-titres démarrés d’ici : le micro de la maison ne reste pas ouvert sans vous. Si cet arrêt ne parvient pas à l’ordinateur, il les arrête lui-même après 30 minutes sans nouvelles de ce téléphone.'),
+    ecran);
 
   let taille = Number(memoire('iris_taille_st')) || 2.25;
   const appliquerTaille = () => { ecran.style.setProperty('--taille-st', taille + 'rem'); retenir('iris_taille_st', String(taille)); };
@@ -1398,6 +1535,8 @@ function ouvrirSousTitres(ctx) {
 
   let actif = false;
   let demarreIci = false;
+  let arreteEnArrierePlan = false;
+  let garde = null;
   function ajouterLigne(texte) {
     if (!texte) return;
     vide.remove();
@@ -1408,6 +1547,7 @@ function ouvrirSousTitres(ctx) {
   function majEtat(e) {
     if (!e || typeof e !== 'object') return;
     actif = !!e.sous_titres;
+    if (!actif) demarreIci = false;
     bascule.textContent = actif ? 'Arrêter les sous-titres' : 'Démarrer les sous-titres';
     bascule.classList.toggle('rouge', actif);
     let t = actif ? "Sous-titres en marche sur l'ordinateur." : 'Sous-titres arrêtés.';
@@ -1416,6 +1556,9 @@ function ouvrirSousTitres(ctx) {
     if (actif && !api.evenementsOuverts()) t += ' Liaison en direct coupée : le texte arrive toutes les deux secondes environ.';
     etat.textContent = t;
     eveil('sous-titres', actif);
+    // Sous-titres en marche (démarrés d'ici ou sur l'ordinateur) sans lunettes : la garde prévient sans
+    // cacher « Arrêter » ; arrêter reste permis.
+    if (actif && garde && garde.presentes() === false) garde.verifier();
   }
   const desabonnements = [
     bus.on('ecoute.sous_titre', (ev) => {
@@ -1424,8 +1567,16 @@ function ouvrirSousTitres(ctx) {
     }),
     bus.on('ecoute.etat', (ev) => { if ('sous_titres' in ev) majEtat(ev); }),
   ];
+  // Sous-titres démarrés d'ici : l'ordinateur les arrête seul après 30 minutes sans consultation de ce
+  // téléphone (routes_ecoute.DUREE_MAX_DISTANT_S). Tant que ce panneau est ouvert et visible, on relit
+  // l'état toutes les 5 minutes : c'est cette consultation qui garde le micro ouvert, et rien d'autre.
+  let derniereConsultation = Date.now();
   // Liaison en direct coupée : on relit la transcription de la session par sondage.
   const sondage = setInterval(async () => {
+    if (actif && demarreIci && !document.hidden && Date.now() - derniereConsultation >= 300000) {
+      derniereConsultation = Date.now();
+      api.get('/api/ecoute/etat').then(majEtat).catch(() => null);
+    }
     if (!actif || api.evenementsOuverts()) return;
     try {
       const d = await api.get('/api/ecoute/transcription');
@@ -1439,6 +1590,16 @@ function ouvrirSousTitres(ctx) {
   }, 2000);
 
   bascule.addEventListener('click', async () => {
+    if (!actif) {
+      // Démarrer exige les lunettes, puis un accord explicite : ce geste ouvre à distance le micro d'une
+      // pièce de la maison, où d'autres personnes peuvent parler.
+      if (!garde || garde.presentes() !== true) { if (garde) garde.verifier({ depuisAction: true }); return; }
+      const ok = await confirmer(
+        "Cela ouvre le micro de votre ordinateur, à la maison : tout ce qu'il entend sera transcrit sur l'ordinateur, " +
+        "y compris la voix de personnes présentes qui n'ont rien accepté. Continuer ?",
+        { oui: 'Ouvrir le micro', non: 'Annuler' });
+      if (!ok) return;
+    }
     bascule.disabled = true;
     try {
       if (actif) {
@@ -1451,6 +1612,7 @@ function ouvrirSousTitres(ctx) {
         majEtat(e);
       }
     } catch (err) {
+      if (garde && garde.refus(err, { garderContenu: actif })) return;
       etat.textContent = err.message;
       toast(err.message, 'erreur');
     } finally {
@@ -1464,14 +1626,50 @@ function ouvrirSousTitres(ctx) {
     if (err.status === 404) bascule.disabled = true;
   });
 
+  // Page qui quitte l'écran (autre application, écran verrouillé) ou qui se ferme : iOS la suspend, et la
+  // fermeture du panneau ne s'exécuterait jamais. On arrête tout de suite ce qui a été démarré d'ici, par
+  // une requête qui survit à la suspension, plutôt que de laisser le micro de la maison ouvert sans limite.
+  function arreterDepuisIci() {
+    if (!(demarreIci && actif)) return;
+    demarreIci = false;
+    arreteEnArrierePlan = true;
+    api.post('/api/ecoute/sous-titres/arreter', {}, { keepalive: true, delai: 10000 })
+      .then((r) => majEtat(r && r.etat))
+      .catch(() => { /* ordinateur injoignable : l'état sera relu au retour à l'écran */ });
+  }
+  const surVisibilite = () => {
+    if (document.hidden) { arreterDepuisIci(); return; }
+    api.get('/api/ecoute/etat').then(majEtat).catch(() => null);
+    if (arreteEnArrierePlan) {
+      arreteEnArrierePlan = false;
+      toast("Sous-titres arrêtés quand la page a quitté l'écran. Touchez « Démarrer » pour les reprendre.", 'info');
+    }
+  };
+  document.addEventListener('visibilitychange', surVisibilite);
+  window.addEventListener('pagehide', arreterDepuisIci);
+
+  let panneauFerme = false;
   surFermeture(() => {
+    panneauFerme = true;
     desabonnements.forEach((f) => f());
     clearInterval(sondage);
+    document.removeEventListener('visibilitychange', surVisibilite);
+    window.removeEventListener('pagehide', arreterDepuisIci);
     eveil('sous-titres', false);
-    if (demarreIci && actif) api.post('/api/ecoute/sous-titres/arreter').catch(() => { /* l'ordinateur les arrêtera à la prochaine purge */ });
+    if (garde) garde.fermer();
+    if (demarreIci && actif) api.post('/api/ecoute/sous-titres/arreter', {}, { keepalive: true }).catch(() => { /* l'ordinateur les arrêtera à la prochaine purge */ });
   });
-}
 
+  garde = await gardeLunettes(ctx, {
+    fonction: 'sous_titres', libelle: 'les sous-titres', contenu,
+    enCours: () => actif,
+    avertissementEnCours: 'Les sous-titres en marche peuvent être arrêtés d’ici ; pour les redémarrer, reconnectez-les.',
+  });
+  // Panneau fermé pendant le chargement de la garde : son nettoyage a déjà tourné sans garde à fermer.
+  // Sans ceci, la garde, son sondage et ses écouteurs restaient actifs derrière un panneau disparu.
+  if (panneauFerme) { garde.fermer(); return; }
+  if (actif && garde.presentes() === false) garde.verifier();
+}
 // ------------------------------------------------------------------ fonction : réglages
 function interrupteur(id, titre, sous, coche, surChangement) {
   const entree = el('input', { type: 'checkbox', role: 'switch', id, class: 'interrupteur' });
@@ -1559,23 +1757,29 @@ function ouvrirReglages(ctx) {
     texteAlertes.textContent = err.status === 404 ? "Les alertes sonores ne sont pas disponibles sur votre ordinateur." : err.message;
   });
 
-  // Ce qui marche dehors, et ce qui ne marche pas
+  // Ce qui marche dehors, et ce qui ne marche pas — même contenu que docs/MODE-DEHORS.md (sections 2 à 5).
   const limites = el('details', { class: 'carte' }, el('summary', {}, 'Ce qui marche dehors, et ce qui ne marche pas'));
   const liste = (titre, elements) => [el('p', { class: 'etiquette' }, titre), el('ul', { class: 'liste-limites' }, elements.map((t) => el('li', {}, t)))];
   limites.append(
-    ...liste('Ce qui marche', [
-      "Parler à IRIS ou lui écrire, et entendre sa réponse lue par ce téléphone (donc dans les lunettes, si elles sont la sortie audio du téléphone).",
-      'Faire décrire une photo prise avec ce téléphone, et « Où ai-je posé ? ».',
-      'Les textos et appels préparés par IRIS, envoyés par vous depuis ce téléphone.',
-      "Les alertes sonores entendues à la maison par l'ordinateur, affichées ici tant que la page est ouverte.",
+    ...liste('Avec vos lunettes VELA', [
+      "Les fonctions qui captent ou qui agissent exigent vos lunettes VELA : décrire une photo, « Où ai-je posé ? », sous-titres, guidage à pied, interprète, vision partagée, analyse d'un reçu, comparaison de prix.",
+      "Sur Android, dans Chrome et par une adresse en https : « Mes lunettes › Connecter mes lunettes », puis gardez cette page ouverte. Elle confirme leur présence à votre ordinateur chaque minute.",
+      "Sur iPhone, la connexion aux lunettes passera par l'app IRIS, qui n'est pas encore disponible. Dans Safari, ces fonctions ne marchent que si les lunettes sont reliées à votre ordinateur, donc près de lui.",
+      "La caméra des lunettes arrive ; en attendant, la photo à décrire et la vision partagée utilisent la caméra de ce téléphone, lunettes présentes.",
+    ]),
+    ...liste('Sans lunettes', [
+      "Vos reçus (consulter, corriger, effacer, exporter), les zones sans mémoire, le mode invité, les réglages, et « Déconnecter ce téléphone ».",
+      "Les textos et appels préparés par IRIS, que vous envoyez vous-même depuis ce téléphone, et les alertes sonores déjà actives sur l'ordinateur.",
+      "Écrire ou dicter à IRIS : un aperçu de 10 messages au total pour cette installation d'IRIS, pas plus. Le compte restant s'affiche sous le champ.",
+      "Le verrouillage à distance se fait depuis la page « Verrouiller IRIS à distance » de VELA, sans lunettes.",
     ]),
     ...liste('Ce qu’il faut', [
       "L'ordinateur allumé, IRIS ouverte, Internet des deux côtés, et l'application de réseau privé active sur ce téléphone.",
       "L'écran de ce téléphone allumé et IRIS au premier plan : iOS suspend une page web dès qu'elle quitte l'écran.",
     ]),
     ...liste('Ce qui ne marche pas dehors', [
-      "La caméra et les boutons des lunettes : ils sont reliés à l'ordinateur par Bluetooth, dont la portée est d'une dizaine de mètres.",
-      "Les sous-titres de votre conversation : le micro qui écoute est celui de l'ordinateur.",
+      "Les sous-titres de votre conversation : le micro qui écoute est celui de l'ordinateur, resté à la maison.",
+      "Les boutons des lunettes : ce téléphone ne les lit pas.",
       'Les notifications, écran verrouillé ou page en arrière-plan, et la vibration sur iPhone.',
     ]),
     ...liste('Délais et confidentialité', [

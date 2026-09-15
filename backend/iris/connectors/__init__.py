@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ..config import Settings
 from ..security.secrets import SecretStore
-from .base import BaseConnector, ChatOptions, Chunk, ConnectorError, ToolSpec
+from .base import BaseConnector, ChatOptions, Chunk, ConnectorError, MoteurTropLent, ToolSpec
 from .claude import CLAUDE_MODELS, ClaudeConnector
 from .gemini import GEMINI_MODELS, modele_gratuit, GeminiConnector
 from .openai_compat import GPT_MODELS, OPENROUTER_MODELS, OpenAICompatibleConnector, OpenRouterConnector, VelaConnector
@@ -13,6 +13,7 @@ __all__ = [
     "ChatOptions",
     "Chunk",
     "ConnectorError",
+    "MoteurTropLent",
     "ToolSpec",
     "build_connector",
     "agent_catalog",

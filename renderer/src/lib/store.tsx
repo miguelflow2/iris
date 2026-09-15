@@ -123,6 +123,8 @@ export interface PresenceLunettes {
   apercu_total: number
   acheter_url: string
   limite?: string
+  /** La caméra des lunettes écrit-elle vraiment la commande photo ? Faux tant que le protocole n'est pas confirmé. */
+  camera_lunettes_active?: boolean
 }
 
 /** Refus « cette fonction marche avec les lunettes VELA » à montrer (428 lunettes_requises ou garde d'écran). */
@@ -223,7 +225,8 @@ interface StoreValue {
   answerConfirm: (approved: boolean) => void
   consentRequest: ConsentRequest | null
   closeConsentRequest: () => void
-  appInfo: { version: string; platform: string; userData: string; logPath: string } | null
+  /** isPackaged : vrai dans la version installée (absent d'un ancien process principal ou du navigateur) */
+  appInfo: { version: string; platform: string; userData: string; logPath: string; isPackaged?: boolean } | null
   favoris: Favori[]
   basculerFavori: (f: Favori) => void
   estFavori: (id: string) => boolean

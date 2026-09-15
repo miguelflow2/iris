@@ -14,6 +14,16 @@
 // sons lointains manqués) ; la détection prend environ 1 à 3 secondes ; l'écoute tourne app ouverte, ou en
 // arrière-plan tant qu'iOS garde le micro actif (un appel ou Siri l'interrompt) ; « ton prénom » n'est pas
 // détecté sur l'iPhone. Rien n'est enregistré : le son est analysé puis oublié.
+//
+// Lunettes d'abord, aussi dans la durée : l'activation exige les lunettes, et le veilleur les revérifie
+// chaque seconde. Absentes 10 minutes de suite, les alertes s'arrêtent seules et IRIS le dit à voix haute.
+// Pourquoi pas tout de suite : une coupure Bluetooth de quelques secondes (lunettes posées, rangées un
+// instant) ne doit pas laisser une personne malentendante sans alerte en pleine rue. Le délai de
+// 10 minutes est une proposition, à faire trancher par Miguel.
+//
+// En arrière-plan, le pont vers l'ordinateur est fermé : le mode confidentiel et le verrou ne peuvent plus
+// arriver par événement. Le veilleur redemande GET /api/settings environ chaque minute et arrête les alertes
+// si l'un ou l'autre est actif (voir sonderEnArrierePlan).
 
 import AVFoundation
 import Foundation
@@ -101,9 +111,15 @@ final class AlertesSonoresTelephone: ServiceAlertes {
     private(set) var voixActive: Bool
     private(set) var notificationsPermises: Bool?
 
-    let limite = "Détection faite sur cet iPhone par le classifieur de sons d'iOS, sans envoi du son. Il peut se tromper : la musique ou la télévision déclenchent parfois une fausse alerte, un son lointain ou étouffé peut être manqué. Compte environ 1 à 3 secondes entre le son et l'alerte. L'écoute tourne app ouverte, ou en arrière-plan tant qu'iOS garde le micro actif ; un appel ou Siri l'interrompt. Pendant les alertes, « Dis-moi Iris » est en pause. Ne remplace pas un avertisseur de fumée adapté (lumineux ou vibrant)."
+    let limite = "Détection faite sur cet iPhone par le classifieur de sons d'iOS, sans envoi du son. Il peut se tromper : la musique ou la télévision déclenchent parfois une fausse alerte, un son lointain ou étouffé peut être manqué. Compte environ 1 à 3 secondes entre le son et l'alerte. L'écoute tourne app ouverte, ou en arrière-plan tant qu'iOS garde le micro actif ; un appel ou Siri l'interrompt. Pendant les alertes, « Dis-moi Iris », « Parler à IRIS », l'interprète et les dictées sont en pause. Sans lunettes VELA présentes pendant 10 minutes de suite, les alertes s'arrêtent seules et IRIS le dit. En arrière-plan, l'iPhone redemande à ton ordinateur environ chaque minute si le mode confidentiel ou le verrou est actif : l'arrêt peut donc prendre jusqu'à une minute environ, et si l'ordinateur ne répond pas, les alertes continuent. Ne remplace pas un avertisseur de fumée adapté (lumineux ou vibrant)."
 
-    @ObservationIgnored var surAlerte: (@MainActor (AlerteSonore) -> Void)?
+    /// La dernière alerte signalée, essais compris : la racine de l'app l'observe pour le plein écran.
+    private(set) var derniereSignalee: AlerteSonore?
+    /// Depuis quand les lunettes manquent pendant que les alertes tournent (nil : présentes).
+    private(set) var lunettesAbsentesDepuis: Date?
+
+    nonisolated static let delaiSansLunettes: TimeInterval = 600
+    nonisolated static let messageArretSansLunettes = "Lunettes absentes depuis 10 minutes : alertes sonores arrêtées."
 
     @ObservationIgnored private let micro: MicroPerception
     @ObservationIgnored private let voix: any ServiceVoix
@@ -117,6 +133,18 @@ final class AlertesSonoresTelephone: ServiceAlertes {
     @ObservationIgnored private var derniereAlerte: [String: Date] = [:]
     @ObservationIgnored private var abonnement: AbonnementEvenements?
     @ObservationIgnored private var veilleur: Task<Void, Never>?
+    @ObservationIgnored private let pont: any ServicePontPC
+    @ObservationIgnored private var dernierSondageArrierePlan: Date?
+    @ObservationIgnored private var sondageEnCours = false
+
+    /// En arrière-plan, le WebSocket et la surveillance du pont sont fermés (ClientPontPC.suspendre) : ni
+    /// settings.updated (mode confidentiel) ni verrou.etat n'arrivent. Le micro, lui, continue d'analyser.
+    /// Les alertes redemandent donc elles-mêmes, à cet intervalle, l'état de l'ordinateur.
+    nonisolated static let intervalleSondageArrierePlan: TimeInterval = 60
+
+    enum DecisionSondage: Equatable {
+        case continuer, confidentiel, verrou
+    }
 
     private static let cleTypes = "iris_alertes_types"
     private static let cleSensibilite = "iris_alertes_sensibilite"
@@ -147,6 +175,7 @@ final class AlertesSonoresTelephone: ServiceAlertes {
         self.micro = micro
         self.voix = voix
         self.garde = garde
+        self.pont = pont
         let enregistres = UserDefaults.standard.stringArray(forKey: Self.cleTypes)
         typesChoisis = Set(enregistres ?? ["alarme", "sirene", "klaxon", "sonnette", "porte"])
         let s = UserDefaults.standard.object(forKey: Self.cleSensibilite) as? Double
@@ -167,11 +196,6 @@ final class AlertesSonoresTelephone: ServiceAlertes {
                 if let alerte = evenement.decoder(AlerteSonore.self) {
                     self.dernieresOrdinateur.insert(alerte, at: 0)
                     if self.dernieresOrdinateur.count > 20 { self.dernieresOrdinateur.removeLast() }
-                }
-            case "settings.updated":
-                if evenement.champs["settings"]?["privacy_mode"]?.booleen == true, self.actives {
-                    self.desactiver()
-                    self.erreur = GardeCapture.messageConfidentiel
                 }
             default:
                 break
@@ -243,6 +267,8 @@ final class AlertesSonoresTelephone: ServiceAlertes {
         consecutives.removeAll()
         actives = true
         erreur = nil
+        lunettesAbsentesDepuis = nil
+        dernierSondageArrierePlan = nil
         demarrerVeilleur()
     }
 
@@ -255,6 +281,64 @@ final class AlertesSonoresTelephone: ServiceAlertes {
         boite.remplacer(par: nil)
         consecutives.removeAll()
         attenteMicro = false
+        lunettesAbsentesDepuis = nil
+    }
+
+    /// Arrêt imposé (mode confidentiel, verrou, lunettes absentes) : la raison reste affichée.
+    func desactiver(raison: String) {
+        guard actives else { return }
+        desactiver()
+        erreur = raison
+    }
+
+    /// Faut-il arrêter faute de lunettes ? Fonction pure (testée) : absentes depuis au moins le délai.
+    nonisolated static func doitArreterSansLunettes(absentesDepuis: Date?, maintenant: Date,
+                                                   delai: TimeInterval) -> Bool {
+        guard let absentesDepuis else { return false }
+        return maintenant.timeIntervalSince(absentesDepuis) >= delai
+    }
+
+    /// Faut-il sonder l'ordinateur maintenant ? Fonction pure (testée) : en arrière-plan seulement, pont réglé,
+    /// au plus une fois par intervalle.
+    nonisolated static func doitSonderArrierePlan(enArrierePlan: Bool, pontConfigure: Bool, dernier: Date?,
+                                                  maintenant: Date) -> Bool {
+        guard enArrierePlan, pontConfigure else { return false }
+        guard let dernier else { return true }
+        return maintenant.timeIntervalSince(dernier) >= intervalleSondageArrierePlan
+    }
+
+    /// Ce que dit le sondage (GET /api/settings) : mode confidentiel → arrêt ; 401 « verrouillée » (verrou ou
+    /// effacement à distance) → arrêt ; toute autre erreur (ordinateur injoignable, session expirée) → on
+    /// continue, faute de savoir : c'est écrit dans `limite`. Fonction pure (testée).
+    nonisolated static func decisionSondage(privacyMode: Bool?, erreur: Error?) -> DecisionSondage {
+        if let erreur {
+            if let pont = erreur as? ErreurPont, case .verrouillee = pont { return .verrou }
+            return .continuer
+        }
+        return privacyMode == true ? .confidentiel : .continuer
+    }
+
+    private func sonderEnArrierePlan() async {
+        guard !sondageEnCours else { return }
+        sondageEnCours = true
+        defer { sondageEnCours = false }
+        dernierSondageArrierePlan = Date()
+        var decision = DecisionSondage.continuer
+        do {
+            let lus: ReglagesIRIS = try await pont.get("/api/settings", delai: 10)
+            decision = Self.decisionSondage(privacyMode: lus.privacyMode, erreur: nil)
+        } catch {
+            decision = Self.decisionSondage(privacyMode: nil, erreur: error)
+        }
+        guard actives else { return }
+        switch decision {
+        case .continuer:
+            break
+        case .confidentiel:
+            desactiver(raison: GardeCapture.messageConfidentiel)
+        case .verrou:
+            desactiver(raison: GardeCapture.messageVerrou)
+        }
     }
 
     private func nouvelAnalyseur(_ format: AVAudioFormat) {
@@ -279,6 +363,24 @@ final class AlertesSonoresTelephone: ServiceAlertes {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, self.actives else { return }
                 self.attenteMicro = self.micro.registre.secondesSansSon > 3
+                let maintenant = Date()
+                if Self.doitSonderArrierePlan(enArrierePlan: UIApplication.shared.applicationState == .background,
+                                              pontConfigure: self.pont.adresse != nil,
+                                              dernier: self.dernierSondageArrierePlan, maintenant: maintenant) {
+                    // Sans attendre dans la boucle : le délai de 10 s ne doit pas retarder le contrôle des lunettes.
+                    Task { await self.sonderEnArrierePlan() }
+                }
+                if self.garde.lunettesPresentes {
+                    self.lunettesAbsentesDepuis = nil
+                } else if self.lunettesAbsentesDepuis == nil {
+                    self.lunettesAbsentesDepuis = maintenant
+                }
+                if Self.doitArreterSansLunettes(absentesDepuis: self.lunettesAbsentesDepuis, maintenant: maintenant,
+                                                delai: Self.delaiSansLunettes) {
+                    self.desactiver(raison: Self.messageArretSansLunettes)
+                    Annonce.urgent(Self.messageArretSansLunettes, voix: self.voix)
+                    return
+                }
             }
         }
     }
@@ -331,6 +433,6 @@ final class AlertesSonoresTelephone: ServiceAlertes {
         contenu.sound = .default
         let demande = UNNotificationRequest(identifier: "iris-alerte-\(UUID().uuidString)", content: contenu, trigger: nil)
         UNUserNotificationCenter.current().add(demande) { _ in }
-        surAlerte?(alerte)
+        derniereSignalee = alerte
     }
 }

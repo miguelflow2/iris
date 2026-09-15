@@ -111,6 +111,9 @@ function creerLiaison() {
         body: corps === undefined ? undefined : JSON.stringify(corps),
         signal: controle.signal,
         cache: 'no-store',
+        // {keepalive: true} : la requête survit à une page qui quitte l'écran ou se ferme (arrêt d'une
+        // écoute démarrée d'ici). Réservé aux petits corps : le navigateur les limite à quelques Ko.
+        keepalive: !!opts.keepalive,
       });
     } catch (e) {
       clearTimeout(minuterie);

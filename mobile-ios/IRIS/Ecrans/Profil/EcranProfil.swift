@@ -5,6 +5,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranProfil: View {
     @Environment(EnvironnementIRIS.self) private var env
     @Environment(\.openURL) private var ouvrirURL
@@ -194,6 +195,7 @@ struct EcranProfil: View {
 }
 
 /// Les limites réelles de l'app iPhone, dites telles quelles.
+@MainActor
 struct EcranLimites: View {
     var body: some View {
         ScrollView {
@@ -202,10 +204,14 @@ struct EcranLimites: View {
                     puce("Elle est la voix et l'oreille d'IRIS dehors : la parole est reconnue sur l'iPhone, le texte part à ton ordinateur, qui fait le travail, et la réponse est lue dans tes lunettes.")
                     puce("Interprète : tu parles, puis l'autre personne ; la traduction est faite par ton ordinateur, la voix dans l'autre langue par l'iPhone.")
                     puce("Cours : relire tes fiches, questions et transcriptions ; en garder une copie sur l'iPhone.")
+                    puce("Reçus, comparaison de prix, pas à pas, entraînement et résumé du jour : l'iPhone prend la photo et lit la réponse, ton ordinateur fait le travail.")
                     puce("Mode invité et zones sans mémoire : pour qu'IRIS ne retienne rien quand tu le choisis.")
                 }
                 Carte(titre: "Ce qu'elle ne fait pas") {
                     puce("Écouter « Dis-moi Iris » écran verrouillé ou app fermée : iOS le réserve à Siri.")
+                    puce("Joindre ton ordinateur sans Tailscale hors de ton réseau local : l'app ne passe pas par le relais VELA.")
+                    puce("Piloter le pas à pas ou l'entraînement à la voix écran verrouillé : la voix ne marche qu'app ouverte à l'écran ; sinon, ces commandes se donnent avec les boutons.")
+                    puce("Sortir du mode invité à la voix : IRIS ne sait pas qui parle dans les lunettes ; on en sort depuis l'app.")
                     puce("Répondre sans ton ordinateur : IRIS travaille sur l'ordinateur ; s'il ne répond pas, seules les fonctions locales restent (voir Mode hors ligne).")
                     puce("Garantir un temps de réponse : il dépend du réseau, de l'ordinateur et de la demande. Il est mesuré et affiché sous chaque réponse.")
                     puce("Alerte d'obstacle en temps réel depuis les lunettes : elles n'envoient pas de vidéo en direct par Bluetooth.")

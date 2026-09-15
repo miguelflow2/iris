@@ -21,6 +21,10 @@ import iris.chat as chat_module
 import iris.pas_a_pas as pap
 from iris.connectors.base import BaseConnector, Chunk
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 NOMS_INTERDITS = ("claude", "anthropic", "openai", "gpt", "gemini", "google", "elevenlabs", "vosk", "piper",
                   "openrouter", "ollama", "tavily", "brave")
 
@@ -459,3 +463,26 @@ def test_sans_vision_la_verification_le_dit(client, app, monkeypatch):
     client.post("/api/pas-a-pas/demarrer", json={"etapes": ETAPES_CREPES, "parler": False})
     r = client.post("/api/pas-a-pas/commande", json={"action": "verifier"})
     assert r.status_code == 409 and "vision" in r.json()["detail"]
+
+
+# --------------------------------------------------------------------------- délai maximal du moteur
+def test_un_moteur_muet_ne_fige_pas_la_voix_au_demarrage(client, app, moteur, monkeypatch):
+    """Contre-vérification du 2026-09-14 : sans délai dans ChatService.demander_image_detail, l'écoute gelait
+    90 s sur « guide-moi pas à pas… » puis envoyait la même phrase au modèle pendant que la rédaction tournait
+    encore. Le délai du moteur rend une phrase courte, bien avant."""
+    import time
+
+    class MoteurMuet(FauxMoteur):
+        async def stream(self, messages, system, tools=None, run_tool=None, options=None):
+            await asyncio.sleep(5.0)
+            yield Chunk("text", text=FauxMoteur.reponse)
+            yield Chunk("done")
+
+    accorder(client, "transcript")
+    monkeypatch.setattr(chat_module, "build_connector", lambda name, settings, secrets: MoteurMuet())
+    monkeypatch.setattr(chat_module, "DELAI_MOTEUR_IMAGE_S", 0.3)
+    debut = time.monotonic()
+    phrase = app.state.ctx.voice._intercepter("guide-moi pas à pas pour faire des crêpes")
+    assert time.monotonic() - debut < 3.0, "la voix n'attend pas le moteur au-delà du délai"
+    assert phrase == "Le moteur VELA n'a pas répondu. Réessaie dans un instant."
+    assert not app.state.ctx.pas_a_pas.actif

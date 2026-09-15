@@ -112,6 +112,10 @@ def test_chat_flow_streams_and_persists(client, fake_claude):
     assert "IRIS" in fake_claude.calls[0]["system"]
     events = client.get("/api/privacy/events").json()["events"]
     assert any(e["event_type"] == "external_send" and e["data_type"] == "transcript" for e in events)
+    # Le registre (affiché, exporté en CSV) dit la longueur envoyée, jamais un extrait de la demande.
+    envois = [e for e in events if e["event_type"] == "external_send" and e["data_type"] == "transcript"]
+    assert all("souviens" not in (e.get("detail") or "") for e in envois)
+    assert any((e.get("detail") or "").endswith("caractères") for e in envois)
 
 
 def test_command_requires_confirmation(client, fake_claude):
@@ -149,7 +153,7 @@ def test_local_only_blocks_external(client, fake_claude):
     assert fake_claude.calls == []
 
 
-def test_memory_and_tasks_endpoints(client, fake_claude):
+def test_memory_and_tasks_endpoints(client, fake_claude, lunettes_presentes):
     _setup_ready(client)
     item = client.post("/api/memory", json={"text": "Les lunettes ont une caméra 13 mégapixels"}).json()
     assert client.get("/api/memory", params={"q": "caméra des lunettes"}).json()["items"][0]["id"] == item["id"]
@@ -255,7 +259,7 @@ def test_privacy_mode_blocks_listening(client):
     assert client.get("/api/settings").json()["privacy_mode"] is False
 
 
-def test_routine_short_circuit_and_summary(client, fake_claude):
+def test_routine_short_circuit_and_summary(client, fake_claude, lunettes_presentes):
     """Une phrase déclencheur exécute la routine sans modèle ; le résumé de journée passe par le modèle."""
     _setup_ready(client)
     routine = client.post("/api/routines", json={"name": "Test", "trigger": "mode test", "steps": [{"tool": "open_path", "args": {"path": "~"}}]}).json()

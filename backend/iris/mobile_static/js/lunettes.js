@@ -9,8 +9,9 @@
  * (POST /api/lunettes/attestation, que l'ordinateur ne croit plus au-delà de 150 secondes).
  *
  * Sur iPhone, Safari n'a pas de Bluetooth web : la page ne peut rien attester, et elle le dit. Dehors,
- * sur iPhone, c'est l'app IRIS native qui se connecte aux lunettes ; ici, dans Safari, les fonctions
- * marchent seulement quand les lunettes sont reliées à l'ordinateur.
+ * sur iPhone, la connexion passera par l'app IRIS native, qui n'est ni compilée ni distribuée au 2026-09-14 :
+ * les textes le disent (« pas encore disponible ») ; ici, dans Safari, les fonctions marchent seulement quand
+ * les lunettes sont reliées à l'ordinateur.
  *
  * Ce que la connexion ne fait PAS, et que le panneau dit : elle ne transporte ni le son (Bluetooth
  * audio du téléphone, géré par le système) ni les images (la commande photo des lunettes n'est pas
@@ -94,6 +95,7 @@ const etat = {
   essaiReconnexion: 0,
   minuterieReconnexion: null,
   minuterieAttestation: null,
+  associationRequise: null,   // {nom, identifiant} : ce téléphone attend d'être associé (mot de passe du propriétaire)
 };
 const ecouteurs = new Set();
 const ecoutesAppareil = new WeakSet();
@@ -127,7 +129,7 @@ function notifier() {
 function raisonIndisponible() {
   if (BLUETOOTH) return '';
   if (IOS) {
-    return "Sur iPhone, Safari ne donne pas accès au Bluetooth. Dehors, sur iPhone, utilisez l'app IRIS : c'est elle qui se connecte à vos lunettes. " +
+    return "Sur iPhone, Safari ne donne pas accès au Bluetooth. La connexion aux lunettes passera par l'app IRIS, qui n'est pas encore disponible. " +
       'Ici, les fonctions marchent quand vos lunettes sont connectées à votre ordinateur.';
   }
   if (!window.isSecureContext) {
@@ -200,12 +202,13 @@ function filtresPour(nom) {
   const propre = String(nom || '').trim();
   if (propre) {
     filtres.push({ name: propre });
-    // Le nom annoncé en basse énergie diffère parfois du nom audio (suffixe) : on accepte aussi le
-    // premier mot, comme le fait l'ordinateur (lunettes_presence.attester). L'ordinateur revérifie.
+    // Le premier mot aide seulement à retrouver les lunettes dans la liste du navigateur : l'ordinateur
+    // exige ensuite le nom EXACT et un téléphone associé (lunettes_presence.attester).
     const tete = propre.split(/\s+/)[0];
     if (tete.length >= 3 && tete !== propre) filtres.push({ namePrefix: tete });
   }
-  filtres.push({ services: [SERVICE_LUNETTES] });
+  // Plus de filtre « service 0xae00 » seul (constat du 2026-09-14) : ce service générique est annoncé par
+  // bien d'autres objets Bluetooth, et n'importe lequel aurait pu servir d'attestation.
   return filtres;
 }
 
@@ -253,6 +256,17 @@ async function attester() {
     return true;
   } catch (err) {
     const statutHttp = err && typeof err.status === 'number' ? err.status : -1;
+    if (statutHttp === 403 && err && err.code === 'appareil_non_associe') {
+      // Les bonnes lunettes, mais un téléphone que cet IRIS ne connaît pas encore (constat du 2026-09-14) : le lien
+      // reste ouvert, et le panneau demande le mot de passe du propriétaire pour associer ce téléphone.
+      const message = err.message || "Ce téléphone n'est pas encore associé à vos lunettes sur cet IRIS.";
+      etat.attestation = { derniere: 0, acceptee: false, erreur: message };
+      etat.associationRequise = { nom: corps.nom, identifiant: corps.identifiant };
+      arreterAttestations();
+      etat.erreur = message;
+      notifier();
+      throw erreur(message, statutHttp);
+    }
     if (statutHttp === 403 || statutHttp === 422) {
       // L'ordinateur refuse ces lunettes : on coupe, sans retenter et sans retirer l'attestation d'un autre.
       const message = (err && err.message) || 'Ces lunettes ne sont pas celles associées à votre IRIS.';
@@ -288,15 +302,43 @@ function arreterAttestations() {
   etat.minuterieAttestation = null;
 }
 
+/** Associe CE téléphone aux lunettes connues de l'ordinateur, avec le mot de passe du propriétaire (le mot de
+ * passe n'est ni gardé ni réaffiché), puis reprend les attestations. Lève une erreur lisible en cas de refus. */
+async function associer(motDePasse) {
+  const api = apiIRIS();
+  const demande = etat.associationRequise;
+  if (!api || !demande) throw erreur("Aucune association n'est en attente sur ce téléphone.");
+  await api.post('/api/lunettes/association', { nom: demande.nom, identifiant: demande.identifiant, mot_de_passe: String(motDePasse || '') });
+  etat.associationRequise = null;
+  etat.erreur = '';
+  etat.connexionVoulue = true;
+  notifier();
+  if (await attester()) demarrerAttestations();
+  return statut();
+}
+
+/** Chemin du retrait, avec l'identifiant de CES lunettes : l'ordinateur ne garde qu'une attestation, et celle
+ * d'un autre téléphone (ou de l'app iPhone) qui a réattesté entre-temps ne doit pas être effacée par cette
+ * page. Un ordinateur qui ne connaît pas encore ce paramètre l'ignore (demande faite à la fondation). */
+function cheminRetrait() {
+  const id = (etat.appareil && etat.appareil.id) || memoireLocale(CLE_APPAREIL) || '';
+  return '/api/lunettes/attestation' + (id ? '?identifiant=' + encodeURIComponent(id) : '');
+}
+
 /** Retire l'attestation de CE téléphone, seulement si elle est encore la sienne et encore valable. */
 function retirerAttestation() {
   if (!attestationRecente()) return Promise.resolve(false);
   etat.attestation = { derniere: 0, acceptee: false, erreur: '' };
   const api = apiIRIS();
   if (!api) return Promise.resolve(false);
-  return api.delete('/api/lunettes/attestation', { delai: 10000 })
+  return api.delete(cheminRetrait(), { delai: 10000 })
     .then((d) => { retenirPresence(d); return true; })
     .catch(() => false);   // injoignable : l'ordinateur l'oubliera seul après 150 s
+}
+
+/** Lunettes reliées à l'ordinateur en ce moment (selon sa dernière réponse). */
+function relieesAuPc() {
+  return !!(etat.presence && etat.presence.presentes && etat.presence.source === 'pc');
 }
 
 function surDeconnexion() {
@@ -310,6 +352,9 @@ function surDeconnexion() {
 
 function planifierReconnexion() {
   clearTimeout(etat.minuterieReconnexion);
+  // À la maison, les lunettes gardent souvent une seule liaison basse énergie : la reprendre depuis ce
+  // téléphone couperait celle de l'ordinateur (caméra, boutons). Reliées à l'ordinateur : pas de reprise.
+  if (relieesAuPc()) { suspendreReconnexion(); return; }
   const i = etat.essaiReconnexion;
   if (i >= RECONNEXIONS_MS.length) {
     etat.connexionVoulue = false;
@@ -320,12 +365,21 @@ function planifierReconnexion() {
   etat.minuterieReconnexion = setTimeout(async () => {
     etat.essaiReconnexion += 1;
     if (!etat.connexionVoulue || !etat.appareil || etat.connectees || etat.connexionEnCours) return;
+    try { await presence({ frais: true }); } catch (e) { /* ordinateur injoignable : on garde ce qu'on savait */ }
+    if (relieesAuPc()) { suspendreReconnexion(); return; }
     try {
       await ouvrirLien(etat.appareil);
     } catch (e) {
       if (etat.connexionVoulue && !etat.connectees) planifierReconnexion();
     }
   }, RECONNEXIONS_MS[i]);
+}
+
+function suspendreReconnexion() {
+  etat.connexionVoulue = false;
+  etat.erreur = 'Reconnexion automatique suspendue : vos lunettes sont reliées à votre ordinateur. ' +
+    'Touchez « Connecter mes lunettes » pour les relier à ce téléphone.';
+  notifier();
 }
 
 /** Ouvre le lien GATT avec un appareil déjà choisi, puis atteste. */
@@ -371,25 +425,39 @@ async function connecter() {
   if (etat.connectees) return statut();
   if (etat.connexionEnCours) throw erreur('Connexion déjà en cours…');
   clearTimeout(etat.minuterieReconnexion);
-  // Le navigateur n'ouvre sa liste d'appareils que peu après le geste : le nom connu de l'ordinateur
-  // est normalement déjà en cache ; sinon, on le demande avec un délai court.
-  let nom = etat.nomConnu;
-  if (nom === undefined) {
-    try { nom = ((await presence({ delai: 3000 })) || {}).nom || null; } catch (e) { nom = null; }
-  }
-  if (typeof navigator.bluetooth.getAvailability === 'function') {
-    try {
-      if (!(await navigator.bluetooth.getAvailability())) throw erreur('Le Bluetooth de ce téléphone est désactivé : activez-le, puis réessayez.');
-    } catch (e) {
-      if (e && e.status === -1) throw e;   // notre propre message ; une erreur du navigateur n'empêche pas d'essayer
-    }
+  // requestDevice exige un geste récent de l'utilisateur (quelques secondes dans Chrome) : AUCUNE attente,
+  // ni réseau ni Bluetooth, avant lui, sinon un aller-retour lent sur réseau cellulaire consomme le geste
+  // et Chrome répond SecurityError. Le nom des lunettes vient du cache (présence lue dès que la session
+  // est prête, et à l'ouverture de chaque panneau) ; encore inconnu, on ne propose pas une liste de
+  // n'importe quels appareils : on le demande en arrière-plan et on le dit, pour l'essai suivant.
+  const nom = etat.nomConnu || null;
+  if (!nom) {
+    if (etat.nomConnu === undefined) presence().catch(() => null);
+    const message = etat.nomConnu === undefined
+      ? "Votre ordinateur n'a pas encore indiqué le nom de vos lunettes : réessayez dans quelques secondes."
+      : "Votre ordinateur ne connaît pas encore vos lunettes : connectez-les une première fois à l'ordinateur (Profil › Lunettes), puis réessayez ici.";
+    etat.erreur = message;
+    notifier();
+    throw erreur(message);
   }
   let appareil;
   try {
-    appareil = await navigator.bluetooth.requestDevice({ filters: filtresPour(nom), optionalServices: [SERVICE_LUNETTES, 'battery_service'] });
+    const choix = navigator.bluetooth.requestDevice({ filters: filtresPour(nom), optionalServices: [SERVICE_LUNETTES, 'battery_service'] });
+    if (etat.nomConnu === undefined) presence().catch(() => null);
+    appareil = await choix;
   } catch (e) {
-    const message = messageBluetooth(e, 'choix');
-    if (!(e && e.name === 'NotFoundError')) { etat.erreur = message; notifier(); }
+    let message = messageBluetooth(e, 'choix');
+    let signaler = !(e && e.name === 'NotFoundError');
+    // Après le choix seulement : un Bluetooth éteint explique une liste vide.
+    if (!signaler && typeof navigator.bluetooth.getAvailability === 'function') {
+      try {
+        if (!(await navigator.bluetooth.getAvailability())) {
+          message = 'Le Bluetooth de ce téléphone est désactivé : activez-le, puis réessayez.';
+          signaler = true;
+        }
+      } catch (e2) { /* disponibilité inconnue : le premier message suffit */ }
+    }
+    if (signaler) { etat.erreur = message; notifier(); }
     throw erreur(message);
   }
   etat.essaiReconnexion = 0;
@@ -426,7 +494,7 @@ window.addEventListener('pagehide', () => {
   etat.attestation = { derniere: 0, acceptee: false, erreur: '' };
   if (!api || typeof api.jeton !== 'function') return;
   try {
-    fetch(api.base + '/api/lunettes/attestation', {
+    fetch(api.base + cheminRetrait(), {
       method: 'DELETE', headers: { Authorization: 'Bearer ' + api.jeton() }, keepalive: true, cache: 'no-store',
     }).catch(() => null);
   } catch (e) { /* navigateur ancien : l'ordinateur oubliera seul */ }
@@ -466,6 +534,8 @@ async function reprendreAuChargement() {
   if (!id) return;
   // La session doit être admise par l'ordinateur, sinon l'attestation déclencherait l'écran de connexion.
   if (!(await attendreSession(90000))) return;
+  try { await presence({ frais: true }); } catch (e) { /* ordinateur injoignable : on tente quand même */ }
+  if (relieesAuPc()) return;   // reliées à l'ordinateur : ne pas lui prendre la liaison au chargement
   let appareils = [];
   try { appareils = await navigator.bluetooth.getDevices(); } catch (e) { return; }
   const appareil = (appareils || []).find((d) => d && d.id === id);
@@ -598,7 +668,7 @@ function garde(ctx, options) {
       reverifier.disabled = true;
       try {
         const ok = await verifier({ depuisAction: true });
-        if (!ok && document.contains(reverifier)) toast('Lunettes VELA toujours pas détectées.', 'info');
+        if (!ok && document.contains(reverifier)) toast('Lunettes VELA encore non détectées.', 'info');
       } finally {
         if (document.contains(reverifier)) reverifier.disabled = false;
       }
@@ -781,6 +851,7 @@ const LUNETTES = {
   ios: IOS,
   connecter,
   deconnecter,
+  associer,
   presence,
   garde,
   on,
@@ -806,11 +877,23 @@ function ouvrir(ctx) {
 
   const carteTelephone = el('div', { class: 'carte' }, el('h3', {}, 'Sur ce téléphone'));
   const telephoneTexte = el('p', { class: 'note' });
+  const avisPc = el('p', { class: 'note-faible', hidden: true },
+    'Vos lunettes sont reliées à votre ordinateur : les connecter aussi à ce téléphone peut couper cette liaison.');
   const telephoneErreur = el('p', { class: 'resultat-erreur', role: 'alert', hidden: true });
   const boutonConnecter = el('button', { type: 'button', class: 'holo' }, 'Connecter mes lunettes');
   const boutonDeconnecter = el('button', { type: 'button', class: 'bouton-contour', hidden: true }, 'Déconnecter de ce téléphone');
-  carteTelephone.append(telephoneTexte, telephoneErreur);
+  carteTelephone.append(telephoneTexte, avisPc, telephoneErreur);
   if (BLUETOOTH) carteTelephone.append(boutonConnecter, boutonDeconnecter);
+  // Second téléphone (ou page Android après l'app iPhone) : l'ordinateur demande le mot de passe du propriétaire.
+  const idMotDePasse = 'lunettes-association-mdp';
+  const champMotDePasse = el('input', { id: idMotDePasse, type: 'password', autocomplete: 'current-password' });
+  const boutonAssocier = el('button', { type: 'button', class: 'holo' }, 'Associer ce téléphone');
+  const carteAssociation = el('div', { class: 'carte', hidden: true },
+    el('h3', {}, 'Associer ce téléphone'),
+    el('p', { class: 'note' }, "Ce téléphone n'est pas encore associé à vos lunettes sur cet IRIS. Pour éviter qu'un autre appareil se fasse passer pour vos lunettes, confirmez avec le mot de passe du propriétaire."),
+    el('label', { for: idMotDePasse }, 'Mot de passe du propriétaire'),
+    champMotDePasse, boutonAssocier);
+  carteTelephone.append(carteAssociation);
 
   const lienAchat = el('a', { class: 'bouton-contour', href: URL_ACHAT_DEFAUT, target: '_blank', rel: 'noopener noreferrer', hidden: true }, 'Acheter les lunettes');
   const limites = el('details', { class: 'carte' }, el('summary', {}, 'Ce que fait cette connexion, et ce qu’elle ne fait pas'),
@@ -819,7 +902,9 @@ function ouvrir(ctx) {
       el('li', {}, 'Le son ne passe pas par elle : il passe par le Bluetooth audio du téléphone, réglé dans les réglages du téléphone.'),
       el('li', {}, "La caméra des lunettes n'est pas pilotée depuis ce téléphone : quand une fonction a besoin d'une photo, elle est prise avec la caméra du téléphone."),
       el('li', {}, "Cette page doit rester ouverte : fermée, ou longtemps en arrière-plan, elle cesse de confirmer la présence, et l'ordinateur considère les lunettes absentes après environ deux minutes et demie."),
-      el('li', {}, "Sur iPhone, Safari n'a pas de Bluetooth web : c'est l'app IRIS qui se connecte aux lunettes.")));
+      el('li', {}, "À la maison, connecter les lunettes à ce téléphone peut couper leur liaison avec l'ordinateur (caméra, boutons) : " +
+        "déconnectez-les ici avant d'utiliser IRIS sur l'ordinateur. Tant que l'ordinateur les voit, ce téléphone ne se reconnecte pas tout seul."),
+      el('li', {}, "Sur iPhone, Safari n'a pas de Bluetooth web : la connexion aux lunettes passera par l'app IRIS, qui n'est pas encore disponible.")));
 
   corps.append(carteEtat, carteTelephone, lienAchat, limites);
 
@@ -856,11 +941,13 @@ function ouvrir(ctx) {
       morceaux.push('Pas de lunettes connectées à ce téléphone.');
     }
     telephoneTexte.textContent = morceaux.join(' ');
+    avisPc.hidden = !(d && d.presentes && d.source === 'pc' && !s.connectees);
     const probleme = s.connectees ? s.attestation_erreur : s.erreur;
     telephoneErreur.textContent = probleme || '';
     telephoneErreur.hidden = !probleme;
     boutonConnecter.hidden = s.connectees;
     boutonConnecter.disabled = s.connexion_en_cours;
+    carteAssociation.hidden = !(etat.associationRequise && s.connectees);
     boutonDeconnecter.hidden = !s.connectees;
   }
 
@@ -878,6 +965,23 @@ function ouvrir(ctx) {
       }
     } finally {
       if (!ferme) { boutonConnecter.disabled = false; dessiner(); }
+    }
+  });
+  boutonAssocier.addEventListener('click', async () => {
+    boutonAssocier.disabled = true;
+    telephoneErreur.hidden = true;
+    const motDePasse = champMotDePasse.value;
+    champMotDePasse.value = '';
+    try {
+      await associer(motDePasse);
+      if (!ferme) { toast('Ce téléphone est associé à vos lunettes.', 'ok'); dire('Téléphone associé.'); }
+    } catch (e) {
+      if (!ferme) {
+        telephoneErreur.textContent = (e && e.message) || String(e);
+        telephoneErreur.hidden = false;
+      }
+    } finally {
+      if (!ferme) { boutonAssocier.disabled = false; dessiner(); }
     }
   });
   boutonDeconnecter.addEventListener('click', async () => {

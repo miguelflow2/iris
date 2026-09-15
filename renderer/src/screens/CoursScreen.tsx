@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { Field, Holo, Liste, Rangee, Segmente, TopBar, Vide } from '../components/ui'
 import { IcoDossier, IcoMicro, IcoStop } from '../components/icons'
 import { CarteLunettesRequises } from '../components/LunettesRequises'
-import { api, estLunettesRequises, messageErreur, refusConsentement, type IrisEvent } from '../lib/api'
+import { api, ApiError, estLunettesRequises, messageErreur, refusConsentement, type IrisEvent } from '../lib/api'
 import { useStore } from '../lib/store'
 import { CarteConsentement } from './AccessibiliteScreen'
 import './AccessibiliteScreen.css'
@@ -234,6 +234,10 @@ export interface CoursResume {
   etat: string
   progression: number | null
   erreur: string | null
+  /** Rédaction des fiches ou des questions en cours (etat « generation ») : parties faites sur le total. */
+  generation?: { quoi: string; fait: number; total: number } | null
+  /** Erreur d'une rédaction partie en arrière-plan (réponse 202 de /generer), à afficher telle quelle. */
+  erreur_generation?: string | null
 }
 
 /** Pastilles d'état d'un cours : en direct, transcription, erreur, fiches, questions. */
@@ -243,6 +247,9 @@ export function PastillesCours({ c }: { c: { actif: boolean; etat: string; progr
       {c.actif ? <span className="pill err">En direct</span> : null}
       {c.etat === 'transcription' ? (
         <span className="pill warn">Transcription{typeof c.progression === 'number' ? ` ${Math.round(c.progression * 100)} %` : '…'}</span>
+      ) : null}
+      {c.etat === 'generation' ? (
+        <span className="pill warn">Rédaction{typeof c.progression === 'number' ? ` ${Math.round(c.progression * 100)} %` : '…'}</span>
       ) : null}
       {c.etat === 'erreur' ? <span className="pill err">Erreur</span> : null}
       {c.fiches ? <span className="pill ok">Fiches</span> : null}
@@ -254,8 +261,9 @@ export function PastillesCours({ c }: { c: { actif: boolean; etat: string; progr
 }
 
 const SANS_MATIERE = 'Sans matière'
-const TAILLE_MAX_IMPORT = 600 * 1024 * 1024
-const TAILLE_LOURDE = 150 * 1024 * 1024
+// Limites du service (cours.py) : 1 Go par la route en octets bruts ; 150 Mo par l'ancienne route en base64.
+const TAILLE_MAX_IMPORT = 1024 * 1024 * 1024
+const TAILLE_MAX_IMPORT_ANCIEN = 150 * 1024 * 1024
 const FORMAT_REFUSE =
   'Format non pris en charge : seul le fichier WAV (PCM) est accepté. Convertissez l’enregistrement (MP3, M4A…) en WAV, idéalement 16 kHz mono, avant de l’importer.'
 
@@ -471,13 +479,13 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
     fichierRef.current?.click()
   }
 
-  const importer = (fichier: File): void => {
+  const importer = async (fichier: File): Promise<void> => {
     if (!/\.wav$/i.test(fichier.name)) {
       setErreur(FORMAT_REFUSE)
       return
     }
     if (fichier.size > TAILLE_MAX_IMPORT) {
-      setErreur('Fichier trop volumineux (plus de 600 Mo) : enregistrez en 16 kHz mono ou découpez le fichier.')
+      setErreur('Fichier trop volumineux (plus de 1 Go) : découpez le fichier ou enregistrez en 16 kHz mono.')
       return
     }
     const nom = fichier.name
@@ -485,6 +493,44 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
     const titreImport = titre.trim()
     const matiereImport = matiere.trim() || null
     setErreur('')
+    setSuivi({ phase: 'envoi', nom, octets, fraction: 0, coursId: null, message: null })
+    const suivre = (r: any): void => {
+      if (!vivant.current) return
+      setSuivi({ phase: 'transcription', nom, octets, fraction: typeof r?.progression === 'number' ? r.progression : 0, coursId: String(r?.id || ''), message: null })
+      setTitre('')
+      charger()
+    }
+    const echouer = (err: unknown): void => {
+      if (!vivant.current) return
+      if (estLunettesRequises(err)) {
+        setSuivi(null)
+        return
+      }
+      setSuivi({ phase: 'erreur', nom, octets, fraction: null, coursId: null, message: messageErreur(err) })
+    }
+    try {
+      // Le fichier part tel quel, lu par morceaux depuis le disque : ni base64, ni copie en mémoire.
+      // L'envoi continue même si l'écran est quitté ; la transcription se fait ensuite dans le service.
+      const requete = new URLSearchParams({ titre: titreImport, nom_fichier: nom })
+      if (matiereImport) requete.set('matiere', matiereImport)
+      const r = await api.envoyerFichier(`/api/cours/importer-wav?${requete.toString()}`, fichier, 'audio/wav', (fraction) => {
+        if (vivant.current) setSuivi((s) => (s && s.phase === 'envoi' ? { ...s, fraction } : s))
+      })
+      suivre(r)
+    } catch (err) {
+      // Service plus ancien, sans la route en octets bruts : l'envoi en base64 reste possible pour un petit fichier.
+      if (err instanceof ApiError && err.status === 404 && octets <= TAILLE_MAX_IMPORT_ANCIEN) {
+        importerEnBase64(fichier, titreImport, matiereImport, suivre, echouer)
+        return
+      }
+      echouer(err)
+    }
+  }
+
+  /** Ancien chemin (service sans /api/cours/importer-wav) : le fichier en base64 dans du JSON, 150 Mo au plus. */
+  const importerEnBase64 = (fichier: File, titreImport: string, matiereImport: string | null, suivre: (r: any) => void, echouer: (err: unknown) => void): void => {
+    const nom = fichier.name
+    const octets = fichier.size
     setSuivi({ phase: 'lecture', nom, octets, fraction: 0, coursId: null, message: null })
     const lecteur = new FileReader()
     lecteur.onprogress = (ev) => {
@@ -500,19 +546,9 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
       const data = brut.slice(brut.indexOf(',') + 1)
       if (vivant.current) setSuivi({ phase: 'envoi', nom, octets, fraction: null, coursId: null, message: null })
       try {
-        // L'envoi continue même si l'écran est quitté : la transcription se fait ensuite dans le service.
-        const r = await api.post('/api/cours/importer', { titre: titreImport, matiere: matiereImport, nom_fichier: nom, data })
-        if (!vivant.current) return
-        setSuivi({ phase: 'transcription', nom, octets, fraction: typeof r?.progression === 'number' ? r.progression : 0, coursId: String(r?.id || ''), message: null })
-        setTitre('')
-        await charger()
+        suivre(await api.post('/api/cours/importer', { titre: titreImport, matiere: matiereImport, nom_fichier: nom, data }))
       } catch (err) {
-        if (!vivant.current) return
-        if (estLunettesRequises(err)) {
-          setSuivi(null)
-          return
-        }
-        setSuivi({ phase: 'erreur', nom, octets, fraction: null, coursId: null, message: messageErreur(err) })
+        echouer(err)
       }
     }
     lecteur.readAsDataURL(fichier)
@@ -608,8 +644,9 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
                 <Holo disabled={occupe} onClick={demarrer}><IcoMicro /> {occupe ? 'Démarrage…' : 'Démarrer le cours'}</Holo>
                 <div className="q-note">
                   IRIS écoute par le micro qu’elle utilise (celui des lunettes quand elles sont connectées), transcrit sur cet ordinateur et
-                  garde l’enregistrement audio. Demandez l’accord de la personne qui donne le cours : certains établissements interdisent
-                  l’enregistrement.
+                  garde l’enregistrement audio. Demandez l’autorisation de l’enseignant ; l’établissement peut interdire l’enregistrement.
+                  Le contenu du cours reste protégé par le droit d’auteur : gardez l’enregistrement pour votre usage personnel, et prévenez
+                  les autres personnes présentes, dont la voix peut aussi être captée.
                 </div>
               </>
             ) : (
@@ -627,8 +664,8 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
                 />
                 <Holo disabled={importEnCours} onClick={choisirFichier}><IcoDossier /> Choisir un fichier WAV</Holo>
                 <div className="q-note">
-                  WAV (PCM) seulement, 600 Mo au plus. Le fichier est transcrit sur cet ordinateur : rien n’est envoyé en ligne. Le titre
-                  prend le nom du fichier si vous n’en donnez pas.
+                  WAV (PCM) seulement : 1 Go et 4 heures d’enregistrement au plus. Le fichier est transcrit sur cet ordinateur : rien n’est
+                  envoyé en ligne. Le titre prend le nom du fichier si vous n’en donnez pas.
                 </div>
               </>
             )}
@@ -645,14 +682,21 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
               <>
                 <div>Lecture du fichier sur cet ordinateur : {Math.round((suivi.fraction || 0) * 100)} %</div>
                 <div className="progress"><div style={{ width: `${Math.round((suivi.fraction || 0) * 100)}%` }} /></div>
-                {suivi.octets > TAILLE_LOURDE ? <div className="q-note">Gros fichier : la lecture demande beaucoup de mémoire et peut prendre un moment.</div> : null}
               </>
             ) : null}
             {suivi.phase === 'envoi' ? (
-              <>
-                <div>Remise au service IRIS de cet ordinateur et vérification du format…</div>
-                <div className="progress indet"><div /></div>
-              </>
+              suivi.fraction !== null && suivi.fraction < 1 ? (
+                <>
+                  <div>Remise du fichier au service IRIS de cet ordinateur : {Math.round(suivi.fraction * 100)} %</div>
+                  <div className="progress"><div style={{ width: `${Math.round(suivi.fraction * 100)}%` }} /></div>
+                  <div className="q-note">Le fichier ne quitte pas cet ordinateur : il passe de l’application au service local.</div>
+                </>
+              ) : (
+                <>
+                  <div>Vérification du format par le service IRIS de cet ordinateur…</div>
+                  <div className="progress indet"><div /></div>
+                </>
+              )
             ) : null}
             {suivi.phase === 'transcription' ? (
               <>
@@ -720,7 +764,7 @@ export function CoursScreen({ params: _params }: { params?: Record<string, any> 
             <li>Assis loin ou dans une salle bruyante, le son est moins bien capté et la transcription s’en ressent.</li>
             <li>Les fiches et les questions sont rédigées par le moteur VELA à partir de la transcription, seulement quand vous le demandez et avec votre accord « Texte de vos demandes » : elles peuvent contenir des erreurs, vérifiez-les avec vos notes.</li>
             <li>La transcription, les fiches et les questions sont chiffrées sur cet ordinateur. L’enregistrement audio (WAV) est stocké sur cet ordinateur, sans chiffrement.</li>
-            <li>L’import accepte seulement le WAV (PCM) : convertissez d’abord un MP3 ou un M4A.</li>
+            <li>L’import accepte seulement le WAV (PCM), 1 Go et 4 heures au plus : convertissez d’abord un MP3 ou un M4A, et découpez un enregistrement plus long.</li>
             <li>La durée de conservation réglée dans Confidentialité s’applique aux cours : exportez ce que vous voulez garder plus longtemps.</li>
           </ul>
         </div>

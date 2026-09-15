@@ -17,6 +17,9 @@ Tout le module découle de ce constat :
 - Pas de promesse de sécurité. Les lunettes prennent une photo en quelques secondes ; il n'existe
   aucun flux vidéo. Une description n'est jamais une alerte d'obstacle en temps réel, et la consigne
   interdit au moteur de le laisser croire.
+- Pas de photo gardée pour rien. La photo des lunettes n'est conservée (non chiffrée) que liée à une
+  description retenue en mémoire, et la réponse le dit ; sinon elle est effacée tout de suite. En mode
+  invité, « où ai-je posé… » ne consulte ni les souvenirs ni le journal du propriétaire.
 
 Service exposé sous ctx.accessibilite (voir routes_accessibilite.py).
 """
@@ -38,9 +41,10 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from .connectors.base import ConnectorError
+from .connectors.base import ConnectorError, MoteurTropLent
 from .consent import DATA_TYPES, ConsentRequired, LocalOnlyMode
-from .lunettes_camera import CameraIndisponible, CameraLunettes, ProtocoleNonConfirme
+from .lunettes_camera import CameraIndisponible, CameraLunettes, ProtocoleNonConfirme, refus_camera_client
+from .lunettes_presence import MESSAGE_REQUISES, LunettesAilleurs, LunettesRequises
 from .memory import MemoireSuspendue, tokenize
 from .pc import actions
 from .router import NoAgentAvailable
@@ -120,6 +124,13 @@ LOCAL_SEULEMENT = (
 CONFIDENTIEL = "Le mode confidentiel est actif : IRIS ne prend aucune photo ni capture d'écran tant qu'il l'est."
 OCR_ABSENT = " La lecture locale du texte n'est pas disponible non plus sur cet ordinateur."
 TAILLE_MAX_BASE64 = 20_000_000  # ≈ 15 Mo d'image
+# Délai maximal d'une réponse du moteur de vision. La voix attend une interception 90 s au plus : sans ce
+# délai, la commande restait gelée puis retombait sur le modèle, qui relançait une seconde description
+# pendant que la première tournait encore. 45 s + une photo des lunettes (20 s au plus) < 90 s.
+DELAI_MOTEUR_S = 45.0
+MOTEUR_LENT = "Le moteur VELA n'a pas répondu à temps. Réessaie dans un instant."
+MOTEUR_LENT_PHRASE = "Le moteur met trop de temps : je n'ai pas pu décrire l'image."
+MODE_INVITE_SOUVENIRS = "Mode invité : je ne consulte pas les souvenirs pendant ce mode."
 
 
 class RefusVision(HTTPException):
@@ -408,9 +419,24 @@ def couleur_dominante(octets: bytes) -> str:
 
 
 # --------------------------------------------------------------------------- phrases vocales
-# Formes normalisées (sans accents ni ponctuation). Un motif qui finit par « $ » doit terminer la
-# phrase : « combien d'argent » seul est une demande de billets, « combien d'argent faut-il pour… »
-# ne l'est pas. L'ordre compte : le premier groupe reconnu gagne.
+# Formes normalisées (sans accents ni ponctuation). L'ordre compte : le premier groupe reconnu gagne.
+#
+# Ces phrases passent AVANT le modèle et, quand la caméra marchera, prennent une photo : un faux positif
+# photographie des passants sans raison et vole la réponse au modèle. Un faux négatif, lui, envoie la
+# demande d'une personne non voyante au modèle (plus lent, dépendant du consentement et du réseau). D'où
+# deux formes de motifs :
+# - sans « $ » : une expression assez précise pour être reconnue n'importe où (« qu'est-ce qu'il y a devant
+#   moi »). Un verbe suivi d'un objet (« lis-moi le texte », « compte mon argent », « lis le panneau ») n'en est
+#   PAS une : « lis-moi le texte de Marc » (un texto), « compte mon argent dans mon compte bancaire » ou « lis
+#   le panneau de configuration » ne demandent pas de regarder ;
+# - avec « $ » : une question courte et ambiguë (« quel billet », « décris la pièce », « de quelle couleur
+#   est ») qui doit finir la phrase, ou n'être suivie que d'une QUEUE qui désigne ce qu'on a sous les yeux :
+#   des compléments de la liste _QUEUES (« là », « qui arrive », « que je tiens », « en ce moment »…) et au
+#   plus un objet montré (« ce chandail », « ma chemise de nuit », « de cette boîte »). « quel billet d'avion est le moins cher »,
+#   « décris la pièce de théâtre Tartuffe » ou « c'est quoi ce produit dont tout le monde parle » ne sont
+#   pas des demandes de regarder ; « c'est quel bus qui arrive » et « c'est quelle marque ce téléphone » en
+#   sont.
+# Les exclusions (_EXCLUSIONS, _EXCLUSIONS_COMMUNES) passent par-dessus les deux formes.
 _PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ecran", (
         "decris l ecran", "decris moi l ecran", "decris mon ecran", "decris moi mon ecran", "decrire l ecran",
@@ -427,58 +453,160 @@ _PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "ou sont passees mes", "as tu vu mes", "as tu vu mon", "as tu vu ma", "t as vu mes",
     )),
     ("billets", (
-        "c est quel billet", "quel billet", "quels billets", "c est quelle piece", "quelle piece",
-        "c est combien d argent", "combien d argent$", "combien d argent j ai$", "combien d argent j ai dans la main",
-        "combien d argent je tiens", "combien d argent il y a la", "combien ca fait d argent",
-        "compte mon argent", "compte cet argent", "compte ces billets", "compte les billets", "compte la monnaie",
+        "c est quel billet$", "quel billet$", "quel billet c est$", "quel billet est ce$",
+        "quels billets$", "c est quels billets$", "c est quoi ce billet$", "quel est ce billet$",
+        "c est quelle piece$", "quelle piece$", "quelle piece c est$",
+        "quelle piece est ce$", "c est quoi cette piece$", "combien vaut ce billet$", "combien vaut cette piece$",
+        "c est un billet de combien$", "c est une piece de combien$",
+        "c est combien d argent$", "combien d argent$", "combien d argent j ai$", "combien d argent j ai dans la main$",
+        "combien d argent je tiens$", "combien d argent il y a$", "combien ca fait d argent$",
+        "compte mon argent$", "compte cet argent$", "compte ces billets$", "compte les billets$", "compte la monnaie$",
     )),
     ("couleur", (
-        "c est quelle couleur", "quelle couleur c est", "c est de quelle couleur", "de quelle couleur est ce",
-        "de quelle couleur est cette", "de quelle couleur est ca", "de quelle couleur est mon",
-        "de quelle couleur est ma", "de quelle couleur sont mes", "de quelle couleur sont ces",
-        "quelle couleur est ce", "quelle couleur est cette", "c est quoi la couleur", "quelle est cette couleur",
+        "c est quelle couleur$", "quelle couleur c est$", "c est de quelle couleur$",
+        "de quelle couleur est$", "de quelle couleur sont$", "quelle couleur est$",
+        "c est quoi la couleur$", "c est quoi cette couleur$", "quelle est cette couleur$", "quelle est la couleur de$",
+        "c est quoi la couleur de$",
     )),
     ("personnes", (
         "qui est devant moi", "il y a qui devant moi", "y a t il quelqu un devant moi",
         "il y a quelqu un devant moi", "est ce qu il y a quelqu un devant moi", "y a quelqu un devant moi",
         "combien de personnes devant moi", "combien de personnes il y a devant moi",
-        "combien de personnes autour de moi", "decris les personnes", "decris moi les personnes",
-        "decris la personne", "decris moi la personne", "decris les gens", "qui est la$",
+        "combien de personnes autour de moi", "decris les personnes$", "decris moi les personnes$",
+        "decris la personne$", "decris moi la personne$", "decris les gens$", "decris moi les gens$", "qui est la$",
     )),
     ("affichage", (
-        "c est quel bus", "c est quel autobus", "quel bus$", "quel autobus$", "quel bus arrive",
-        "quel autobus arrive", "quel bus est la", "quel est ce bus", "quel est cet autobus",
-        "numero du bus", "numero de l autobus", "lis le panneau", "lis moi le panneau", "que dit le panneau",
-        "qu est ce que dit le panneau", "qu est ce qui est ecrit sur le panneau", "lis l affiche",
-        "lis moi l affiche", "lis l affichage", "lis moi l affichage", "lis l enseigne", "lis moi l enseigne",
+        "c est quel bus$", "c est quel autobus$", "quel bus$", "quel autobus$", "quel bus arrive$",
+        "quel autobus arrive$", "quel bus est la$", "quel autobus est la$", "quel est ce bus$", "quel est cet autobus$",
+        "c est quoi ce bus$", "numero du bus$", "numero de l autobus$", "numero de ce bus$",
+        "lis le panneau$", "lis moi le panneau$", "que dit le panneau$",
+        "qu est ce que dit le panneau$", "qu est ce qui est ecrit sur le panneau$", "lis l affiche$",
+        "lis moi l affiche$", "lis l affichage$", "lis moi l affichage$", "lis l enseigne$", "lis moi l enseigne$",
         "quel numero est appele", "c est quel numero$",
     )),
     ("objet", (
-        "c est quoi cet objet", "c est quoi ce produit", "qu est ce que c est que cet objet", "quel est cet objet",
-        "quel est ce produit", "c est quel produit", "qu est ce que je tiens", "qu est ce que j ai dans la main",
-        "c est quelle marque", "lis le code barre", "lis moi le code barre", "c est quoi ce truc",
+        "c est quoi cet objet$", "c est quoi ce produit$", "qu est ce que c est que cet objet$", "quel est cet objet$",
+        "quel est ce produit$", "c est quel produit$", "qu est ce que je tiens$",
+        "qu est ce que j ai dans la main$", "qu est ce que j ai dans la main droite$",
+        "qu est ce que j ai dans la main gauche$", "qu est ce que j ai dans ma main$", "c est quelle marque$", "quelle marque c est$",
+        "c est quoi la marque$", "lis le code barre$", "lis moi le code barre$", "c est quoi ce truc$",
     )),
     ("lecture", (
-        "lis moi ca", "lis ca$", "lis moi ceci", "lis ceci", "lis ce texte", "lis moi ce texte", "lis moi le texte",
-        "lis ce document", "lis moi ce document", "lis cette lettre", "lis moi cette lettre", "lis l etiquette",
-        "lis moi l etiquette", "lis le menu", "lis moi le menu", "lis cette feuille", "lis moi cette feuille",
+        "lis moi ca$", "lis ca$", "lis moi ceci$", "lis ceci$", "lis ce texte$", "lis moi ce texte$",
+        "lis moi le texte$", "lis ce document$", "lis moi ce document$", "lis cette lettre$", "lis moi cette lettre$",
+        "lis l etiquette$", "lis moi l etiquette$", "lis le menu$", "lis moi le menu$", "lis cette feuille$",
+        "lis moi cette feuille$",
     )),
     ("scene", (
         "qu est ce qu il y a devant moi", "qu y a t il devant moi", "qu est ce qui est devant moi",
         "il y a quoi devant moi", "decris ce que je vois", "decris moi ce que je vois",
-        "decris ce qu il y a devant moi", "decris moi ce qu il y a devant moi", "decris la scene",
-        "decris moi la scene", "qu est ce que je regarde", "je regarde quoi", "decris ce que je regarde",
-        "decris moi ce que je regarde", "decris l endroit", "decris la piece", "decris ce qu il y a autour de moi",
-        "qu est ce qu il y a autour de moi",
+        "decris ce qu il y a devant moi", "decris moi ce qu il y a devant moi", "decris la scene$",
+        "decris moi la scene$", "qu est ce que je regarde$", "je regarde quoi$", "decris ce que je regarde",
+        "decris moi ce que je regarde", "decris l endroit$", "decris moi l endroit$", "decris la piece$",
+        "decris moi la piece$", "decris ce qu il y a autour de moi", "qu est ce qu il y a autour de moi$",
     )),
 )
 
+# Compléments admis après un motif « $ » : ils désignent ce qu'on a sous les yeux, ou ne sont que politesse.
+# Plusieurs peuvent se suivre (« qui arrive là », « dans ma main s'il te plaît »).
+_QUEUES: frozenset[str] = frozenset({
+    "la", "ca", "ici", "la bas", "celui la", "celle la", "iris", "s il te plait", "s il vous plait", "stp", "svp",
+    "qui arrive", "qui s en vient", "qui passe", "qui approche", "que je tiens", "je tiens", "que j ai",
+    "dans la main", "dans ma main", "dans mes mains", "que je vois", "que je regarde", "devant moi", "en face de moi",
+    "a cote de moi", "autour de moi", "pres de moi", "qui me parle", "presentes", "presents", "ou je suis",
+    "ou je me trouve", "ou on est", "ou nous sommes", "de monnaie", "du restaurant", "a l ecran", "sur l ecran",
+    "sur mon ecran", "c est", "est ce", "j ai", "j ai dans la main", "en ce moment", "maintenant", "tout de suite",
+    "dans la main droite", "dans la main gauche", "dans ma main droite", "dans ma main gauche",
+})
+# Un objet montré : « ce chandail », « ma chemise de nuit », « de cette boîte », « sur ce pot ». Un mot après le
+# déterminant (deux s'ils sont liés par « de »), jamais un mot outil (« ce que tu… », « ce dont… »), et une seule
+# fois par phrase. Seul un déterminant qui MONTRE ouvre un objet : « le texte de Marc » ou « les billets de
+# Taylor Swift » restent refusés. Pour les modes qui lisent une chose (lecture, affichage, objet), l'objet
+# peut aussi être désigné par un article après « de » ou « sur » (« l'étiquette de la bouteille », « le panneau
+# du quai ») : les compléments de ce genre qui ne se regardent pas (« du fichier », « de la loi ») sont dans
+# les exclusions.
+_DEICTIQUES = frozenset({"ce", "cet", "cette", "ces", "mon", "ma", "mes"})
+_PREPOSITIONS_OBJET = frozenset({"de", "sur"})
+_ARTICLES_OBJET = (("la",), ("le",), ("l",), ("les",))
+_MODES_OBJET_ARTICLE = frozenset({"lecture", "affichage", "objet"})
+_MOTS_OUTILS = frozenset({"que", "qu", "qui", "dont", "ou", "quoi", "de", "du", "des", "d", "l", "le", "la", "les",
+                          "un", "une", "a", "au", "aux", "en", "et", "est", "c", "s", "y"})
+_QUEUE_MOTS_MAX = 8
 
-def _correspond(texte_norm: str, motif: str) -> bool:
-    if motif.endswith("$"):
-        motif = motif[:-1]
-        return texte_norm == motif or texte_norm.endswith(" " + motif)
-    return f" {motif} " in f" {texte_norm} "
+# Compléments qui font d'une phrase reconnue une question de connaissance, de trajet ou d'agenda, pas une
+# demande de regarder : « pour aller à Laval c'est quel bus », « billet d'avion », « qu'est-ce que je regarde
+# ce soir », « le drapeau du Japon ».
+_EXCLUSIONS_COMMUNES: tuple[str, ...] = (
+    "ce soir", "ce matin", "ce midi", "cette nuit", "cet apres midi", "demain", "hier", "cette semaine", "ce week end", "ce weekend",
+    "cette fin de semaine", "plus tard", "selon toi", "dont", "que tu", "de la renaissance",
+    # Messages, fichiers et web : IRIS les lit sans caméra (« lis-moi le texte que Julie m'a envoyé » ; au
+    # Canada français, « texte » veut aussi dire texto).
+    "texto", "textos", "texte que", "courriel", "courriels", "message", "messages", "sur wikipedia",
+    "sur internet", "sur le web", "du fichier", "de configuration", "de la loi", "de poker",
+    "de la chanson", "de la toune",
+)
+_EXCLUSIONS: dict[str, tuple[str, ...]] = {
+    "billets": (
+        "d avion", "de train", "d autobus", "de bus", "de metro", "de spectacle", "de concert", "de cinema",
+        "de loterie", "de hockey", "de match", "pour aller", "dans quelle piece", "de quelle piece",
+        "piece jointe", "piece de theatre", "vendus", "vendu", "restants", "un salaire", "compte bancaire",
+        "dans mon compte", "en banque", "a la banque",
+    ),
+    "couleur": ("drapeau", "preferee", "prefere", "mes yeux", "ses yeux", "tes yeux", "vos yeux", "mes cheveux"),
+    "personnes": ("ideale", "ideal", "pour ce poste", "pour le poste", "de l histoire", "de l epoque"),
+    "affichage": (
+        "pour aller", "pour me rendre", "pour se rendre", "pour y aller", "pour revenir", "qui va a", "qui va au",
+        "qui va aux", "qui passe par", "horaire",
+    ),
+    "objet": ("de voiture", "d auto", "d automobile", "la plus", "le plus", "les plus", "meilleure marque",
+              "recommande", "recommandee"),
+    "lecture": ("word", "pdf", "excel", "sur le bureau", "dans mes fichiers", "dans mes documents"),
+    "scene": ("de theatre", "a la tele", "a la television", "sur netflix", "comme film", "comme serie"),
+}
+_MODES_VISION = frozenset({"billets", "couleur", "personnes", "affichage", "objet", "lecture", "scene", "ecran"})
+
+
+def _queue_admise(mots: list[str], objet_permis: bool = True, article: bool = False) -> bool:
+    """Les mots qui suivent un motif « $ » forment-ils une queue admise (voir _QUEUES) ?"""
+    if not mots:
+        return True
+    for k in range(1, min(4, len(mots)) + 1):
+        if " ".join(mots[:k]) in _QUEUES and _queue_admise(mots[k:], objet_permis, article):
+            return True
+    return objet_permis and any(_queue_admise(mots[n:], False) for n in _longueurs_objet(mots, article))
+
+
+def _mot_plein(mot: str) -> bool:
+    return mot not in _MOTS_OUTILS and mot not in _DEICTIQUES
+
+
+def _longueurs_objet(mots: list[str], article: bool = False) -> list[int]:
+    """Nombres de mots que peut couvrir un objet montré en tête de « mots » (aucun : liste vide)."""
+    if article and len(mots) >= 2 and mots[0] == "du" and _mot_plein(mots[1]):
+        return [2]
+    i = 1 if mots and mots[0] in _PREPOSITIONS_OBJET else 0
+    if article and i and len(mots) >= 3 and (mots[1],) in _ARTICLES_OBJET and _mot_plein(mots[2]):
+        return [3]
+    if len(mots) < i + 2 or mots[i] not in _DEICTIQUES or not _mot_plein(mots[i + 1]):
+        return []
+    longueurs = [i + 2]
+    if len(mots) >= i + 4 and mots[i + 2] == "de" and _mot_plein(mots[i + 3]):
+        longueurs.append(i + 4)
+    return longueurs
+
+
+def _correspond(texte_norm: str, motif: str, article: bool = False) -> bool:
+    if not motif.endswith("$"):
+        return f" {motif} " in f" {texte_norm} "
+    cherche = motif[:-1].split()
+    mots = texte_norm.split()
+    n = len(cherche)
+    for i in range(len(mots) - n, -1, -1):
+        if mots[i:i + n] == cherche:
+            queue = mots[i + n:]
+            if len(queue) <= _QUEUE_MOTS_MAX and _queue_admise(queue, True, article):
+                return True
+    return False
 
 
 def reconnaitre_demande(texte: str) -> tuple[str, str] | None:
@@ -488,7 +616,10 @@ def reconnaitre_demande(texte: str) -> tuple[str, str] | None:
     if not t:
         return None
     for mode, motifs in _PHRASES:
-        if any(_correspond(t, m) for m in motifs):
+        if any(_correspond(t, m, mode in _MODES_OBJET_ARTICLE) for m in motifs):
+            exclusions = _EXCLUSIONS.get(mode, ()) + (_EXCLUSIONS_COMMUNES if mode in _MODES_VISION else ())
+            if any(_correspond(t, e) for e in exclusions):
+                continue
             ecran = " ecran" in f" {t}"
             if mode in ("ecran",):
                 return "ecran", "ecran"
@@ -528,16 +659,39 @@ def extraire_objet(question: str) -> str:
 _MOT = re.compile(r"[\wàâäéèêëïîôöùûüÿç'-]{2,}", re.IGNORECASE)
 
 
+def mots_objet(objet: str) -> list[str]:
+    """Les mots utiles d'un objet, dans l'ordre, sans doublon ni variante (« mes clés de voiture » -> clés, voiture)."""
+    mots = [m.lower() for m in _MOT.findall(objet or "")]
+    return list(dict.fromkeys(m for m in mots if m not in _DETERMINANTS and m not in _MOTS_QUESTION and m in tokenize(m)))
+
+
 def mots_recherche(objet: str) -> list[str]:
     """Les mots utiles d'un objet, dans l'ordre, avec leur singulier (« clés » -> « clés », « clé »)."""
-    mots = [m.lower() for m in _MOT.findall(objet or "")]
-    mots = [m for m in mots if m not in _DETERMINANTS and m not in _MOTS_QUESTION and m in tokenize(m)]
     variantes: list[str] = []
-    for mot in mots:
+    for mot in mots_objet(objet):
         variantes.append(mot)
         if len(mot) > 3 and mot[-1] in "sx":
             variantes.append(mot[:-1])
     return list(dict.fromkeys(variantes))
+
+
+def couverture_objet(objet: str, texte: str) -> float:
+    """Part des mots de l'objet (0 à 1) présents dans un souvenir, au singulier comme au pluriel.
+
+    Sert à ne pas répondre « où est ma commande Amazon ? » par une vieille phrase entendue qui contient
+    seulement « commande » : un souvenir doit parler de l'objet, pas partager un mot au hasard."""
+    bases = [normaliser(m) for m in mots_objet(objet)]
+    bases = [b for b in bases if b]
+    if not bases:
+        return 0.0
+    presents = set(normaliser(texte).split())
+
+    def trouve(mot: str) -> bool:
+        if mot in presents or f"{mot}s" in presents or f"{mot}x" in presents:
+            return True
+        return len(mot) > 3 and mot[-1] in "sx" and mot[:-1] in presents
+
+    return sum(1 for b in bases if trouve(b)) / len(bases)
 
 
 def date_parlee(iso: str) -> str:
@@ -655,12 +809,16 @@ class ServiceAccessibilite:
             try:
                 resultat = await camera.prendre_photo(reconnaissance=False)
             except ProtocoleNonConfirme as exc:
-                raise RefusVision(409, str(exc), phrase=(
+                refus = refus_camera_client(exc)
+                raise RefusVision(409, refus["message"], detail=refus, phrase=(
                     "La caméra des lunettes n'est pas encore activée sur cet appareil : son protocole n'est pas "
                     "confirmé, alors je ne prends pas de photo."))
             except CameraIndisponible as exc:
-                court = str(exc) if len(str(exc)) < 90 else "Ces lunettes n'ont pas de caméra utilisable : je ne peux pas prendre de photo."
-                raise RefusVision(409, str(exc), phrase=court)
+                refus = refus_camera_client(exc)
+                court = ("Les lunettes ne sont pas connectées : je ne peux pas prendre de photo."
+                         if refus["code"] == "lunettes_non_connectees"
+                         else "Ces lunettes n'ont pas de caméra utilisable : je ne peux pas prendre de photo.")
+                raise RefusVision(409, refus["message"], detail=refus, phrase=court)
             except RefusVision:
                 raise
             except Exception:
@@ -673,7 +831,7 @@ class ServiceAccessibilite:
             raise RefusVision(409, getattr(resultat, "constat", "") or "Aucune image n'est revenue des lunettes.",
                               phrase="Aucune image n'est revenue des lunettes.")
         octets = await asyncio.to_thread(Path(resultat.chemin).read_bytes)
-        self.ctx.consent.log("lunettes_photo", detail=resultat.chemin)
+        self.ctx.consent.log("lunettes_photo", detail=Path(str(resultat.chemin)).name)  # le nom seul, pas le chemin
         return octets, str(resultat.chemin)
 
     async def _capture_ecran(self) -> bytes:
@@ -720,7 +878,12 @@ class ServiceAccessibilite:
         systeme = consigne_systeme(mode, source, self.ctx.settings.user.verbosite)
         message = message_utilisateur(mode, question, texte_ocr)
         try:
-            return await self.ctx.chat.demander_image_detail(systeme, message, [image], consentement=types)
+            return await asyncio.wait_for(
+                self.ctx.chat.demander_image_detail(systeme, message, [image], consentement=types), DELAI_MOTEUR_S)
+        except (asyncio.TimeoutError, MoteurTropLent):
+            # Les deux délais (ici et dans ChatService) disent la même chose : 504, message neutre.
+            log.warning("moteur de vision trop lent (%s) : abandon", mode)
+            raise RefusVision(504, MOTEUR_LENT, phrase=MOTEUR_LENT_PHRASE)
         except ConsentRequired as exc:
             raise self._refus_consentement(exc.data_type)
         except LocalOnlyMode:
@@ -765,7 +928,9 @@ class ServiceAccessibilite:
                     r = await self._moteur(mode, source, octets, question,
                                            types, texte_ocr if mode == "lecture" else None)
                 except RefusVision as exc:
-                    if exc.status_code != 502 or not texte_ocr:
+                    # Moteur en panne (502) ou trop lent (504) : la lecture locale, quand elle a trouvé du
+                    # texte, vaut mieux que rien.
+                    if exc.status_code not in (502, 504) or not texte_ocr:
                         raise
                     r = {"texte": "", "local": False}
                 sortie = (r.get("texte") or "").strip()
@@ -800,8 +965,18 @@ class ServiceAccessibilite:
     async def decrire(self, mode: str, source: str = "lunettes", image: Any = None, question: str | None = None,
                       parler: bool = True, memoriser: bool = True) -> dict:
         """Décrit ce que voit la source. Renvoie {ok, mode, source, texte, chemin, duree_ms, local, note}.
-        Lève RefusVision (HTTPException) : 409 caméra/local/confidentiel, 403 consentement, 422, 500, 502."""
+        Lève RefusVision (HTTPException) : 409 caméra/local/confidentiel, 403 consentement, 422, 428, 500, 502,
+        504 (moteur trop lent, DELAI_MOTEUR_S)."""
         debut = time.monotonic()
+        presence = getattr(self.ctx, "presence_lunettes", None)
+        if presence is not None:
+            # Lunettes d'abord, AVANT tout travail : le bouton, le pas à pas, les reçus, les prix et les
+            # outils du chat passent tous par ici. Un RefusVision, pour que chacun le dise comme les autres.
+            try:
+                presence.exiger("vision")
+            except LunettesRequises as refus_lunettes:
+                raise RefusVision(428, refus_lunettes.message, detail=refus_lunettes.detail,
+                                  phrase=MESSAGE_REQUISES) from None
         mode = (mode or "").strip().lower()
         if mode not in MODES:
             raise RefusVision(422, f"Mode de description inconnu : « {mode} ». Modes : {', '.join(MODES)}.")
@@ -810,6 +985,17 @@ class ServiceAccessibilite:
             raise RefusVision(422, f"Source inconnue : « {source} ». Sources : {', '.join(SOURCES)}.")
         if mode == "ecran" and source == "lunettes":
             source = "ecran"  # « décris l'écran » vise l'écran de l'ordinateur, pas la caméra
+        exiger_pc = getattr(presence, "exiger_capture_pc", None) if presence is not None else None
+        if source in ("lunettes", "ecran") and callable(exiger_pc):
+            # Lunettes attestées par le téléphone seulement : leur porteur est dehors. La caméra reliée à
+            # l'ordinateur et l'écran de l'ordinateur ne sont pas ce qu'il regarde ; le téléphone envoie sa photo.
+            try:
+                exiger_pc("vision")
+            except LunettesAilleurs as ailleurs:
+                raise RefusVision(409, ailleurs.message) from None
+            except LunettesRequises as refus_lunettes:
+                raise RefusVision(428, refus_lunettes.message, detail=refus_lunettes.detail,
+                                  phrase=MESSAGE_REQUISES) from None
         question = " ".join((question or "").split())[:500] or None
         u = self.ctx.settings.user
         if u.privacy_mode:
@@ -838,27 +1024,43 @@ class ServiceAccessibilite:
         try:
             texte, local, utile = await self._analyser(mode, source, octets, question, types, refus)
         except BaseException:
-            await self._oublier_photo_si_suspendue(chemin)
+            # Aucune description, donc aucun souvenir auquel rattacher la photo : elle n'est pas gardée.
+            await self._effacer_photo(chemin)
             raise
         duree_ms = int((time.monotonic() - debut) * 1000)
 
         suspendue = self.ctx.memory.suspendue
-        if chemin and suspendue:
-            await self._oublier_photo_si_suspendue(chemin)
+        # Demander une description n'est pas demander de garder la photo. Elle n'est gardée que liée à la
+        # description retenue en mémoire (c'est ce qui permet « où ai-je posé mes clés ? »), ET seulement si
+        # le réglage explicite « garder les photos décrites » est activé ; sinon (réglage désactivé,
+        # memoriser=false, description ratée, mémoire suspendue) elle est effacée tout de suite.
+        retenue = bool(memoriser and utile and not suspendue)
+        garder_photo = retenue and bool(getattr(self.ctx.settings.user, "vision_garder_photos", False))
+        note_photo = None
+        if chemin and not garder_photo:
+            await self._effacer_photo(chemin)
             chemin = None
+            if retenue:
+                note_photo = ("La photo n'a pas été gardée : seule la description est retenue (réglage « Garder les "
+                              "photos décrites » désactivé).")
         elif chemin:
             nom = Path(chemin).name
             octets_photo = len(octets)
-            self.ctx.hub.publish("glasses.photo", chemin=chemin, octets=octets_photo)
+            # origine="description" : l'album ne copie pas ces photos vers le dossier Images (une lettre lue,
+            # des billets, des passants n'ont rien à faire dans un dossier peut-être synchronisé en ligne).
+            self.ctx.hub.publish("glasses.photo", chemin=chemin, octets=octets_photo, origine="description")
             # « genre » et non « type » : EventHub.publish place le type d'événement sous la clé « type »,
             # qu'un champ du même nom écraserait (l'événement deviendrait « photo »).
-            self.ctx.hub.publish("album.nouveau", nom=nom, genre="photo", octets=octets_photo)
+            self.ctx.hub.publish("album.nouveau", nom=nom, genre="photo", octets=octets_photo, origine="description")
+            note_photo = self._note_photo_gardee()
         if memoriser and utile and not suspendue:
             await asyncio.to_thread(self._memoriser, texte, source, chemin)
 
         note = refus.message if refus is not None else None
         if suspendue and memoriser:
             note = ((note + " ") if note else "") + "Mémoire suspendue : cette description n'a pas été retenue."
+        if note_photo:
+            note = ((note + " ") if note else "") + note_photo
         resultat = {"ok": True, "mode": mode, "source": source, "texte": texte, "chemin": chemin,
                     "duree_ms": duree_ms, "local": bool(local), "note": note}
         self.ctx.consent.log("vision_description", detail=f"{mode} / {source} / {'local' if local else 'moteur'}")
@@ -868,14 +1070,23 @@ class ServiceAccessibilite:
             await self._dire(texte)
         return resultat
 
-    async def _oublier_photo_si_suspendue(self, chemin: str | None) -> None:
-        """Mode invité ou zone sans mémoire : la photo prise pour décrire n'est pas gardée."""
-        if not chemin or not self.ctx.memory.suspendue:
+    async def _effacer_photo(self, chemin: str | None) -> None:
+        """Efface la photo prise pour décrire quand rien ne justifie de la garder."""
+        if not chemin:
             return
         try:
             await asyncio.to_thread(Path(chemin).unlink, True)
         except Exception as exc:  # pragma: no cover
-            log.warning("photo non effacée malgré la mémoire suspendue : %s", exc)
+            log.warning("photo décrite non effacée : %s", exc)
+
+    def _note_photo_gardee(self) -> str:
+        """Ce que devient la photo gardée, dit tel quel (elle n'est PAS chiffrée sur le disque)."""
+        jours = int(getattr(self.ctx.settings.user, "retention_days", 0) or 0)
+        if jours > 0:
+            return (f"La photo est gardée sur cet ordinateur, non chiffrée, avec la description retenue ; "
+                    f"elle est effacée après {jours} jours (durée de conservation).")
+        return ("La photo est gardée sur cet ordinateur, non chiffrée, avec la description retenue ; aucune durée "
+                "de conservation n'est réglée : elle reste jusqu'à ce que tu l'effaces de l'album.")
 
     def _memoriser(self, texte: str, source: str, chemin: str | None) -> None:
         court = " ".join(texte.split())
@@ -925,8 +1136,26 @@ class ServiceAccessibilite:
                 log.warning("recherche dans le journal impossible : %s", exc)
         return souvenirs
 
+    def _mode_invite(self) -> bool:
+        """Mode invité actif ? Même règle que ChatService._run : un invité n'obtient pas, par une question,
+        les souvenirs ni le journal d'écoute du propriétaire (une zone sans mémoire, elle, ne cache rien)."""
+        if bool(getattr(getattr(self.ctx, "mode_invite", None), "actif", False)):
+            return True  # le service lui-même, en plus de la raison de suspension : deux preuves valent mieux qu'une
+        raisons = getattr(getattr(self.ctx, "memory", None), "raisons_suspension", None)
+        if not callable(raisons):
+            return False
+        try:
+            return any(str(r).startswith("invite") for r in raisons())
+        except Exception as exc:  # pragma: no cover - dans le doute, on protège les souvenirs
+            log.warning("état du mode invité illisible : %s", exc)
+            return True
+
     async def ou_est(self, question: str, parler: bool = False) -> dict:
         """Cherche dans les souvenirs réels où un objet a été vu ou posé. Ne répond jamais de mémoire de modèle."""
+        if self._mode_invite():
+            if parler:
+                await self._dire(MODE_INVITE_SOUVENIRS)
+            return {"reponse": MODE_INVITE_SOUVENIRS, "souvenirs": [], "local": True}
         question = " ".join((question or "").split())[:500]
         if not question:
             raise RefusVision(422, "Dis-moi quel objet chercher.")
@@ -953,13 +1182,16 @@ class ServiceAccessibilite:
             lignes = "\n".join(f"- {date_parlee(s['date']) or s['date']} : {s['texte']}" for s in souvenirs)
             message = f"Question : « {question} »\nSouvenirs :\n{lignes}"
             try:
-                r = await self.ctx.chat.demander_image_detail(systeme, message, [],
-                                                              consentement=("transcript", "memory"))
+                r = await asyncio.wait_for(
+                    self.ctx.chat.demander_image_detail(systeme, message, [], consentement=("transcript", "memory")),
+                    DELAI_MOTEUR_S)
                 if (r.get("texte") or "").strip():
                     reponse = r["texte"].strip()
                     local = bool(r.get("local"))
             except (ConsentRequired, LocalOnlyMode, NoAgentAvailable):
                 pass  # sans accord, le meilleur souvenir tel quel : il est vrai, et il ne sort pas d'ici
+            except asyncio.TimeoutError:
+                log.warning("formulation de « où est » trop lente : souvenir brut rendu")
             except Exception as exc:
                 log.warning("formulation de « où est » impossible, souvenir brut rendu : %s", exc)
         if parler:
@@ -967,6 +1199,21 @@ class ServiceAccessibilite:
         return {"reponse": reponse,
                 "souvenirs": [{"id": s["id"], "texte": s["texte"], "date": s["date"]} for s in souvenirs],
                 "local": local}
+
+    @staticmethod
+    def _souvenir_pertinent(objet: str, souvenirs: list[dict]) -> bool:
+        """Une phrase générique (« où est ma… ») n'est interceptée que si un souvenir parle VRAIMENT de l'objet :
+        - une description de photo qui contient au moins la moitié des mots de l'objet ;
+        - ou une phrase du journal d'écoute qui en contient plus de la moitié (pour un objet d'un ou deux
+          mots : tous). Le journal garde des conversations entendues, bien plus bavardes qu'une photo
+          décrite : un seul mot commun (« commande ») ne suffit pas."""
+        for s in souvenirs:
+            couverture = couverture_objet(objet, str(s.get("texte") or ""))
+            if s.get("source") == "photo" and couverture >= 0.5:
+                return True
+            if s.get("source") == "journal" and couverture > 0.5:
+                return True
+        return False
 
     # ------------------------------------------------------------------ voix
     def interception(self, texte: str):
@@ -981,9 +1228,13 @@ class ServiceAccessibilite:
         try:
             if mode in ("ou-est", "ou-est-generique"):
                 if mode == "ou-est-generique":
-                    souvenirs = await asyncio.to_thread(self._chercher_souvenirs, extraire_objet(texte))
-                    if not any(s.get("source") in ("photo", "journal") for s in souvenirs):
+                    if self._mode_invite():
+                        return None  # phrase ambiguë : le chat applique sa propre garde du mode invité
+                    objet = extraire_objet(texte)
+                    souvenirs = await asyncio.to_thread(self._chercher_souvenirs, objet)
+                    if not self._souvenir_pertinent(objet, souvenirs):
                         return None  # « où est ma commande ? » : pas un objet vu, le modèle s'en charge
+                # ou_est applique aussi la garde du mode invité pour « où j'ai posé… ».
                 r = await self.ou_est(texte, parler=False)
                 return r["reponse"]
             r = await self.decrire(mode, source, parler=False, memoriser=True)

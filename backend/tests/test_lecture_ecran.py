@@ -158,7 +158,9 @@ def test_loutil_rend_le_texte_local_sans_passer_par_un_modele(monkeypatch):
     # Si le dispatch appelait ocr_screen puis un modèle, ce texte figé ne remonterait pas tel quel.
     monkeypatch.setattr(actions, "read_screen_text", lambda **k: "Ligne A\nLigne B")
     res = asyncio.run(make_tool_runner(_tool_ctx(True))("read_screen_text", {}))
-    assert res == "Ligne A\nLigne B"
+    # Constat du 2026-09-14 : le texte lu arrive au modèle dans un bloc « contenu externe » (une donnée, pas
+    # une consigne) ; à l'intérieur, il est rendu tel quel.
+    assert res == "<<contenu_externe source=read_screen_text>>\nLigne A\nLigne B\n<</contenu_externe>>"
 
 
 def test_loutil_est_bloque_si_le_controle_ecran_est_desactive(monkeypatch):

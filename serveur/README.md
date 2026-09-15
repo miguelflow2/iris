@@ -85,6 +85,12 @@ Pour qu'IRIS s'y adresse, dans `settings.json` de l'application :
 | `VELA_DONNEES` | non | Où écrire compteurs et repli. Défaut : `serveur/donnees`. |
 | `VELA_TIMEOUT_FLUX_S` | non | Délai (s) sans le moindre octet toléré sur un flux amont avant de couper. Défaut : 120. |
 | `VELA_AMONT_COOLDOWN_S` | non | Durée (s) pendant laquelle une clé amont ayant répondu 401/402/429 est écartée avant réessai. Défaut : 300. |
+| `VELA_SMTP_HOTE` | **oui pour le verrouillage à distance** | Serveur de courriel qui envoie le lien de confirmation liant un ordinateur à un compte (2026-09-14). Sans lui, aucun ordinateur ne peut être lié : la page `/verrou` ne peut atteindre personne, et le relais le dit. |
+| `VELA_SMTP_PORT`, `VELA_SMTP_TLS`, `VELA_SMTP_UTILISATEUR`, `VELA_SMTP_MOTDEPASSE` | selon le fournisseur | Port (587 par défaut, 465 = TLS direct), STARTTLS (`1` par défaut), identifiants SMTP. |
+| `VELA_COURRIEL_EXPEDITEUR` | non | Expéditeur du courriel de confirmation. Défaut : `VELA <no-reply@velaglass.ca>`. |
+| `VELA_URL_PUBLIQUE` | **oui en production** | Adresse publique du relais (ex. `https://relais.velaglass.ca`), utilisée dans le lien de confirmation et le lien du spectateur. Sans elle, le lien reprend l'en-tête `Host` de la requête. |
+
+Liaison d'un ordinateur (contre-vérification du 2026-09-14) : chaque demande garde sa propre attente (une par clé d'ordinateur) ; le courriel ne montre ni le nom de l'ordinateur comme preuve ni le code ; la page du lien demande de recopier le code de 6 caractères affiché dans IRIS (Profil › Verrouillage à distance), et n'importe quel lien encore valable du même courriel lie l'ordinateur dont on recopie le code. Limites : 5 demandes par (courriel, clé) et par (courriel, adresse IP) par jour, 20 par adresse IP par heure, 20 courriels par adresse par jour. `/sante` expose `liaison_possible`. Les liaisons vivent dans `VELA_DONNEES` : sur un disque éphémère (`/tmp` du service gratuit), elles sont perdues au redémarrage et doivent être reconfirmées.
 
 Générer un secret : `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 

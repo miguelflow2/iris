@@ -7,7 +7,11 @@
 //
 // Limites réelles, dites dans les écrans :
 // - pendant que ce micro tourne, l'écoute de « Dis-moi Iris » est mise en pause (puis reprise), pour ne
-//   pas ouvrir deux reconnaissances en même temps ;
+//   pas ouvrir deux reconnaissances en même temps. C'est une PAUSE nommée (ServiceVoix.suspendreVeille) :
+//   le choix de l'utilisateur, retenu sur l'iPhone, n'est jamais réécrit (une app tuée pendant les alertes
+//   le perdait) ;
+// - « Parler à IRIS », l'interprète et les dictées refusent de démarrer tant que ce micro tourne (voir
+//   MoteurVoix.microOccupe) : deux AVAudioEngine sur la même entrée se la disputent ;
 // - un appel, Siri ou une autre app qui prend le micro met l'écoute en pause ; elle repart seule quand
 //   iOS rend le micro ;
 // - en arrière-plan, iOS laisse tourner le micro seulement parce que l'app déclare l'audio en arrière-plan
@@ -89,7 +93,6 @@ final class MicroPerception {
     @ObservationIgnored private let voix: any ServiceVoix
     @ObservationIgnored private var rappelsFormat: [String: @MainActor (AVAudioFormat) -> Void] = [:]
     @ObservationIgnored private(set) var formatCourant: AVAudioFormat?
-    @ObservationIgnored private var motActivationSuspendu = false
     @ObservationIgnored private var observateurs: [NSObjectProtocol] = []
     @ObservationIgnored private var relance: Task<Void, Never>?
 
@@ -98,6 +101,19 @@ final class MicroPerception {
     }
 
     var abonnes: Bool { !rappelsFormat.isEmpty }
+
+    /// Qui tient le micro, dit en français (« les alertes sonores et les sous-titres »), ou nil.
+    var occupePar: String? {
+        guard actif else { return nil }
+        let noms = rappelsFormat.keys.sorted().map { nom -> String in
+            switch nom {
+            case "alertes": return "les alertes sonores"
+            case "sous-titres": return "les sous-titres"
+            default: return nom
+            }
+        }
+        return noms.isEmpty ? nil : noms.joined(separator: " et ")
+    }
 
     // MARK: - Abonnement
 
@@ -133,6 +149,12 @@ final class MicroPerception {
 
     private func demarrerMoteur() throws {
         suspendreMotActivation()
+        // La pause ferme la reconnaissance de la voix de façon synchrone (MoteurVoix.suspendreVeille). Si la voix
+        // tient encore le micro malgré tout, on refuse plutôt que d'ouvrir un second AVAudioEngine sur l'entrée.
+        if MoteurVoix.voixTientLeMicro(voix.etat) {
+            reprendreMotActivation()
+            throw ErreurMicro.occupe("Le micro est encore utilisé par la voix d'IRIS sur cet iPhone. Réessaie dans un instant.")
+        }
         do {
             try SessionAudio.activer()
         } catch {
@@ -211,23 +233,15 @@ final class MicroPerception {
 
     // MARK: - « Dis-moi Iris » en pause
 
+    private static let clePause = "micro-perception"
+
     private func suspendreMotActivation() {
-        let voulu: Bool
-        if let moteurVoix = voix as? MoteurVoix {
-            voulu = moteurVoix.motActivationVoulu
-        } else {
-            voulu = voix.etat == .veille || voix.etat == .commande
-        }
-        if voulu {
-            voix.arreterMotActivation()
-            motActivationSuspendu = true
-        }
+        voix.suspendreVeille(cle: Self.clePause,
+                             raison: "« Dis-moi Iris » est en pause pendant les alertes sonores ou les sous-titres.")
     }
 
     private func reprendreMotActivation() {
-        guard motActivationSuspendu else { return }
-        motActivationSuspendu = false
-        voix.demarrerMotActivation()
+        voix.reprendreVeille(cle: Self.clePause)
     }
 
     // MARK: - Notifications d'iOS

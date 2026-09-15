@@ -16,6 +16,14 @@ créés pendant la session.
 
 Phrases (interception de priorité 10, avant tout le reste) : « mode invité », « active le mode invité »,
 « fin du mode invité », « désactive le mode invité ».
+
+Sortir à la voix : l'invité porte les lunettes, et IRIS ne sait pas qui parle. Si « fin du mode invité »
+suffisait, l'invité en sortirait et IRIS lui répondrait aussitôt avec les souvenirs du propriétaire. La
+phrase de sortie n'est donc acceptée que si le verrou vocal est installé (ctx.voice.verificateur_locuteur :
+la commande a alors été admise comme la voix du propriétaire) ET si la phrase vient du micro de cet
+ordinateur (voice.listener.ORIGINE_COMMANDE). Une phrase transcrite par le téléphone (POST /api/voix/commande)
+n'a aucun audio : le verrou vocal ne l'a jamais vérifiée, elle est refusée même quand il est installé.
+Sinon, le mode se termine depuis l'application ou à la fin de la minuterie, et IRIS le dit.
 """
 from __future__ import annotations
 
@@ -40,7 +48,13 @@ LIMITE = (
     "Le mode invité suspend la mémoire d'IRIS (souvenirs, journal, cours, photos décrites, reçus) et efface les "
     "conversations de la session à la sortie. Pendant le mode, IRIS ne s'appuie pas sur vos souvenirs pour "
     "répondre, mais il ne cache pas vos souvenirs existants dans l'application. Il n'efface ni les rappels ni "
-    "les tâches créés pendant la session."
+    "les tâches créés pendant la session. IRIS ne sait pas qui parle dans les lunettes : sans verrou vocal, "
+    "la phrase « fin du mode invité » est refusée, et le mode se termine depuis l'application ou à la fin de "
+    "la minuterie. Le verrou vocal reste une vérification de base : une voix proche peut le tromper."
+)
+SORTIE_VOCALE_REFUSEE = (
+    "Je ne peux pas savoir qui me parle : terminez le mode invité depuis l'application IRIS. "
+    "Il se terminera aussi tout seul à {heure}."
 )
 
 _POLITESSE = r"(?: s il (?:te|vous) plait)?"
@@ -52,6 +66,19 @@ _DESACTIVER = re.compile(
     r"^(?:iris )?(?:fin|termine|terminer|arrete|arreter|desactive|desactiver|desactivez|quitte|quitter|sors|"
     r"sortir|sortez|stop)(?: du| le| de| la)? mode invite" + _POLITESSE + r"$"
 )
+
+
+_ORIGINE_MICRO_PC = "micro_pc"
+
+
+def _origine_commande() -> str:
+    """Origine de la phrase en cours d'interception (voice.listener.ORIGINE_COMMANDE). Si l'écoute ne peut pas
+    être importée, on ne sait pas d'où vient la phrase : on la traite comme non vérifiée."""
+    try:
+        from .voice.listener import ORIGINE_COMMANDE
+    except Exception:  # pragma: no cover - module d'écoute absent ou cassé
+        return "inconnue"
+    return ORIGINE_COMMANDE.get()
 
 
 def _normaliser(texte: str) -> str:
@@ -257,6 +284,15 @@ class ModeInvite:
         if _DESACTIVER.match(propre):
             if not self.actif:
                 return "Le mode invité n'est pas actif."
+            if not self._voix_verifiee():
+                # L'invité porte les lunettes : sans voix vérifiée, cette phrase peut venir de lui.
+                detail = ("commande transcrite par le téléphone, voix non vérifiée"
+                          if _origine_commande() != _ORIGINE_MICRO_PC else "verrou vocal absent")
+                try:
+                    self.ctx.consent.log("mode_invite_sortie_vocale_refusee", detail=detail)
+                except Exception:  # pragma: no cover
+                    pass
+                return SORTIE_VOCALE_REFUSEE.format(heure=heure_locale(self.jusqua))
             resultat = self.desactiver(origine="voix")
             return self._phrase_de_fin(resultat["effacees"], concis)
         if _ACTIVER.match(propre):
@@ -265,9 +301,23 @@ class ModeInvite:
             etat = self.activer(origine="voix")
             if concis:
                 return f"Mode invité activé jusqu'à {heure_locale(etat['jusqua'])}."
+            sortie = ("dites « fin du mode invité » pour en sortir." if self._voix_verifiee() else
+                      "pour en sortir avant, utilisez l'application : je ne peux pas savoir qui me parle.")
             return (f"Mode invité activé jusqu'à {heure_locale(etat['jusqua'])} : je ne garde pas de souvenirs de "
-                    "cette session, et ses conversations seront effacées à la fin.")
+                    f"cette session, et ses conversations seront effacées à la fin. Quiconque porte les lunettes "
+                    f"me parle ; {sortie}")
         return None
+
+    def _voix_verifiee(self) -> bool:
+        """Vrai seulement si la phrase vient du micro de cet ordinateur ET que le verrou vocal y est installé :
+        la commande a alors été admise comme la voix du propriétaire (VoiceListener._locuteur_admis, appelé sur
+        TOUS les chemins du micro qui mènent à une interception : _listen_command pour une commande dite après le mot
+        d'activation, et _wake_cycle pour une commande dite dans le même souffle en reconnaissance en ligne). Une phrase
+        venue du téléphone (texte, sans audio) n'a été vérifiée par personne : faux, verrou installé ou non."""
+        if _origine_commande() != _ORIGINE_MICRO_PC:
+            return False
+        voice = getattr(self.ctx, "voice", None)
+        return callable(getattr(voice, "verificateur_locuteur", None))
 
     @staticmethod
     def _phrase_de_fin(effacees: dict, concis: bool) -> str:

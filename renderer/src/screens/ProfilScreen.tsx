@@ -142,7 +142,13 @@ export function ProfilScreen(): JSX.Element {
           </div>
           <div className="row small muted" style={{ gap: 8 }}>
             <span className="dot on" />
-            <span>{settings?.local_only ? 'Rien ne sort de cet ordinateur' : 'Rien ne part sans votre accord'}</span>
+            <span>
+              {settings?.local_only
+                ? settings?.verrou_distant_actif
+                  ? 'Rien ne sort de cet ordinateur, sauf le canal du verrouillage à distance'
+                  : 'Rien ne sort de cet ordinateur'
+                : 'Rien ne part sans votre accord'}
+            </span>
           </div>
         </div>
 

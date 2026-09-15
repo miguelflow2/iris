@@ -5,9 +5,20 @@
  * d'OpenStreetMap, directement depuis cette page : elle n'est JAMAIS envoyée à IRIS ni à l'ordinateur.
  * D'où un accord explicite, retenu sur ce téléphone, avant la toute première requête.
  *
- * Règles d'usage d'OpenStreetMap respectées : une recherche d'adresse par seconde au plus (file
- * d'attente), aucune recherche pendant la frappe (seulement sur « Chercher »), attribution visible
- * « © contributeurs OpenStreetMap », et la page s'identifie par son origine (en-tête Referer).
+ * Règles d'usage d'OpenStreetMap, ce qui est tenu et ce qui ne l'est PAS (revue du 2026-09-14) :
+ * - tenu : une recherche d'adresse par seconde au plus DEPUIS CE TÉLÉPHONE (file d'attente), aucune
+ *   recherche pendant la frappe (seulement sur « Chercher »), attribution visible « © contributeurs
+ *   OpenStreetMap », application identifiée par le paramètre email= prévu par la politique de Nominatim ;
+ * - aucun en-tête Referer : il enverrait à OpenStreetMap le nom de la machine de la maison
+ *   (https://<pc>.tailXXXX.ts.net), joint aux coordonnées GPS ;
+ * - PAS tenu : la limite d'une requête par seconde vaut pour la SOMME des utilisateurs d'une application,
+ *   et ces services bénévoles (Nominatim, routing.openstreetmap.de) n'ont aucun engagement de service.
+ *   Aucun code ne peut tenir une limite globale depuis des téléphones indépendants ; le mandataire sur le
+ *   relais a été écarté (Miguel : pas de position GPS sur les serveurs VELA). Avant une mise en marché à
+ *   grande échelle, il faut donc une instance propre ou un fournisseur de données OSM sous contrat : ils se
+ *   branchent SANS changer ce code, par les réglages guidage_recherche / guidage_itineraire de l'ordinateur
+ *   (config.py), lus ici par /api/settings et admis par la politique de contenu (routes_mobile.py). Tant
+ *   qu'ils sont vides, les services publics servent et l'écran dit qu'ils peuvent limiter ou refuser.
  *
  * Ce que le guidage ne fait pas, et que l'écran dit : détecter un obstacle, des travaux ou l'état d'un
  * feu pour piétons ; marcher écran éteint ou page en arrière-plan (iOS suspend la page) ; être plus
@@ -22,11 +33,16 @@
  * Module du contrat window.IRIS (interface K) : il ne touche à rien d'autre que son panneau.
  */
 
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const ITINERAIRE = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/';
+// Services publics par défaut (mêmes valeurs que config.py) ; remplacés par ceux configurés sur l'ordinateur.
+const NOMINATIM_PUBLIC = 'https://nominatim.openstreetmap.org';
+const ITINERAIRE_PUBLIC = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/';
+const CLE_SERVICES = 'iris_guidage_services';
 const CLE_ACCORD = 'iris_guidage_accord';
 const CLE_ANNONCES = 'iris_guidage_annonces';
-const PAUSE_NOMINATIM_MS = 1100;      // « une requête par seconde au plus », avec une marge
+const PAUSE_NOMINATIM_MS = 1100;      // « une requête par seconde au plus », avec une marge (par téléphone)
+// Contact de l'application pour Nominatim (paramètre email= de sa politique d'usage) : l'adresse publique
+// de VELA, jamais celle de l'utilisateur.
+const CONTACT_APPLICATION = 'contact@velaglass.ca';
 const PAUSE_ITINERAIRE_MS = 1000;     // courtoisie envers un serveur bénévole
 const DELAI_RESEAU_MS = 15000;
 const DISTANCE_PREAVIS_M = 40;
@@ -219,11 +235,67 @@ function positionActuelle() {
   });
 }
 
-// ------------------------------------------------------------------ OpenStreetMap
+// ------------------------------------------------------------------ services cartographiques
+/** Adresse sûre d'un service (même règle que config.adresse_service_cartographique). */
+function adresseService(valeur, dossier) {
+  const brut = String(valeur || '').trim();
+  if (!brut || brut.length > 300 || /[\s"'<>;`?#@\\]/.test(brut)) return '';
+  if (!/^https:\/\/[a-z0-9.-]+(:\d{1,5})?(\/[A-Za-z0-9\/._~%-]*)?$/i.test(brut) &&
+      !/^http:\/\/(127\.0\.0\.1|localhost)(:\d{1,5})?(\/[A-Za-z0-9\/._~%-]*)?$/i.test(brut)) return '';
+  const base = brut.replace(/\/+$/, '');
+  return dossier ? base + '/' : base;
+}
+function lireServicesRetenus() {
+  try {
+    const d = JSON.parse(memoireLocale(CLE_SERVICES) || '{}');
+    return { recherche: adresseService(d.recherche), itineraire: adresseService(d.itineraire, true) };
+  } catch (e) { return { recherche: '', itineraire: '' }; }
+}
+// Services réellement utilisés. Au démarrage : les derniers lus de l'ordinateur (retenus sur ce téléphone),
+// pour qu'un ordinateur momentanément injoignable ne renvoie pas la position vers les services publics
+// alors qu'un autre service a été choisi.
+const services = { recherche: NOMINATIM_PUBLIC, itineraire: ITINERAIRE_PUBLIC, recherchePublique: true, itinerairePublic: true };
+function appliquerServices(configures) {
+  const recherche = adresseService(configures && configures.recherche);
+  const itineraire = adresseService(configures && configures.itineraire, true);
+  services.recherche = recherche || NOMINATIM_PUBLIC;
+  services.itineraire = itineraire || ITINERAIRE_PUBLIC;
+  services.recherchePublique = !recherche;
+  services.itinerairePublic = !itineraire;
+}
+appliquerServices(lireServicesRetenus());
+let chargementServices = null;
+/** Relit les réglages guidage_recherche / guidage_itineraire de l'ordinateur (à chaque ouverture du panneau). */
+function chargerServices() {
+  const api = IRISv().api;
+  if (!api || typeof api.get !== 'function') return Promise.resolve(services);
+  chargementServices = Promise.resolve()
+    .then(() => api.get('/api/settings'))
+    .then((reglages) => {
+      if (reglages && typeof reglages === 'object') {
+        const lus = { recherche: reglages.guidage_recherche || '', itineraire: reglages.guidage_itineraire || '' };
+        appliquerServices(lus);
+        retenirLocal(CLE_SERVICES, JSON.stringify(lus));
+      }
+      return services;
+    })
+    .catch(() => services);
+  return chargementServices;
+}
+const servicesTousPublics = () => services.recherchePublique && services.itinerairePublic;
+/** Nom affichable d'un service : jamais le nom d'hôte ni celui d'un fournisseur commercial (masque de marque). */
+const nomRecherche = () => (services.recherchePublique ? 'OpenStreetMap' : 'Le service cartographique de votre IRIS');
+const nomItineraire = () => (services.itinerairePublic ? "Le service d'itinéraire d'OpenStreetMap" : "Le service d'itinéraire de votre IRIS");
+/** Signature des services couverts par l'accord : « public » pour l'accord d'origine. */
+const signatureServices = () => (servicesTousPublics() ? 'public'
+  : encodeURIComponent(services.recherche) + ',' + encodeURIComponent(services.itineraire));
+
+// ------------------------------------------------------------------ requêtes
 function erreurAnnulee() { const e = new Error('Demande annulée.'); e.annule = true; return e; }
 
-/** GET JSON vers OpenStreetMap. Rend {statut, donnees} ; lève une Error au message affichable. */
-async function lireJson(url, signal) {
+/** GET JSON vers un service cartographique. Rend {statut, donnees} ; lève une Error au message affichable. */
+async function lireJson(url, signal, nom) {
+  nom = nom || 'OpenStreetMap';
   if (signal && signal.aborted) throw erreurAnnulee();
   const controle = new AbortController();
   const minuterie = setTimeout(() => controle.abort(), DELAI_RESEAU_MS);
@@ -234,20 +306,20 @@ async function lireJson(url, signal) {
     try {
       reponse = await fetch(url, {
         headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store',
-        referrerPolicy: 'strict-origin-when-cross-origin', signal: controle.signal,
+        referrerPolicy: 'no-referrer', signal: controle.signal,
       });
     } catch (e) {
       if (signal && signal.aborted) throw erreurAnnulee();
       throw new Error(controle.signal.aborted
-        ? "OpenStreetMap n'a pas répondu dans les 15 secondes."
-        : "OpenStreetMap est injoignable : vérifiez les données mobiles ou le Wi-Fi de ce téléphone.");
+        ? nom + " n'a pas répondu dans les 15 secondes."
+        : nom + " est injoignable : vérifiez les données mobiles ou le Wi-Fi de ce téléphone.");
     }
-    if (reponse.status === 429) throw new Error('OpenStreetMap limite le nombre de demandes : réessayez dans une minute.');
+    if (reponse.status === 429) throw new Error(nom + ' limite le nombre de demandes : réessayez dans une minute.');
     let donnees = null;
     try { donnees = await reponse.json(); } catch (e) { donnees = null; }
     if (signal && signal.aborted) throw erreurAnnulee();
     if (!reponse.ok && !(donnees && typeof donnees === 'object')) {
-      throw new Error("OpenStreetMap a refusé la demande (" + reponse.status + ').');
+      throw new Error(nom + " a refusé la demande (" + reponse.status + ').');
     }
     return { statut: reponse.status, donnees };
   } finally {
@@ -265,8 +337,12 @@ function demanderNominatim(chemin, signal) {
     if (attente > 0) await pause(attente);
     if (signal && signal.aborted) throw erreurAnnulee();
     derniereNominatim = Date.now();
-    const r = await lireJson(NOMINATIM + chemin, signal);
-    if (r.statut >= 400) throw new Error("OpenStreetMap a refusé la demande (" + r.statut + ').');
+    if (chargementServices) await chargementServices;
+    // email= est demandé par la politique du service PUBLIC ; un service configuré n'en reçoit pas.
+    const contact = services.recherchePublique
+      ? (chemin.indexOf('?') === -1 ? '?' : '&') + 'email=' + encodeURIComponent(CONTACT_APPLICATION) : '';
+    const r = await lireJson(services.recherche + chemin + contact, signal, nomRecherche());
+    if (r.statut >= 400) throw new Error(nomRecherche() + " a refusé la demande (" + r.statut + ').');
     return r.donnees;
   });
   fileNominatim = tour.catch(() => null);
@@ -392,14 +468,15 @@ async function calculerItineraire(depart, arrivee, signal) {
   const attente = derniereItineraire + PAUSE_ITINERAIRE_MS - Date.now();
   if (attente > 0) await pause(attente);
   derniereItineraire = Date.now();
-  const url = ITINERAIRE + fixe(depart.lon) + ',' + fixe(depart.lat) + ';' + fixe(arrivee.lon) + ',' + fixe(arrivee.lat) +
+  if (chargementServices) await chargementServices;
+  const url = services.itineraire + fixe(depart.lon) + ',' + fixe(depart.lat) + ';' + fixe(arrivee.lon) + ',' + fixe(arrivee.lat) +
     '?steps=true&overview=false&geometries=geojson';
-  const r = await lireJson(url, signal);
+  const r = await lireJson(url, signal, nomItineraire());
   const d = r.donnees || {};
   if (d.code !== 'Ok' || !Array.isArray(d.routes) || !d.routes.length) {
     if (d.code === 'NoRoute') throw new Error("Aucun itinéraire à pied n'a été trouvé jusqu'à cette destination.");
     if (d.code === 'NoSegment') throw new Error("Votre position ou la destination est trop loin d'une rue ou d'un chemin connu d'OpenStreetMap.");
-    throw new Error("Le service d'itinéraire d'OpenStreetMap n'a pas pu calculer le trajet (" + (d.code || r.statut) + ').');
+    throw new Error(nomItineraire() + " n'a pas pu calculer le trajet (" + (d.code || r.statut) + ').');
   }
   const route = d.routes[0];
   const etapes = lireEtapes(route);
@@ -453,10 +530,23 @@ function ouvrir(ctx) {
   // ---- accord (hors de la garde : retirer son accord reste possible sans les lunettes)
   const carteAccord = el('div', { class: 'carte' });
   corps.append(carteAccord, zoneFonction);
-  const TEXTE_ACCORD = "Le guidage envoie la position de ce téléphone, et la destination que vous cherchez, aux services publics " +
+  const TEXTE_ACCORD_PUBLIC = "Le guidage envoie la position de ce téléphone, et la destination que vous cherchez, aux services publics " +
     "d'OpenStreetMap sur Internet, pour trouver l'adresse et l'itinéraire. Votre position n'est pas envoyée à IRIS ni à votre ordinateur. " +
-    "OpenStreetMap peut garder l'adresse Internet du téléphone dans ses journaux techniques, selon sa propre politique.";
-  function accordDonne() { return String(memoireLocale(CLE_ACCORD) || '').indexOf('oui') === 0; }
+    "OpenStreetMap peut garder l'adresse Internet du téléphone dans ses journaux techniques, selon sa propre politique. " +
+    "C'est un service public gratuit, sans engagement de service : il peut limiter ou refuser les demandes.";
+  const TEXTE_ACCORD_CONFIGURE = "Le guidage envoie la position de ce téléphone, et la destination que vous cherchez, au service " +
+    "cartographique choisi dans les réglages de votre IRIS (données OpenStreetMap), sur Internet, pour trouver l'adresse et " +
+    "l'itinéraire. Votre position n'est pas envoyée à IRIS ni à votre ordinateur. Ce service peut garder l'adresse Internet du " +
+    "téléphone dans ses journaux techniques, selon sa propre politique ; sa disponibilité dépend de lui.";
+  const texteAccord = () => (servicesTousPublics() ? TEXTE_ACCORD_PUBLIC
+    : TEXTE_ACCORD_CONFIGURE + (services.recherchePublique || services.itinerairePublic
+      ? " La recherche d'adresse ou l'itinéraire passe encore par les services publics d'OpenStreetMap, qui peuvent limiter ou refuser les demandes." : ''));
+  /** L'accord vaut pour les services qu'il nomme : changer de service redemande l'accord. */
+  function accordDonne() {
+    const valeur = String(memoireLocale(CLE_ACCORD) || '');
+    if (valeur.indexOf('oui') !== 0) return false;
+    return (valeur.split(' ')[2] || 'public') === signatureServices();
+  }
   function dessinerAccord() {
     carteAccord.textContent = '';
     if (accordDonne()) {
@@ -465,29 +555,32 @@ function ouvrir(ctx) {
         oublierLocal(CLE_ACCORD);
         arreterGuidage(null);
         dessinerAccord();
-        const t = "Accord retiré : le guidage est arrêté et plus aucune position n'est envoyée à OpenStreetMap depuis ce téléphone.";
+        const t = "Accord retiré : le guidage est arrêté et plus aucune position n'est envoyée " +
+          (servicesTousPublics() ? "à OpenStreetMap" : "au service cartographique") + " depuis ce téléphone.";
         toast(t, 'ok');
         dire(t);
       });
       carteAccord.append(el('h3', {}, 'Votre accord'),
-        el('p', { class: 'note-faible' }, 'Accordé sur ce téléphone. ' + TEXTE_ACCORD), retirer);
+        el('p', { class: 'note-faible' }, 'Accordé sur ce téléphone. ' + texteAccord()), retirer);
     } else {
-      carteAccord.append(el('h3', {}, 'Avant la première utilisation'), el('p', { class: 'note' }, TEXTE_ACCORD),
+      carteAccord.append(el('h3', {}, 'Avant la première utilisation'), el('p', { class: 'note' }, texteAccord()),
         el('p', { class: 'note-faible' }, "L'accord vous sera demandé au premier geste, et vous pourrez le retirer ici."));
     }
   }
   async function assurerAccord() {
+    await (chargementServices || Promise.resolve());   // l'accord porte sur les services réellement utilisés
     if (accordDonne()) return true;
-    const ok = await confirmer(TEXTE_ACCORD + '\n\nAcceptez-vous ?', { oui: "J'accepte", non: 'Refuser' });
+    const ok = await confirmer(texteAccord() + '\n\nAcceptez-vous ?', { oui: "J'accepte", non: 'Refuser' });
     if (!ok) {
       toast("Sans votre accord, le guidage n'envoie rien et ne peut pas fonctionner.", 'info');
       return false;
     }
-    retenirLocal(CLE_ACCORD, 'oui ' + new Date().toISOString());
+    retenirLocal(CLE_ACCORD, 'oui ' + new Date().toISOString() + ' ' + signatureServices());
     dessinerAccord();
     return true;
   }
   dessinerAccord();
+  const servicesLus = chargerServices();
 
   if (!geolocalisationPossible()) {
     zoneFonction.append(el('p', { class: 'resultat-erreur', role: 'alert' }, raisonSansGeolocalisation()));
@@ -884,6 +977,16 @@ function ouvrir(ctx) {
   document.addEventListener('visibilitychange', auRetour);
 
   // ---- limites et attribution
+  const limiteServices = el('li', {});
+  function dessinerLimiteServices() {
+    limiteServices.textContent = servicesTousPublics()
+      ? "La recherche d'adresse et l'itinéraire viennent des services publics gratuits d'OpenStreetMap, sans engagement de service : ils peuvent limiter ou refuser les demandes, ou être indisponibles."
+      : "La recherche d'adresse et l'itinéraire viennent du service cartographique choisi dans les réglages de votre IRIS" +
+        (services.recherchePublique || services.itinerairePublic ? " et, pour une partie, des services publics d'OpenStreetMap, qui peuvent limiter ou refuser les demandes" : '') +
+        ' : sa disponibilité dépend de lui.';
+  }
+  dessinerLimiteServices();
+  servicesLus.then(() => { dessinerAccord(); dessinerLimiteServices(); }).catch(() => null);
   const limites = el('details', { class: 'carte' }, el('summary', {}, 'Limites du guidage'));
   limites.append(el('ul', { class: 'liste-limites' },
     el('li', {}, "La position du téléphone est précise à quelques mètres au mieux, et à plusieurs dizaines de mètres entre de grands immeubles : une annonce peut arriver trop tôt ou trop tard."),
@@ -891,6 +994,7 @@ function ouvrir(ctx) {
     el('li', {}, "Le guidage ne détecte ni les obstacles, ni les travaux, ni l'état des feux pour piétons. Il ne remplace ni la canne, ni le chien-guide, ni votre prudence pour traverser."),
     el('li', {}, "Les itinéraires viennent des données d'OpenStreetMap, rédigées par des bénévoles : un trottoir, un passage ou une entrée peut manquer ou être faux."),
     el('li', {}, 'Internet est requis sur ce téléphone. Durées estimées pour un pas moyen.'),
+    limiteServices,
     el('li', {}, "Pour chercher une adresse ou commencer un trajet, vos lunettes VELA doivent être détectées : par votre ordinateur, ou connectées à ce téléphone (Android). Si l'ordinateur ne répond pas et que leur dernière confirmation date de plus de deux minutes et demie, un nouveau trajet ne peut pas commencer. Un trajet commencé n'est pas interrompu si elles disparaissent."),
     el('li', {}, 'Fermer ce panneau arrête le guidage.')));
   const attribution = el('p', { class: 'note-faible' }, 'Données cartographiques : ',

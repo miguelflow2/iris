@@ -11,11 +11,15 @@ Limites dites à l'utilisateur, sans détour :
   dites à voix haute, noms propres), sans ponctuation ni distinction entre l'enseignant et la salle ;
 - les fiches et les questions sont rédigées à partir de cette transcription : elles peuvent contenir
   des erreurs et doivent être vérifiées avec les notes et le matériel du cours ;
-- l'import n'accepte que le WAV en PCM entier (pas de MP3 ni de M4A) ;
+- l'import n'accepte que le WAV en PCM entier (pas de MP3 ni de M4A), 150 Mo au plus en JSON (base64),
+  1 Go et 4 heures au plus en octets bruts ; la réponse arrive tout de suite, la conversion et la
+  transcription se font ensuite sur l'ordinateur (cours.etat suit la progression) ;
+- la rédaction d'un long cours (plus de 5 parties) continue en arrière-plan (réponse 202) ;
 - mémoire suspendue (mode invité, zone sans mémoire) : aucun cours ne démarre, rien n'est écrit.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import io
@@ -29,7 +33,7 @@ import uuid
 import wave
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .enregistrement_audio import (
     ESPACE_MIN_DEMARRAGE, SessionEnregistrement, annoncer, dossier_audio, espace_libre, memoire_suspendue, nom_libre,
@@ -69,10 +73,17 @@ CREATE TABLE IF NOT EXISTS cours_lignes (
 NOM_ROBINET = "cours"
 TAILLE_TRANCHE = 6000  # caractères envoyés au moteur par appel : assez pour un contexte utile, assez peu pour rester fiable
 TRANSCRIPTION_MIN = 200  # en dessous, il n'y a pas de quoi faire des fiches honnêtes
-TAILLE_MAX_IMPORT = 600 * 1024 * 1024  # 600 Mo décodés : ≈ 5 h en 16 kHz mono
+# Import en JSON (base64) : le corps, la chaîne et les octets décodés coexistent en mémoire. 150 Mo décodés
+# (≈ 1 h 20 en WAV 16 kHz mono 16 bits) gardent ce pic sous le demi-gigaoctet sur un PC de 8 Go qui fait
+# aussi tourner l'écoute. Au-delà, la route en octets bruts (écrite sur le disque au fil de l'eau) prend le relais.
+TAILLE_MAX_IMPORT = 150 * 1024 * 1024
+TAILLE_MAX_FLUX = 1024 * 1024 * 1024  # route en octets bruts : 1 Go sur le disque
+DUREE_MAX_IMPORT_S = 4 * 3600  # une fois ramené en 16 kHz mono, ≈ 460 Mo en mémoire pendant la transcription
 TYPES_QUESTIONS = ("definition", "application", "comprehension", "calcul", "vrai_faux")
 QUESTIONS_MIN, QUESTIONS_MAX = 10, 25
 INTERVALLE_ETAT_S = 5.0
+DELAI_MOTEUR_S = 120.0  # par appel au moteur : une tranche qui ne revient pas ne fige pas la génération entière
+TRANCHES_MAX_DIRECT = 5  # au-delà, la génération part en tâche de fond (202) et publie sa progression
 
 AVERTISSEMENT_FICHES = (
     "> Fiches rédigées automatiquement à partir d'une transcription approximative du cours : "
@@ -83,6 +94,14 @@ LOCAL_SEULEMENT = (
     "et aucune IA locale n'est configurée. La transcription, elle, reste disponible."
 )
 MOTEUR_EN_PANNE = "Le moteur VELA n'a pas pu rédiger le texte. Réessayez dans un instant."
+MOTEUR_LENT = "Le moteur VELA n'a pas répondu à temps (2 minutes pour une partie). Réessayez dans un instant."
+TROP_VOLUMINEUX = (
+    "Fichier trop volumineux pour cet envoi (150 Mo au plus, soit environ 1 h 20 en WAV 16 kHz mono) : "
+    "découpez le fichier ou enregistrez en 16 kHz mono."
+)
+TROP_VOLUMINEUX_FLUX = "Fichier trop volumineux (1 Go au plus) : découpez le fichier ou enregistrez en 16 kHz mono."
+TROP_LONG = "Enregistrement trop long (4 heures au plus par import) : découpez le fichier en plusieurs cours."
+PREFIXE_FLUX = ".import-"  # fichier temporaire de la route en octets bruts (ni listé par l'album, ni purgé comme un WAV)
 FORMAT_REFUSE = (
     "Format non pris en charge : seul le fichier WAV (PCM) est accepté. Convertissez l'enregistrement "
     "(MP3, M4A…) en WAV, idéalement 16 kHz mono, avant de l'importer."
@@ -109,12 +128,10 @@ def agent_pour_texte(ctx, message: str) -> tuple[str, bool]:
     return agent, bool(cfg and cfg.local)
 
 
-async def demander_moteur(ctx, systeme: str, message: str, detail: str) -> dict:
-    """Une question texte au moteur, avec les garanties de confidentialité. Rend {texte, local}.
+def verifier_moteur(ctx, message: str) -> tuple[str, bool]:
+    """(moteur, local) si ce texte peut partir maintenant. Rien n'est envoyé ni inscrit au registre.
 
-    Lève RefusMoteur : 403 consentement, 409 mode local ou aucun moteur, 502 panne (le détail du
-    fournisseur reste au journal : le client ne voit jamais de nom de fournisseur)."""
-    from .connectors.base import ConnectorError
+    Lève RefusMoteur : 403 consentement, 409 mode local ou aucun moteur."""
     from .consent import DATA_TYPES, ConsentRequired, LocalOnlyMode
     from .router import NoAgentAvailable
 
@@ -131,10 +148,26 @@ async def demander_moteur(ctx, systeme: str, message: str, detail: str) -> dict:
         raise RefusMoteur(409, LOCAL_SEULEMENT)
     except NoAgentAvailable as exc:
         raise RefusMoteur(409, LOCAL_SEULEMENT if ctx.settings.user.local_only else (str(exc) or MOTEUR_EN_PANNE))
+    return agent, local
+
+
+async def demander_moteur(ctx, systeme: str, message: str, detail: str) -> dict:
+    """Une question texte au moteur, avec les garanties de confidentialité. Rend {texte, local}.
+
+    Lève RefusMoteur : 403 consentement, 409 mode local ou aucun moteur, 502 panne, 504 moteur trop lent
+    (le détail du fournisseur reste au journal : le client ne voit jamais de nom de fournisseur)."""
+    from .connectors.base import ConnectorError
+    from .consent import ConsentRequired, LocalOnlyMode
+    from .router import NoAgentAvailable
+
+    agent, local = verifier_moteur(ctx, message)
     if not local:
         ctx.consent.log("external_send", data_type="transcript", agent=agent, detail=detail[:200])
     try:
-        texte = await ctx.chat.demander_court(systeme, message)
+        texte = await asyncio.wait_for(ctx.chat.demander_court(systeme, message), DELAI_MOTEUR_S)
+    except asyncio.TimeoutError:
+        log.warning("moteur trop lent (%s) : abandon après %.0f s", detail, DELAI_MOTEUR_S)
+        raise RefusMoteur(504, MOTEUR_LENT)
     except ConnectorError as exc:
         log.warning("moteur en erreur (%s) : %s", detail, exc)
         raise RefusMoteur(502, MOTEUR_EN_PANNE)
@@ -144,6 +177,10 @@ async def demander_moteur(ctx, systeme: str, message: str, detail: str) -> dict:
     if not texte:
         raise RefusMoteur(502, MOTEUR_EN_PANNE)
     return {"texte": texte, "local": local}
+
+
+class ImportIllisible(Exception):
+    """Le son d'un WAV importé n'a pas pu être décodé après un en-tête valide ; le message est à montrer."""
 
 
 def decouper(texte: str, taille: int = TAILLE_TRANCHE) -> list[str]:
@@ -266,7 +303,49 @@ def lire_questions(brut: str) -> list[dict]:
 
 
 # =============================================================================== fichiers WAV
-def lire_wav(octets: bytes) -> tuple[bytes, float]:
+def _ouvrir_wav(source: bytes | Path):
+    """Lecteur `wave` d'un WAV PCM entier (octets en mémoire ou fichier sur le disque), en-tête vérifié.
+    Lève ValueError avec un message à montrer tel quel."""
+    if isinstance(source, (bytes, bytearray)):
+        tete = bytes(source[:12])
+    else:
+        try:
+            with open(source, "rb") as f:
+                tete = f.read(12)
+        except OSError as exc:
+            raise ValueError("Fichier illisible.") from exc
+    if len(tete) < 12 or tete[:4] != b"RIFF" or tete[8:12] != b"WAVE":
+        raise ValueError(FORMAT_REFUSE)
+    try:
+        lecteur = wave.open(io.BytesIO(source) if isinstance(source, (bytes, bytearray)) else str(source), "rb")
+    except (wave.Error, EOFError) as exc:
+        raise ValueError(
+            "WAV non pris en charge (compressé ou en virgule flottante) : seul le PCM entier est accepté. "
+            "Réexportez le fichier en WAV PCM 16 bits."
+        ) from exc
+    canaux, largeur, taux, total = lecteur.getnchannels(), lecteur.getsampwidth(), lecteur.getframerate(), lecteur.getnframes()
+    erreur = None
+    if largeur not in (1, 2, 3, 4) or canaux < 1:
+        erreur = "WAV non pris en charge : échantillons de 8, 16, 24 ou 32 bits entiers seulement."
+    elif not 4000 <= taux <= 384000:
+        erreur = f"Fréquence d'échantillonnage non prise en charge ({taux} Hz)."
+    elif total <= 0:
+        erreur = "Le fichier WAV ne contient aucun son."
+    if erreur:
+        lecteur.close()
+        raise ValueError(erreur)
+    return lecteur
+
+
+def entete_wav(source: bytes | Path) -> dict:
+    """Ce que l'en-tête annonce, sans décoder le son (rapide, même pour des heures) : durée et taille du PCM
+    16 kHz mono qu'on obtiendra. Lève ValueError (format refusé) avec un message à montrer tel quel."""
+    with _ouvrir_wav(source) as lecteur:
+        taux, total = lecteur.getframerate(), lecteur.getnframes()
+    return {"duree_s": total / taux, "octets_pcm": math.ceil(total * TAUX / taux) * 2}
+
+
+def lire_wav(source: bytes | Path) -> tuple[bytes, float]:
     """WAV PCM entier (8, 16, 24 ou 32 bits, mono ou multicanal, toute fréquence) -> PCM int16 mono 16 kHz.
 
     Traité par tranches d'une minute : un fichier de plusieurs heures ne doit pas faire exploser la
@@ -275,23 +354,9 @@ def lire_wav(octets: bytes) -> tuple[bytes, float]:
     message à montrer tel quel."""
     import numpy as np
 
-    if len(octets) < 12 or octets[:4] != b"RIFF" or octets[8:12] != b"WAVE":
-        raise ValueError(FORMAT_REFUSE)
-    try:
-        lecteur = wave.open(io.BytesIO(octets), "rb")
-    except (wave.Error, EOFError) as exc:
-        raise ValueError(
-            "WAV non pris en charge (compressé ou en virgule flottante) : seul le PCM entier est accepté. "
-            "Réexportez le fichier en WAV PCM 16 bits."
-        ) from exc
+    lecteur = _ouvrir_wav(source)
     with lecteur:
         canaux, largeur, taux, total = lecteur.getnchannels(), lecteur.getsampwidth(), lecteur.getframerate(), lecteur.getnframes()
-        if largeur not in (1, 2, 3, 4) or canaux < 1:
-            raise ValueError("WAV non pris en charge : échantillons de 8, 16, 24 ou 32 bits entiers seulement.")
-        if not 4000 <= taux <= 384000:
-            raise ValueError(f"Fréquence d'échantillonnage non prise en charge ({taux} Hz).")
-        if total <= 0:
-            raise ValueError("Le fichier WAV ne contient aucun son.")
         sorties: list[bytes] = []
         par_tranche = taux * 60
         position = 0
@@ -355,7 +420,12 @@ class ServiceCours:
         self._verrou = threading.RLock()
         self._actif: dict | None = None
         self._imports: dict[str, dict] = {}
-        self._generations: set[str] = set()
+        # Générations en cours : {cours_id: {quoi, fait, total, progression}} ; la dernière erreur d'une
+        # génération en tâche de fond (personne n'attend sa réponse HTTP pour la lire).
+        self._generations: dict[str, dict] = {}
+        self._erreurs_generation: dict[str, str] = {}
+        self._taches_generation: set[asyncio.Task] = set()
+        self._taches_par_cours: dict[str, asyncio.Task] = {}
         self._dernier_etat = 0.0
         self.notifier = lambda: None  # branché par routes_ecoute sur ecoute.etat
         creer_tables(ctx.db, SCHEMA)
@@ -394,9 +464,16 @@ class ServiceCours:
         en_cours = self._actif  # référence locale : arreter() peut le remettre à None pendant ce calcul
         actif = en_cours is not None and en_cours["id"] == row["id"]
         imp = self._imports.get(row["id"])
+        generation = self._generations.get(row["id"])
         duree = float(row.get("duree_s") or 0)
         if actif and en_cours is not None:
             duree = round(time.time() - en_cours["debut_epoch"], 1)
+        etat = row.get("etat") or "termine"
+        progression = round(imp["progression"], 3) if imp else None
+        if generation is not None:
+            # Même état que les événements cours.etat publiés pendant la génération : un écran qui relit
+            # le cours ne voit pas « termine » entre deux parties.
+            etat, progression = "generation", round(generation["progression"], 3)
         return {
             "id": row["id"],
             "titre": self._dechiffrer(row["titre_enc"]) or "",
@@ -410,9 +487,12 @@ class ServiceCours:
             "audio": self._audio_existant(row.get("audio")),
             "actif": actif,
             "source": row.get("source") or "direct",
-            "etat": row.get("etat") or "termine",
-            "progression": round(imp["progression"], 3) if imp else None,
+            "etat": etat,
+            "progression": progression,
             "erreur": row.get("erreur"),
+            "generation": ({"quoi": generation["quoi"], "fait": generation["fait"], "total": generation["total"]}
+                           if generation is not None else None),
+            "erreur_generation": self._erreurs_generation.get(row["id"]),
         }
 
     def _publier(self, cours_id: str, **extra) -> None:
@@ -582,7 +662,9 @@ class ServiceCours:
         return self._resume(row) if row else None
 
     def verifier(self) -> None:
-        """Appelée périodiquement : mode confidentiel ou mémoire suspendue arrêtent le cours ; sinon l'état est publié."""
+        """Appelée périodiquement : mode confidentiel ou mémoire suspendue arrêtent le cours et les rédactions
+        en arrière-plan ; sinon l'état est publié."""
+        self.annuler_generations_interdites()
         with self._verrou:
             actif = self._actif
         if actif is None:
@@ -599,8 +681,8 @@ class ServiceCours:
             self._publier(actif["id"])
 
     # ------------------------------------------------------------------ import
-    def importer(self, titre: str, matiere: str | None, nom_fichier: str | None, data: str) -> dict:
-        """Importe un WAV et le transcrit localement dans un fil. Lève EcouteImpossible (409) ou ValueError (422)."""
+    def verifier_import(self) -> None:
+        """Refus immédiats, avant de lire le moindre octet du fichier. Lève EcouteImpossible (409)."""
         if self.ctx.settings.user.privacy_mode:
             raise EcouteImpossible("Mode confidentiel actif : aucune transcription ne démarre.")
         suspendue = memoire_suspendue(self.ctx)
@@ -611,46 +693,73 @@ class ServiceCours:
             from .sous_titres import MODELE_ABSENT
 
             raise EcouteImpossible(MODELE_ABSENT)
+
+    def importer(self, titre: str, matiere: str | None, nom_fichier: str | None, data: str) -> dict:
+        """Importe un WAV envoyé en base64 et le transcrit localement dans un fil. Répond tout de suite
+        (etat « transcription ») : le décodage du son, sa conversion et la transcription se font dans le
+        fil. Lève EcouteImpossible (409) ou ValueError (422, format ou taille, message à montrer)."""
+        self.verifier_import()
         if not data:
             raise ValueError("Fichier manquant.")
         if len(data) > TAILLE_MAX_IMPORT * 4 // 3 + 16:
-            raise ValueError("Fichier trop volumineux (plus de 600 Mo) : enregistrez en 16 kHz mono ou découpez le fichier.")
+            raise ValueError(TROP_VOLUMINEUX)
         try:
             octets = base64.b64decode(data, validate=True)
         except (binascii.Error, ValueError):
             raise ValueError("Fichier illisible : le contenu n'est pas du base64 valide.")
-        pcm, duree = lire_wav(octets)
-        del octets
+        return self._importer_source(titre, matiere, nom_fichier, octets)
+
+    def importer_fichier(self, titre: str, matiere: str | None, nom_fichier: str | None, chemin: Path) -> dict:
+        """Importe un WAV déjà écrit sur le disque par la route en octets bruts (aucune copie en mémoire).
+        Le fichier temporaire appartient ensuite au fil de transcription, qui l'efface ; en cas de refus,
+        il est effacé ici. Mêmes erreurs que importer."""
+        try:
+            self.verifier_import()
+            return self._importer_source(titre, matiere, nom_fichier, chemin, temporaire=True)
+        except BaseException:
+            try:
+                chemin.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+    def _importer_source(self, titre: str, matiere: str | None, nom_fichier: str | None, source: bytes | Path,
+                         temporaire: bool = False) -> dict:
+        entete = entete_wav(source)  # en-tête seulement : un format refusé l'est tout de suite (422)
+        if entete["duree_s"] > DUREE_MAX_IMPORT_S:
+            raise ValueError(TROP_LONG)
         dossier = dossier_audio(self.ctx)
-        if espace_libre(dossier) < ESPACE_MIN_DEMARRAGE + len(pcm):
+        if espace_libre(dossier) < ESPACE_MIN_DEMARRAGE + entete["octets_pcm"]:
             raise EcouteImpossible("Espace disque insuffisant pour importer ce cours.")
         try:
-            reconnaisseur = fabrique()
+            reconnaisseur = self.sous_titres.fabrique_reconnaisseur()
         except EcouteImpossible:
             raise
         except Exception as exc:
             log.warning("reconnaisseur hors ligne indisponible pour l'import : %s", exc)
             raise EcouteImpossible("La reconnaissance hors ligne n'a pas pu démarrer. Réinstallez le modèle dans Paramètres › Voix.")
         nom = nom_libre(dossier, "cours-import")
-        ecrire_wav(dossier / nom, pcm)
+        ecrire_wav(dossier / nom, b"")  # réserve le nom ; le fil écrit le son converti
         titre = (titre or "").strip()[:200] or (Path(nom_fichier or "").stem[:200] if nom_fichier else "") or "Cours importé"
         cours_id = uuid.uuid4().hex
         self.ctx.db.execute(
             "INSERT INTO cours(id, debut, fin, duree_s, titre_enc, matiere_enc, audio, source, etat, retenu_jusqua) "
             "VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (cours_id, iso_utc(datetime.now(timezone.utc)), None, round(duree, 1), self._chiffrer(titre),
+            (cours_id, iso_utc(datetime.now(timezone.utc)), None, round(entete["duree_s"], 1), self._chiffrer(titre),
              self._chiffrer((matiere or "").strip()[:120] or None), nom, "import", "transcription", self._retenu_jusqua()),
         )
         arret = threading.Event()
         self._imports[cours_id] = {"progression": 0.0, "arret": arret}
-        threading.Thread(target=self._transcrire_import, args=(cours_id, reconnaisseur, pcm, arret),
+        resume = self._resume(self._ligne(cours_id), 0)  # type: ignore[arg-type]
+        # La source passe par une boîte que le fil vide : les octets d'origine sont libérés dès la conversion.
+        threading.Thread(target=self._transcrire_import, args=(cours_id, reconnaisseur, [source], nom, arret, temporaire),
                          name="iris-cours-import", daemon=True).start()
-        self.ctx.hub.publish("album.nouveau", nom=nom, genre="audio", octets=(dossier / nom).stat().st_size)
-        row = self._ligne(cours_id)
-        return self._resume(row, 0)  # type: ignore[arg-type]
+        return resume
 
-    def _transcrire_import(self, cours_id: str, reconnaisseur: Any, pcm: bytes, arret: threading.Event) -> None:
+    def _transcrire_import(self, cours_id: str, reconnaisseur: Any, boite: list, nom: str, arret: threading.Event,
+                           temporaire: bool = False) -> None:
         dernier = [0.0]
+        dossier = dossier_audio(self.ctx)
 
         def progression(fraction: float) -> None:
             imp = self._imports.get(cours_id)
@@ -662,7 +771,28 @@ class ServiceCours:
 
         etat, erreur = "termine", None
         try:
+            source = boite.pop()
+            try:
+                pcm, duree = lire_wav(source)
+            except ValueError as exc:
+                raise ImportIllisible(str(exc)) from exc
+            finally:
+                if temporaire and isinstance(source, Path):
+                    try:
+                        source.unlink(missing_ok=True)
+                    except OSError as exc:
+                        log.warning("fichier d'import temporaire non effacé : %s", exc)
+                source = None
+            if arret.is_set():
+                raise InterruptedError
+            ecrire_wav(dossier / nom, pcm)
+            if arret.is_set():
+                (dossier / nom).unlink(missing_ok=True)  # supprimé pendant la conversion : pas de fichier orphelin
+                raise InterruptedError
+            self.ctx.db.execute("UPDATE cours SET duree_s=? WHERE id=?", (round(duree, 1), cours_id))
+            self.ctx.hub.publish("album.nouveau", nom=nom, genre="audio", octets=(dossier / nom).stat().st_size)
             lignes = transcrire_pcm(reconnaisseur, pcm, TAUX, arret=arret, progression=progression)
+            del pcm
             if arret.is_set():
                 etat, erreur = "erreur", "Transcription interrompue (arrêt d'IRIS ou suppression)."
             elif memoire_suspendue(self.ctx):
@@ -673,6 +803,11 @@ class ServiceCours:
                         "INSERT INTO cours_lignes(cours_id, n, ts, texte_enc) VALUES(?,?,?,?)",
                         (cours_id, n, ligne["ts"], self.ctx.crypto.encrypt(ligne["texte"])),
                     )
+        except InterruptedError:
+            etat, erreur = "erreur", "Transcription interrompue (arrêt d'IRIS ou suppression)."
+        except ImportIllisible as exc:
+            # Message de lire_wav, en français et sans détail technique : un fichier abîmé après l'en-tête.
+            etat, erreur = "erreur", str(exc)
         except Exception as exc:
             log.exception("transcription d'un cours importé")
             etat, erreur = "erreur", "La transcription a échoué (erreur de reconnaissance). Réimportez le fichier."
@@ -685,47 +820,187 @@ class ServiceCours:
         self._publier(cours_id)
 
     # ------------------------------------------------------------------ génération
-    async def generer(self, cours_id: str, quoi: str) -> dict:
-        """Fiches et/ou questions. Lève RefusMoteur (403/409/422/502) ou LookupError si le cours n'existe pas."""
+    # ------------------------------------------------------------------ fiches et questions
+    def raison_generation_interdite(self) -> str | None:
+        """Pourquoi aucune rédaction ne peut partir ni s'écrire maintenant (None : rien ne l'empêche).
+
+        Vérifiée au départ, avant CHAQUE envoi au moteur et avant CHAQUE écriture : une rédaction longue
+        lancée avant le mode confidentiel ou le mode invité ne doit ni continuer d'envoyer la transcription,
+        ni écrire des fiches pendant que ce mode promet « rien n'est écrit »."""
+        if self.ctx.settings.user.privacy_mode:
+            return "Mode confidentiel actif : la rédaction des fiches et des questions est arrêtée et rien n'est écrit."
+        suspendue = memoire_suspendue(self.ctx)
+        if suspendue:
+            return f"Mémorisation suspendue ({suspendue}) : rien n'est écrit tant que ce mode est actif."
+        return None
+
+    def _garde_generation(self) -> None:
+        raison = self.raison_generation_interdite()
+        if raison:
+            raise RefusMoteur(409, raison)
+
+    def annuler_generations_interdites(self) -> int:
+        """Mode confidentiel ou mémoire suspendue : les rédactions en arrière-plan s'arrêtent tout de suite
+        (appelable depuis un fil : l'annulation passe par la boucle du service). Rend le nombre annulé."""
+        raison = self.raison_generation_interdite()
+        if not raison:
+            return 0
+        with self._verrou:
+            taches = [(cid, t) for cid, t in self._taches_par_cours.items() if not t.done()]
+        for cours_id, tache in taches:
+            self._erreurs_generation[cours_id] = raison
+            try:
+                tache.get_loop().call_soon_threadsafe(tache.cancel)
+            except RuntimeError:  # boucle déjà fermée : la tâche ne tourne plus
+                pass
+        return len(taches)
+
+    async def generer(self, cours_id: str, quoi: str, fond_si_long: bool = True) -> dict:
+        """Fiches et/ou questions. Lève RefusMoteur (403/409/422/502/504) ou LookupError si le cours n'existe pas.
+
+        Tout accès à la base (déchiffrer des milliers de lignes pour un long cours) passe par un fil : la
+        boucle du service garde la voix et les WebSocket. Au-delà de TRANCHES_MAX_DIRECT parties, la
+        génération part en tâche de fond : la réponse arrive tout de suite avec « en_arriere_plan » (la route
+        répond 202), la progression est publiée par cours.etat {etat: "generation", progression}, et une
+        erreur est gardée dans « erreur_generation » du cours."""
         quoi = (quoi or "tout").strip().lower()
         if quoi not in ("fiches", "questions", "tout"):
             raise RefusMoteur(422, "« quoi » doit valoir fiches, questions ou tout.")
-        row = self._ligne(cours_id)
+        row = await asyncio.to_thread(self._ligne, cours_id)
         if row is None:
             raise LookupError(cours_id)
         if row.get("etat") == "transcription":
             raise RefusMoteur(409, "La transcription de ce cours n'est pas terminée : réessayez quand elle l'est.")
-        suspendue = memoire_suspendue(self.ctx)
-        if suspendue:
-            raise RefusMoteur(409, f"Mémorisation suspendue ({suspendue}) : rien n'est écrit tant que ce mode est actif.")
-        texte = texte_des_lignes(self.transcription(cours_id))
+        self._garde_generation()
+        texte = texte_des_lignes(await asyncio.to_thread(self.transcription, cours_id))
         if len(texte) < TRANSCRIPTION_MIN:
             raise RefusMoteur(422, "La transcription est trop courte pour rédiger des fiches ou des questions honnêtes.")
+        tranches = decouper(texte)
+        # Consentement et mode local vérifiés AVANT de lancer quoi que ce soit : une génération en tâche de
+        # fond ne doit pas « accepter » (202) ce qui sera refusé à la première partie.
+        verifier_moteur(self.ctx, tranches[0])
+        total = 0
+        if quoi in ("fiches", "tout"):
+            total += len(tranches) + (1 if len(tranches) > 1 else 0)
+        if quoi in ("questions", "tout"):
+            total += len(tranches)
         with self._verrou:
             if cours_id in self._generations:
                 raise RefusMoteur(409, "Une génération est déjà en cours pour ce cours.")
-            self._generations.add(cours_id)
+            self._generations[cours_id] = {"quoi": quoi, "fait": 0, "total": total, "progression": 0.0}
+            self._erreurs_generation.pop(cours_id, None)
+        if fond_si_long and len(tranches) > TRANCHES_MAX_DIRECT:
+            tache = asyncio.get_running_loop().create_task(
+                self._generer_en_fond(cours_id, quoi, row, tranches, len(texte)), name="iris-cours-generation")
+            self._taches_generation.add(tache)
+            with self._verrou:
+                self._taches_par_cours[cours_id] = tache
+            tache.add_done_callback(self._taches_generation.discard)
+            tache.add_done_callback(lambda t, cid=cours_id: self._oublier_tache(cid, t))
+            self._publier_generation(cours_id)
+            resume = await asyncio.to_thread(self._resume_par_id, cours_id)
+            return {**(resume or {"id": cours_id}), "en_arriere_plan": True, "parties": len(tranches),
+                    "phrase": (f"Transcription longue ({len(tranches)} parties) : la rédaction continue en arrière-plan. "
+                               "La progression s'affiche sur le cours ; les fiches et les questions y apparaîtront.")}
+        return await self._executer_generation(cours_id, quoi, row, tranches, len(texte))
+
+    def _oublier_tache(self, cours_id: str, tache: asyncio.Task) -> None:
+        with self._verrou:
+            if self._taches_par_cours.get(cours_id) is tache:
+                del self._taches_par_cours[cours_id]
+
+    def _resume_par_id(self, cours_id: str) -> dict | None:
+        row = self._ligne(cours_id)
+        return self._resume(row) if row else None
+
+    def _publier_generation(self, cours_id: str) -> None:
+        generation = self._generations.get(cours_id)
+        if generation is None:
+            return
+        self.ctx.hub.publish("cours.etat", id=cours_id, actif=False, etat="generation",
+                             progression=round(generation["progression"], 3), quoi=generation["quoi"],
+                             fait=generation["fait"], total=generation["total"])
+
+    async def _executer_generation(self, cours_id: str, quoi: str, row: dict, tranches: list[str], longueur: int) -> dict:
+        def avancer() -> None:
+            generation = self._generations.get(cours_id)
+            if generation is not None:
+                generation["fait"] += 1
+                generation["progression"] = min(1.0, generation["fait"] / max(1, generation["total"]))
+                self._publier_generation(cours_id)
+
+        def ecrire(requete: str, valeur: str) -> None:
+            # La garde est refaite dans le fil, juste avant l'écriture : le mode a pu changer pendant le moteur.
+            self._garde_generation()
+            self.ctx.db.execute(requete, (self._chiffrer(valeur), cours_id))
+
         try:
             titre = self._dechiffrer(row["titre_enc"]) or "Cours"
             matiere = self._dechiffrer(row.get("matiere_enc"))
-            tranches = decouper(texte)
             if quoi in ("fiches", "tout"):
-                fiches = await self._rediger_fiches(titre, matiere, tranches)
-                self.ctx.db.execute("UPDATE cours SET fiches_enc=? WHERE id=?", (self._chiffrer(fiches), cours_id))
+                fiches = await self._rediger_fiches(titre, matiere, tranches, avancer)
+                await asyncio.to_thread(ecrire, "UPDATE cours SET fiches_enc=? WHERE id=?", fiches)
             if quoi in ("questions", "tout"):
-                questions = await self._rediger_questions(titre, matiere, tranches, len(texte))
-                self.ctx.db.execute("UPDATE cours SET questions_enc=? WHERE id=?",
-                                    (self._chiffrer(json.dumps(questions, ensure_ascii=False)), cours_id))
+                questions = await self._rediger_questions(titre, matiere, tranches, longueur, avancer)
+                await asyncio.to_thread(ecrire, "UPDATE cours SET questions_enc=? WHERE id=?",
+                                        json.dumps(questions, ensure_ascii=False))
         finally:
             with self._verrou:
-                self._generations.discard(cours_id)
-        self._publier(cours_id)
-        return self.detail(cours_id)  # type: ignore[return-value]
+                self._generations.pop(cours_id, None)
+        await asyncio.to_thread(self._publier, cours_id)
+        detail = await asyncio.to_thread(self.detail, cours_id)
+        if detail is None:
+            raise LookupError(cours_id)  # supprimé pendant la génération
+        return detail
+
+    async def _generer_en_fond(self, cours_id: str, quoi: str, row: dict, tranches: list[str], longueur: int) -> None:
+        try:
+            await self._executer_generation(cours_id, quoi, row, tranches, longueur)
+            return
+        except asyncio.CancelledError:
+            # Annulée par le mode confidentiel ou la mémoire suspendue : la raison est gardée et publiée,
+            # pour que l'écran du cours dise pourquoi les fiches ne sont pas venues.
+            message = self._erreurs_generation.get(cours_id)
+            if message and self.raison_generation_interdite():
+                self.ctx.hub.publish("cours.etat", id=cours_id, actif=False, etat="termine", progression=None,
+                                     erreur_generation=message)
+            raise
+        except LookupError:
+            return  # cours supprimé entre-temps : rien à signaler
+        except RefusMoteur as exc:
+            detail = exc.detail
+            message = str(detail.get("message") or MOTEUR_EN_PANNE) if isinstance(detail, dict) else str(detail)
+        except Exception:
+            log.exception("génération de fiches ou de questions en arrière-plan")
+            message = MOTEUR_EN_PANNE
+        self._erreurs_generation[cours_id] = message
+        row_actuelle = await asyncio.to_thread(self._ligne, cours_id)
+        if row_actuelle is not None:
+            self.ctx.hub.publish("cours.etat", id=cours_id, actif=False, etat=row_actuelle.get("etat") or "termine",
+                                 progression=None, erreur_generation=message)
+
+    async def annuler_generations(self) -> None:
+        """Arrêt d'IRIS : les générations en tâche de fond s'arrêtent (rien n'est écrit à moitié)."""
+        taches = list(self._taches_generation)
+        for tache in taches:
+            tache.cancel()
+        for tache in taches:
+            try:
+                await tache
+            except (asyncio.CancelledError, Exception):
+                pass
 
     def _entete(self, titre: str, matiere: str | None) -> str:
         return f"Cours : « {titre} »" + (f" (matière : {matiere})" if matiere else "")
 
-    async def _rediger_fiches(self, titre: str, matiere: str | None, tranches: list[str]) -> str:
+    async def _demander_garde(self, ctx, systeme: str, message: str, detail: str) -> dict:
+        """demander_moteur, précédé de la garde du mode confidentiel et de la mémoire suspendue."""
+        self._garde_generation()
+        return await demander_moteur(ctx, systeme, message, detail)
+
+    async def _rediger_fiches(self, titre: str, matiere: str | None, tranches: list[str],
+                              avancer: Callable[[], None] | None = None) -> str:
+        avancer = avancer or (lambda: None)
         systeme = f"Tu prépares des fiches de révision pour un étudiant. {CONSIGNE_FIDELITE} Réponds en Markdown."
         sections = (
             "## Notions clés\n## Définitions\n## Formules (seulement celles qui sont dites ; sinon écris « Aucune formule "
@@ -733,30 +1008,35 @@ class ServiceCours:
         )
         entete = self._entete(titre, matiere)
         if len(tranches) == 1:
-            r = await demander_moteur(self.ctx, systeme,
+            r = await self._demander_garde(self.ctx, systeme,
                                       f"{entete}\nRédige les fiches de révision avec exactement ces sections :\n{sections}\n\n"
                                       f"Transcription :\n{tranches[0]}", f"fiches de révision ({titre})")
+            avancer()
             corps = r["texte"]
         else:
             notes = []
             for i, tranche in enumerate(tranches, 1):
-                r = await demander_moteur(
+                r = await self._demander_garde(
                     self.ctx, systeme,
                     f"{entete}\nPartie {i} sur {len(tranches)}. Note en puces : notions clés, définitions, formules "
                     f"dites, exemples, et un résumé de cette partie.\n\nTranscription :\n{tranche}",
                     f"fiches de révision ({titre}), partie {i}/{len(tranches)}",
                 )
                 notes.append(f"### Partie {i}\n{r['texte']}")
-            r = await demander_moteur(
+                avancer()
+            r = await self._demander_garde(
                 self.ctx, systeme,
                 f"{entete}\nFusionne ces notes en fiches de révision, sans doublons, avec exactement ces sections "
                 f"(le résumé par section suit l'ordre des parties) :\n{sections}\n\nNotes :\n" + "\n\n".join(notes),
                 f"fiches de révision ({titre}), fusion de {len(tranches)} parties",
             )
+            avancer()
             corps = r["texte"]
         return f"# Fiches de révision — {titre}\n\n{AVERTISSEMENT_FICHES}\n\n{corps.strip()}\n"
 
-    async def _rediger_questions(self, titre: str, matiere: str | None, tranches: list[str], longueur: int) -> list[dict]:
+    async def _rediger_questions(self, titre: str, matiere: str | None, tranches: list[str], longueur: int,
+                                 avancer: Callable[[], None] | None = None) -> list[dict]:
+        avancer = avancer or (lambda: None)
         # 10 à 25 questions, selon la matière disponible ; un cours très court en donne moins plutôt
         # que des questions inventées.
         cible = min(QUESTIONS_MAX, max(QUESTIONS_MIN, longueur // 1200))
@@ -774,13 +1054,14 @@ class ServiceCours:
         for i, tranche in enumerate(tranches, 1):
             combien = (f"jusqu'à {cible} questions, seulement autant que le contenu le permet" if court
                        else f"{par_tranche} questions")
-            r = await demander_moteur(
+            r = await self._demander_garde(
                 self.ctx, systeme,
                 f"{entete}\nPartie {i} sur {len(tranches)}. Propose {combien}, en variant les types et les difficultés."
                 f"\n\nTranscription :\n{tranche}",
                 f"questions d'examen ({titre}), partie {i}/{len(tranches)}",
             )
             par_partie.append(lire_questions(r["texte"]))
+            avancer()
         # Tour de rôle entre les parties : les questions couvrent tout le cours, pas seulement le début.
         retenues: list[dict] = []
         vues: set[str] = set()
@@ -864,6 +1145,12 @@ class ServiceCours:
             "UPDATE cours SET etat='erreur', erreur=? WHERE etat='transcription'",
             ("Transcription interrompue par l'arrêt d'IRIS : importez le fichier de nouveau.",),
         )
+        # Fichiers reçus par la route en octets bruts et jamais transcrits (arrêt brutal pendant l'envoi).
+        for reste in dossier_audio(self.ctx).glob(f"{PREFIXE_FLUX}*.partiel"):
+            try:
+                reste.unlink()
+            except OSError as exc:
+                log.warning("fichier d'import abandonné non effacé (%s) : %s", reste.name, exc)
         return n + max(0, cur.rowcount)
 
     def purger(self) -> int:

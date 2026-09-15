@@ -7,6 +7,7 @@
 import SwiftUI
 import UIKit
 
+@MainActor
 struct EcranSousTitres: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
@@ -65,7 +66,8 @@ struct EcranSousTitres: View {
                 }
             }
 
-            NoteVerite(texte: SousTitresTelephone.limite)
+            // Limite légale, dite là où l'on transcrit (revue transversale du 2026-09-14, constat 13).
+            NoteVerite(texte: SousTitresTelephone.limite + " Transcrire une conversation à laquelle tu ne participes pas est illégal : préviens les personnes présentes.")
                 .padding(.horizontal)
                 .padding(.vertical, 8)
                 .background(Couleurs.fond2)

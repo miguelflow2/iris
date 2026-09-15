@@ -5,10 +5,32 @@
 // refusée). Ce qui change par rapport à la page web : la session vit dans le Trousseau, et le
 // WebSocket porte le jeton dans l'en-tête (une app sait le faire, un navigateur non) — le jeton
 // n'apparaît donc jamais dans une adresse.
+//
+// Chemin réseau, dit tel quel dans Profil › Ordinateur et Mode hors ligne : l'app joint l'ordinateur
+// DIRECTEMENT, par son adresse Tailscale (dehors) ou le réseau local (maison). Elle ne passe PAS par le
+// relais VELA : sans Tailscale, elle ne joint pas l'ordinateur. Le relais ne sert ici qu'au partage de vue.
+//
+// Verrouillage : l'état « verrouillée » est GARDÉ sur l'iPhone (UserDefaults), pas seulement en mémoire.
+// Le verrou sert quand les lunettes — donc souvent le téléphone — sont perdues : relancer l'app sans
+// réseau ne doit pas rouvrir l'accès aux cours gardés. Il n'est levé que par une réponse 2xx de
+// /api/status, c'est-à-dire un ordinateur qui répond et n'est plus verrouillé.
 
 import Foundation
 import Observation
 import os
+
+/// Ce qu'un refus HTTP doit changer dans l'état du pont (séparé du classement, pour le tester).
+enum EffetRefus: Equatable {
+    case aucun
+    /// 401 dont le détail dit « verrouillée » : écran de verrouillage, SANS effacer la session.
+    case verrouiller(String)
+    /// 401 de session refusée (révoquée, expirée) : on oublie la session de cet iPhone.
+    case oublierSession
+    /// 401 detail {code: "efface_a_distance"} : la session a été révoquée PAR un effacement à distance, que
+    /// l'iPhone n'a pas vu en direct (app en arrière-plan, cas normal d'un téléphone perdu). On oublie la
+    /// session, on garde le verrou et on retire les copies gardées sur l'iPhone.
+    case effacement
+}
 
 @MainActor
 @Observable
@@ -27,11 +49,35 @@ final class ClientPontPC: ServicePontPC {
     @ObservationIgnored private var surveillance: Task<Void, Never>?
     @ObservationIgnored private let journal = Logger(subsystem: "ca.velaglass.iris", category: "pont")
 
+    /// IRIS a été vue verrouillée et aucun 2xx de /api/status ne l'a encore démentie. Survit au relancement.
+    private(set) var verrouPersistant: Bool
+    /// Raison affichée par l'écran de verrouillage (dernière connue).
+    private(set) var raisonVerrou: String
+    /// Verrouillée ET ordinateur injoignable à la dernière vérification : l'écran de verrouillage le dit
+    /// (l'état reste .verrouille, jamais .horsLigne). nil dès qu'une réponse HTTP arrive.
+    private(set) var injoignablePendantVerrou: String? = nil
+    /// Nombre d'ouvertures de la liaison d'événements : une coupure brève entre deux sondages de la
+    /// conversation se voit à ce compteur, même si la liaison est de nouveau ouverte.
+    @ObservationIgnored private(set) var ouverturesFlux = 0
+    /// La cause du verrou (GET /api/confiance/verrou/etat) a été lue pour ce verrou.
+    @ObservationIgnored private var causeVerrouLue = false
+
+    /// Appelé quand l'ordinateur annonce un effacement à distance (verrou.etat raison « effacement »), ou
+    /// qu'une session est refusée alors qu'IRIS était verrouillée (l'effacement révoque les sessions).
+    @ObservationIgnored var surEffacementDistant: (@MainActor () -> Void)?
+
     private enum Cles {
         static let adresse = "iris_adresse_pc"
         static let nom = "iris_nom_proprietaire"
         static let session = "session-pc"
+        static let verrouille = "iris_verrouille"
+        static let raisonVerrou = "iris_verrou_raison"
     }
+
+    static let raisonVerrouParDefaut = "IRIS est verrouillée. Déverrouillez-la avec le mot de passe du propriétaire."
+    nonisolated static let raisonEffacement = "Les données d'IRIS ont été effacées à distance et IRIS est verrouillée. Les cours gardés sur cet iPhone ont été retirés."
+    /// Code du 401 d'une session révoquée par un effacement à distance (main.py, CODE_EFFACE_A_DISTANCE).
+    nonisolated static let codeEffaceADistance = "efface_a_distance"
 
     init() {
         let configuration = URLSessionConfiguration.default
@@ -47,7 +93,14 @@ final class ClientPontPC: ServicePontPC {
         }
         nomProprietaire = UserDefaults.standard.string(forKey: Cles.nom) ?? ""
         session = Trousseau.lire(compte: Cles.session)
-        etat = adresse == nil ? .nonConfigure : (session == nil ? .motDePasseRequis : .connexion)
+        verrouPersistant = UserDefaults.standard.bool(forKey: Cles.verrouille)
+        raisonVerrou = UserDefaults.standard.string(forKey: Cles.raisonVerrou) ?? Self.raisonVerrouParDefaut
+        if verrouPersistant && adresse != nil {
+            // Relancée verrouillée : on reste derrière l'écran de verrouillage, réseau ou pas.
+            etat = .verrouille(raison: raisonVerrou)
+        } else {
+            etat = adresse == nil ? .nonConfigure : (session == nil ? .motDePasseRequis : .connexion)
+        }
 
         let flux = FluxEvenements(urlSession: urlSession)
         flux.fournirRequete = { [weak self] in self?.requeteWebSocket() }
@@ -168,6 +221,43 @@ final class ClientPontPC: ServicePontPC {
         etat = adresse == nil ? .nonConfigure : .motDePasseRequis
     }
 
+    // MARK: - Verrou gardé sur l'iPhone
+
+    private func poserVerrou(_ raison: String) {
+        raisonVerrou = raison
+        verrouPersistant = true
+        UserDefaults.standard.set(true, forKey: Cles.verrouille)
+        UserDefaults.standard.set(raison, forKey: Cles.raisonVerrou)
+        etat = .verrouille(raison: raison)
+        flux?.arreter()
+    }
+
+    /// Seul chemin qui lève le verrou gardé : une réponse 2xx de /api/status.
+    private func leverVerrou() {
+        causeVerrouLue = false
+        injoignablePendantVerrou = nil
+        guard verrouPersistant else { return }
+        verrouPersistant = false
+        UserDefaults.standard.removeObject(forKey: Cles.verrouille)
+        UserDefaults.standard.removeObject(forKey: Cles.raisonVerrou)
+    }
+
+    /// Verrou vu par un 401 (événement manqué : WebSocket fermé, app en arrière-plan) : on demande sa cause,
+    /// une fois par verrou, par la route permise pendant le verrou. Un effacement à distance retire aussi
+    /// les copies gardées sur cet iPhone.
+    private func lireCauseVerrou() async {
+        guard verrouPersistant, !causeVerrouLue, session != nil else { return }
+        causeVerrouLue = true
+        guard let lu: EtatVerrou = try? await requete(.get, "/api/confiance/verrou/etat", corps: nil,
+                                                      parametres: [], delai: 12),
+              lu.verrouille, lu.raison == "effacement" else { return }
+        let raison = Self.raisonEffacement
+        raisonVerrou = raison
+        UserDefaults.standard.set(raison, forKey: Cles.raisonVerrou)
+        etat = .verrouille(raison: raison)
+        surEffacementDistant?()
+    }
+
     func oublierAdresse() {
         oublierSession()
         UserDefaults.standard.removeObject(forKey: Cles.adresse)
@@ -186,20 +276,36 @@ final class ClientPontPC: ServicePontPC {
         if etat == .nonConfigure || etat == .motDePasseRequis { etat = .connexion }
         do {
             let _: ReponseIgnoree = try await requete(.get, "/api/status", corps: nil, parametres: [], delai: 12)
+            leverVerrou()
             etat = .connecte(evenements: evenementsOuverts)
             flux?.demarrer()
         } catch ErreurPont.verrouillee(let raison) {
-            etat = .verrouille(raison: raison)
+            // Après un effacement (session oubliée), traduireRefus a déjà posé le verrou avec sa vraie raison.
+            if session != nil {
+                poserVerrou(raison)
+                await lireCauseVerrou()
+            }
         } catch ErreurPont.nonConnecte {
-            etat = .motDePasseRequis
+            // traduireRefus a déjà oublié la session (et prévenu d'un effacement si IRIS était verrouillée).
+            if verrouPersistant { etat = .verrouille(raison: raisonVerrou) } else { etat = .motDePasseRequis }
         } catch ErreurPont.injoignable(let raison) {
-            etat = .horsLigne(raison: raison)
+            if verrouPersistant {
+                etat = .verrouille(raison: raisonVerrou)
+                injoignablePendantVerrou = raison
+            } else {
+                etat = .horsLigne(raison: raison)
+            }
         } catch is CancellationError {
             return
         } catch {
-            // Une réponse HTTP, même une erreur, prouve que l'ordinateur est là.
-            etat = .connecte(evenements: evenementsOuverts)
-            flux?.demarrer()
+            // Une réponse HTTP, même une erreur, prouve que l'ordinateur est là — mais pas qu'il est
+            // déverrouillé : seul un 2xx de /api/status lève le verrou gardé.
+            if verrouPersistant {
+                etat = .verrouille(raison: raisonVerrou)
+            } else {
+                etat = .connecte(evenements: evenementsOuverts)
+                flux?.demarrer()
+            }
         }
     }
 
@@ -288,7 +394,10 @@ final class ClientPontPC: ServicePontPC {
             let message = Self.message(pour: erreur, delai: delai)
             if erreur.code != .timedOut {
                 // Un délai dépassé sur une requête lente ne prouve pas que l'ordinateur est parti.
-                if !chemin.hasPrefix("/api/compte/connexion") { etat = .horsLigne(raison: message) }
+                // Verrouillée : on ne remplace JAMAIS l'écran de verrouillage par « hors ligne ».
+                if !chemin.hasPrefix("/api/compte/connexion") && !verrouPersistant {
+                    if case .verrouille = etat {} else { etat = .horsLigne(raison: message) }
+                }
                 flux?.arreter()
             }
             throw ErreurPont.injoignable(message)
@@ -301,6 +410,7 @@ final class ClientPontPC: ServicePontPC {
             throw ErreurPont.injoignable("Réponse inattendue de l'ordinateur.")
         }
         derniereReponse = Date()
+        injoignablePendantVerrou = nil
         if case .horsLigne = etat, session != nil { etat = .connecte(evenements: evenementsOuverts) }
         if http.statusCode >= 400 {
             throw traduireRefus(statut: http.statusCode, data: data, chemin: chemin)
@@ -309,37 +419,65 @@ final class ClientPontPC: ServicePontPC {
     }
 
     private func traduireRefus(statut: Int, data: Data, chemin: String) -> ErreurPont {
+        let (erreur, effet) = Self.classerRefus(statut: statut, data: data, chemin: chemin)
+        switch effet {
+        case .aucun:
+            break
+        case .verrouiller(let raison):
+            poserVerrou(raison)
+        case .effacement:
+            Trousseau.effacer(compte: Cles.session)
+            session = nil
+            poserVerrou(Self.raisonEffacement)
+            causeVerrouLue = true
+            surEffacementDistant?()
+        case .oublierSession:
+            // Session révoquée ou expirée : on l'oublie ici, le mot de passe sera redemandé. Si IRIS était
+            // verrouillée, la révocation vient très probablement d'un effacement à distance : les copies
+            // gardées sur l'iPhone partent aussi.
+            Trousseau.effacer(compte: Cles.session)
+            session = nil
+            flux?.arreter()
+            if verrouPersistant {
+                surEffacementDistant?()
+                etat = .verrouille(raison: raisonVerrou)
+            } else {
+                etat = .motDePasseRequis
+            }
+        }
+        return erreur
+    }
+
+    /// Classe un refus HTTP du service sans rien modifier (fonction pure, testée dans IRISTests).
+    nonisolated static func classerRefus(statut: Int, data: Data, chemin: String) -> (ErreurPont, EffetRefus) {
         // Décodeur SANS conversion de clés : on garde les noms exacts du service dans `detail`.
         let objet = try? JSONDecoder().decode([String: ValeurJSON].self, from: data)
         let detail = objet?["detail"]
-        let message = Self.messageDe(detail: detail, statut: statut)
+        let message = messageDe(detail: detail, statut: statut)
         let code = detail?["code"]?.texte
 
         if statut == 401 {
+            if code == Self.codeEffaceADistance {
+                return (.verrouillee(Self.raisonEffacement), .effacement)
+            }
             if message.localizedCaseInsensitiveContains("verrouill") {
-                etat = .verrouille(raison: message)
-                flux?.arreter()
-                return .verrouillee(message)
+                return (.verrouillee(message), .verrouiller(message))
             }
-            if !chemin.hasPrefix("/api/compte/connexion") {
-                // Session révoquée ou expirée : on l'oublie ici, le mot de passe sera redemandé.
-                Trousseau.effacer(compte: Cles.session)
-                session = nil
-                flux?.arreter()
-                etat = .motDePasseRequis
+            if chemin.hasPrefix("/api/compte/connexion") {
+                return (.nonConnecte(message), .aucun)
             }
-            return .nonConnecte(message)
+            return (.nonConnecte(message), .oublierSession)
         }
-        if statut == 428, code == "lunettes_requises", let refus: RefusLunettes = Self.relire(detail) {
-            return .lunettesRequises(refus)
+        if statut == 428, code == "lunettes_requises", let refus: RefusLunettes = relire(detail) {
+            return (.lunettesRequises(refus), .aucun)
         }
-        if statut == 403, code == "consentement", let refus: RefusConsentement = Self.relire(detail) {
-            return .consentement(refus)
+        if statut == 403, code == "consentement", let refus: RefusConsentement = relire(detail) {
+            return (.consentement(refus), .aucun)
         }
-        return .refus(statut: statut, message: message, detail: detail)
+        return (.refus(statut: statut, message: message, detail: detail), .aucun)
     }
 
-    nonisolated private static func relire<T: Decodable>(_ valeur: ValeurJSON?) -> T? {
+    nonisolated static func relire<T: Decodable>(_ valeur: ValeurJSON?) -> T? {
         guard let valeur, let data = try? JSONEncoder().encode(valeur) else { return nil }
         return try? JSONIRIS.decodeur.decode(T.self, from: data)
     }
@@ -397,11 +535,23 @@ final class ClientPontPC: ServicePontPC {
         case "hello":
             etat = .connecte(evenements: true)
         case "verrou.etat":
+            let cause = evenement.champs["raison"]?.texte
             if evenement.champs["verrouille"]?.booleen == true {
-                let raison = evenement.champs["raison"]?.texte == "distance"
-                    ? "IRIS est verrouillée à distance. Déverrouillez-la avec le mot de passe du propriétaire."
-                    : "IRIS est verrouillée. Déverrouillez-la avec le mot de passe du propriétaire."
-                etat = .verrouille(raison: raison)
+                let raison: String
+                switch cause {
+                case "distance":
+                    raison = "IRIS est verrouillée à distance. Déverrouillez-la avec le mot de passe du propriétaire."
+                case "effacement":
+                    raison = Self.raisonEffacement
+                default:
+                    raison = Self.raisonVerrouParDefaut
+                }
+                poserVerrou(raison)
+                causeVerrouLue = true
+                if cause == "effacement" { surEffacementDistant?() }
+            } else if evenement.champs["verrouille"]?.booleen == false, verrouPersistant {
+                // Déverrouillée sur l'ordinateur : /api/status doit le confirmer avant de lever le verrou gardé.
+                Task { await self.verifier() }
             }
         default:
             break
@@ -412,15 +562,20 @@ final class ClientPontPC: ServicePontPC {
     }
 
     private func fluxChange(ouvert: Bool) {
+        if ouvert { ouverturesFlux += 1 }
         if case .connecte = etat { etat = .connecte(evenements: ouvert) }
     }
 
     /// WebSocket refusé (code 4401 ou poignée de main refusée) : on demande au HTTP pourquoi, une
     /// seule fois, au lieu de reboucler.
     private func apresRefusWebSocket(_ raison: String) async {
+        if raison.localizedCaseInsensitiveContains("effacée à distance") {
+            // La phrase du WebSocket ne porte pas le code : le HTTP le rend (401 efface_a_distance).
+            await verifier()
+            return
+        }
         if raison.localizedCaseInsensitiveContains("verrouill") {
-            etat = .verrouille(raison: "IRIS est verrouillée. Déverrouillez-la avec le mot de passe du propriétaire.")
-            flux?.arreter()
+            poserVerrou(Self.raisonVerrouParDefaut)
             return
         }
         await verifier()

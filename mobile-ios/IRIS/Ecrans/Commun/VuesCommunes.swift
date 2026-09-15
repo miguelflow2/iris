@@ -4,6 +4,7 @@ import SwiftUI
 
 /// « Cette fonction marche avec les lunettes VELA » : jamais une erreur technique, toujours deux
 /// actions. Aucune mention d'un mode de démonstration (accès propriétaire caché).
+@MainActor
 struct LunettesRequisesVue: View {
     @Environment(EnvironnementIRIS.self) private var env
     @Environment(\.openURL) private var ouvrirURL
@@ -65,13 +66,16 @@ struct LunettesRequisesVue: View {
 }
 
 /// Écran de verrouillage : IRIS a été verrouillée (sur l'ordinateur ou à distance). Seul le mot de
-/// passe du propriétaire la déverrouille.
+/// passe du propriétaire la déverrouille. L'état est gardé sur l'iPhone : il reste affiché hors ligne,
+/// et ne se lève que quand l'ordinateur répond qu'IRIS n'est plus verrouillée.
+@MainActor
 struct VerrouVue: View {
     @Environment(EnvironnementIRIS.self) private var env
     let raison: String
     @State private var motDePasse = ""
     @State private var enCours = false
     @State private var erreur: String? = nil
+    @State private var reconnexion = false
 
     init(raison: String) {
         self.raison = raison
@@ -90,28 +94,55 @@ struct VerrouVue: View {
             Text(raison)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Couleurs.texte2)
-            SecureField("Mot de passe du propriétaire", text: $motDePasse)
-                .textContentType(.password)
-                .padding(14)
-                .background(Couleurs.carte, in: RoundedRectangle(cornerRadius: 14))
-                .submitLabel(.go)
-                .onSubmit { Task { await deverrouiller() } }
-            if let erreur {
-                NoteVerite(texte: erreur, genre: .erreur)
+            if env.pont.aUneSession {
+                SecureField("Mot de passe du propriétaire", text: $motDePasse)
+                    .textContentType(.password)
+                    .padding(14)
+                    .background(Couleurs.carte, in: RoundedRectangle(cornerRadius: 14))
+                    .submitLabel(.go)
+                    .onSubmit { Task { await deverrouiller() } }
+                if let erreur {
+                    NoteVerite(texte: erreur, genre: .erreur)
+                }
+                Button {
+                    Task { await deverrouiller() }
+                } label: {
+                    if enCours { ProgressView().tint(Couleurs.fond) } else { Text("Déverrouiller") }
+                }
+                .buttonStyle(.holo)
+                .disabled(motDePasse.isEmpty || enCours)
+            } else {
+                // Session révoquée (effacement à distance, mot de passe changé) : il faut d'abord se
+                // reconnecter à l'ordinateur, qui dira ensuite s'il est encore verrouillé.
+                Text("La session de cet iPhone n'est plus valide : reconnecte-toi à ton ordinateur, puis déverrouille.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Couleurs.texte2)
+                Button("Me reconnecter à l'ordinateur") { reconnexion = true }
+                    .buttonStyle(.holo)
             }
-            Button {
-                Task { await deverrouiller() }
-            } label: {
-                if enCours { ProgressView().tint(Couleurs.fond) } else { Text("Déverrouiller") }
+            // Verrouillée, l'état ne passe jamais à « hors ligne » : le pont retient à part que l'ordinateur
+            // n'a pas répondu à la dernière vérification.
+            if let injoignable = env.pont.injoignablePendantVerrou {
+                NoteVerite(texte: "Ton ordinateur ne répond pas (\(injoignable)) : IRIS reste verrouillée sur cet iPhone jusqu'à ce qu'il réponde.", genre: .avertissement)
             }
-            .buttonStyle(.holo)
-            .disabled(motDePasse.isEmpty || enCours)
             NoteVerite(texte: "Verrou logiciel : il s'applique à l'application IRIS, pas au matériel.")
             Spacer()
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Couleurs.fond.ignoresSafeArea())
+        .accessibilityAddTraits(.isModal)
+        .sheet(isPresented: $reconnexion) {
+            NavigationStack {
+                EcranConnexionPC()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") { reconnexion = false }
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
+        }
     }
 
     private func deverrouiller() async {
@@ -129,6 +160,7 @@ struct VerrouVue: View {
 }
 
 /// Pastille d'état de la liaison avec l'ordinateur.
+@MainActor
 struct PastillePC: View {
     @Environment(EnvironnementIRIS.self) private var env
 
@@ -162,6 +194,7 @@ struct PastillePC: View {
 }
 
 /// Pastille d'état des lunettes.
+@MainActor
 struct PastilleLunettes: View {
     @Environment(EnvironnementIRIS.self) private var env
 
@@ -182,11 +215,16 @@ struct PastilleLunettes: View {
     }
 
     private var texte: String {
+        let presentes = env.lunettesPresentes
         if let etat = env.perception?.lunettes.etat, etat.connectees {
+            if !etat.verifiees { return "Appareil relié non reconnu" }
+            if !presentes {
+                return env.attestation.erreur != nil ? "Lunettes refusées par l'ordinateur" : "Lunettes : vérification par l'ordinateur…"
+            }
             if let batterie = etat.batterie { return "\(etat.nom ?? "Lunettes") · \(batterie) %" }
             return etat.nom ?? "Lunettes connectées"
         }
-        if env.attestation.presence?.presentes == true {
+        if presentes {
             return env.attestation.presence?.source == "pc" ? "Lunettes vues par l'ordinateur" : "Lunettes présentes"
         }
         return "Lunettes absentes"
@@ -194,6 +232,7 @@ struct PastilleLunettes: View {
 }
 
 /// Bandeau d'erreur ou de note, affiché tel quel.
+@MainActor
 struct BandeauErreur: View {
     let erreur: Error
 

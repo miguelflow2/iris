@@ -2,6 +2,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranConnexionPC: View {
     @Environment(EnvironnementIRIS.self) private var env
     @Environment(\.dismiss) private var fermer
@@ -54,6 +55,8 @@ struct EcranConnexionPC: View {
 
             Section {
                 NoteVerite(texte: "Dehors, le téléphone joint l'ordinateur par Tailscale, un réseau privé chiffré : aucun port n'est ouvert sur ta box. L'ordinateur doit rester allumé, IRIS ouverte, et Tailscale connecté des deux côtés.")
+                NoteVerite(texte: "Sans Tailscale, l'app iPhone ne joint pas ton ordinateur hors de ton réseau local : elle ne passe pas par le relais VELA (il ne sert, sur l'iPhone, qu'au partage de ta vue).",
+                           genre: .avertissement)
             }
             .listRowBackground(Couleurs.carte)
         }

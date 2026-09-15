@@ -5,6 +5,7 @@ import { CarteLunettesRequises } from '../components/LunettesRequises'
 import { api, estLunettesRequises, messageErreur, refusConsentement, type IrisEvent } from '../lib/api'
 import { useStore } from '../lib/store'
 import { CarteConsentement } from './AccessibiliteScreen'
+import { AVERTISSEMENT_CONVERSATIONS, confirmerJournalContinu } from './JournalScreen'
 import './AccessibiliteScreen.css'
 
 /* =========================================================================
@@ -119,6 +120,7 @@ export function SousTitresScreen({ params: _params }: { params?: Record<string, 
 
   const basculerJournal = (v: boolean): void => {
     if (v && !exigerLunettes('Journal continu')) return
+    if (v && !confirmerJournalContinu()) return
     updateSettings({ journal_continu: v }).catch((err: unknown) => toast(messageErreur(err), 'error'))
   }
 
@@ -175,6 +177,7 @@ export function SousTitresScreen({ params: _params }: { params?: Record<string, 
           )}
           <span className="pill" aria-live="polite">{actif ? 'Sous-titres actifs' : 'Arrêtés'}</span>
         </div>
+        <div className="bloc-note attention" role="note">{AVERTISSEMENT_CONVERSATIONS}</div>
 
         {erreur ? <div className="bloc-note erreur" role="alert">{erreur}</div> : null}
         {raison && raison !== erreur ? <div className="bloc-note attention">{raison}</div> : null}

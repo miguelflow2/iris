@@ -25,12 +25,12 @@ import logging
 import queue
 import sys
 import threading
-import time
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from .lunettes_presence import exiger_lunettes
 from .traduction import RefusInterprete, ServiceInterprete
 
 log = logging.getLogger("iris.interprete")
@@ -415,35 +415,44 @@ def _http(exc: RefusInterprete) -> HTTPException:
     return HTTPException(status_code=exc.statut, detail=exc.detail)
 
 
-AGENT_VALIDE_S = 5.0
+SORTIE_DEHORS = ("Dehors, l'interprète passe par le téléphone : utilisez la traduction par texte "
+                 "(le micro de l'ordinateur resté à la maison ne s'ouvre pas).")
 
 
-def moteur_de_traduction(ctx: Any) -> str | None:
-    """Le moteur qui recevra la traduction, choisi comme le fait le chat (ChatService.demander_court)."""
-    chat = getattr(ctx, "chat", None)
-    try:
-        routeur = chat.router
-        agent, _raison = routeur.select("traduction", False, routeur.available(chat.secrets), "auto")
-        return agent
-    except Exception:
-        return None
-
-
-def fabriquer_verificateur(ctx: Any) -> Callable[[], None]:
+def fabriquer_verificateur(ctx: Any) -> Callable[[str | None], tuple[str | None, bool]]:
     """ctx.consent.check("transcript") avant chaque envoi de texte au moteur. Lève si refusé.
 
-    Une IA locale n'est pas soumise au consentement d'envoi externe, et le mode local n'autorise
-    qu'elle : il faut donc connaître le moteur. Le choisir interroge le coffre des clés pour chaque
-    moteur, à chaque phrase ; on garde ce choix quelques secondes (et on le refait dès que le mode
-    local change), mais le CONSENTEMENT, lui, est relu à chaque envoi."""
-    memoire: dict[str, Any] = {"agent": None, "a": float("-inf"), "local": None}
+    Une IA locale n'est pas soumise au consentement d'envoi externe : il faut donc connaître le
+    moteur. Avec un message, il est choisi EXACTEMENT comme ChatService.demander_court le choisira,
+    sur CE message : le routeur envoie à un moteur en ligne tout texte qui contient un mot-clé
+    ordinateur, code, vision ou web (« can you open the file »), même quand le moteur par défaut est
+    local. Choisir sur un mot fixe, ou garder le choix quelques secondes, laisserait partir une
+    phrase sans accord. Aucun cache : le coffre des clés est relu à chaque phrase, comme le fait
+    demander_court.
 
-    def verifier() -> None:
-        local = bool(ctx.settings.user.local_only)
-        maintenant = time.monotonic()
-        if maintenant - memoire["a"] > AGENT_VALIDE_S or memoire["local"] != local:
-            memoire.update(agent=moteur_de_traduction(ctx), a=maintenant, local=local)
-        ctx.consent.check("transcript", agent=memoire["agent"])
+    Sans message (vérification préalable : ouverture du mode, état affiché), rien ne part et on ne
+    sait pas encore ce qui sera dit : dès qu'un moteur en ligne est disponible, n'importe quelle
+    phrase peut lui être routée, donc l'accord est exigé. Rend (moteur, local)."""
+
+    def verifier(message: str | None = None) -> tuple[str | None, bool]:
+        chat = getattr(ctx, "chat", None)
+        routeur = chat.router
+        disponibles = routeur.available(chat.secrets)
+        agents = getattr(ctx.settings.user, "agents", None) or {}
+
+        def est_local(nom: str | None) -> bool:
+            cfg = agents.get(nom) if nom else None
+            return bool(cfg is not None and getattr(cfg, "local", False))
+
+        if message is None:
+            if disponibles and all(est_local(nom) for nom in disponibles):
+                ctx.consent.check("transcript", agent=disponibles[0])
+                return disponibles[0], True
+            ctx.consent.check("transcript")
+            return None, False
+        agent, _raison = routeur.select(message, False, disponibles, "auto")
+        ctx.consent.check("transcript", agent=agent)
+        return agent, est_local(agent)
 
     return verifier
 
@@ -491,6 +500,19 @@ def creer_routeur(ctx: Any) -> APIRouter:
 
     @routeur.post("/api/interprete/demarrer")
     async def interprete_demarrer(body: DemarrerIn | None = None):
+        exiger_lunettes(ctx, "interprete")
+        # Lunettes attestées par le téléphone seulement : le propriétaire est dehors. Démarrer ici
+        # ouvrirait le micro de l'ordinateur resté à la maison et enverrait en ligne la voix des
+        # personnes présentes, sans que personne ne le voie. Le téléphone utilise /texte ; un client
+        # bogué ou ancien ne doit pas pouvoir faire autrement.
+        presence = getattr(ctx, "presence_lunettes", None)
+        try:
+            source = presence.source() if presence is not None else None
+        except Exception as exc:
+            log.warning("présence des lunettes illisible : %s", exc)
+            source = None
+        if source == "telephone":
+            raise HTTPException(status_code=409, detail=SORTIE_DEHORS)
         corps = body or DemarrerIn()
         try:
             return await asyncio.to_thread(service.demarrer, corps.langue_autre, corps.sortie_autre)
@@ -503,6 +525,7 @@ def creer_routeur(ctx: Any) -> APIRouter:
 
     @routeur.post("/api/interprete/texte")
     async def interprete_texte(body: TexteIn):
+        exiger_lunettes(ctx, "interprete")
         try:
             return await service.traduire_texte(body.qui, body.texte, body.langue)
         except RefusInterprete as exc:

@@ -70,6 +70,9 @@ TAILLE_MAX_BASE64 = 20_000_000  # ≈ 15 Mo d'image
 CHAMPS_MONTANTS = ("sous_total", "tps", "tvq", "tvh", "total")
 
 CONFIDENTIEL = "Le mode confidentiel est actif : IRIS ne prend aucune photo et n'analyse aucun reçu tant qu'il l'est."
+DELAI_VERROU_CAMERA_S = 5.0
+CAMERA_OCCUPEE = ("La caméra des lunettes est occupée : une autre photo ou un partage de vision est en cours. "
+                  "Réessaie dans un instant.")
 SANS_LECTURE = (
     "Impossible de lire ce reçu : la lecture de texte locale n'est pas disponible sur cet ordinateur, et {raison}"
 )
@@ -129,8 +132,8 @@ _MOIS = {
 class RefusRecu(HTTPException):
     """Refus documenté : un HTTPException avec sa phrase courte à dire à voix haute."""
 
-    def __init__(self, statut: int, message: str, phrase: str | None = None):
-        super().__init__(status_code=statut, detail=message)
+    def __init__(self, statut: int, message: str, phrase: str | None = None, detail: Any = None):
+        super().__init__(status_code=statut, detail=detail if detail is not None else message)
         self.message = message
         self.phrase = phrase or message
 
@@ -693,12 +696,22 @@ def montant_csv(valeur: Any) -> str:
     return "" if valeur is None else f"{float(valeur):.2f}"
 
 
+def cellule_csv(valeur: Any) -> str:
+    """Texte neutralisé pour un tableur. Le commerçant et le moyen de paiement viennent de la lecture d'un
+    reçu imprimé par un tiers (ou d'une correction) : une première ligne « =HYPERLINK(…) » ou « +cmd|… »
+    serait interprétée comme une formule à l'ouverture dans Excel. Une apostrophe en tête la rend inerte."""
+    texte = str(valeur or "")
+    return "'" + texte if texte[:1] in ("=", "+", "-", "@", "\t", "\r") else texte
+
+
 class ServiceRecus:
     def __init__(self, ctx: Any):
         self.ctx = ctx
         # Fabrique de caméra remplaçable (tests) : la vraie réutilise la connexion des lunettes.
         self.fabrique_camera: Callable[[], Any] = self._camera_par_defaut
-        self._verrou_camera = threading.Lock()
+        # Repli seulement : le verrou qui compte est celui de la vision d'accessibilité, commun à toutes
+        # les photos des lunettes (voir _verrou_camera).
+        self._verrou_camera_local = asyncio.Lock()
         for instruction in SCHEMA.split(";"):
             if instruction.strip():
                 ctx.db.execute(instruction)
@@ -755,11 +768,26 @@ class ServiceRecus:
         except Exception as exc:  # pragma: no cover
             log.debug("annonce vocale impossible : %s", exc)
 
-    async def _photo_lunettes(self) -> tuple[bytes, str]:
-        from .lunettes_camera import CameraIndisponible, ProtocoleNonConfirme
+    def _verrou_camera(self) -> asyncio.Lock:
+        """Le verrou COMMUN de la caméra des lunettes (ctx.accessibilite._verrou_camera) : deux photos
+        simultanées se disputeraient le Bluetooth. Le partage de vision le tient pour chacune de ses
+        images ; un verrou propre aux reçus laisserait « garde ce reçu » photographier en même temps."""
+        verrou = getattr(getattr(self.ctx, "accessibilite", None), "_verrou_camera", None)
+        return verrou if isinstance(verrou, asyncio.Lock) else self._verrou_camera_local
 
-        if not self._verrou_camera.acquire(blocking=False):
-            raise RefusRecu(409, "Une photo des lunettes est déjà en cours. Attends qu'elle se termine.")
+    async def _photo_lunettes(self) -> tuple[bytes, str]:
+        from .lunettes_camera import CameraIndisponible, ProtocoleNonConfirme, refus_camera_client
+
+        verrou = self._verrou_camera()
+        try:
+            # Une photo des lunettes prend quelques secondes : on attend qu'une photo en cours se termine,
+            # mais pas indéfiniment (un partage en direct enchaîne les images).
+            await asyncio.wait_for(verrou.acquire(), timeout=DELAI_VERROU_CAMERA_S)
+        except (asyncio.TimeoutError, TimeoutError):
+            raise RefusRecu(409, CAMERA_OCCUPEE, phrase="La caméra des lunettes est occupée. Réessaie dans un instant.")
+        capture = self.ctx.capture
+        deja_allumee = False
+        allumee_ici = False
         try:
             camera = self.fabrique_camera()
             lunettes = getattr(camera, "glasses", None)
@@ -769,27 +797,36 @@ class ServiceRecus:
             garde = getattr(camera, "_exploration_autorisee", None)
             if self.ctx.settings.user.annonce_capture and not (callable(garde) and not garde()):
                 await asyncio.to_thread(self._dire, "Photo.")  # prévient les personnes autour
-            capture = self.ctx.capture
             deja_allumee = bool(capture.snapshot().get("camera"))
             capture.set(camera=True)
+            allumee_ici = True
             try:
                 resultat = await camera.prendre_photo(reconnaissance=False)
             except (ProtocoleNonConfirme, CameraIndisponible) as exc:
-                raise RefusRecu(409, str(exc), phrase="La caméra des lunettes n'est pas utilisable pour l'instant.")
+                refus = refus_camera_client(exc)
+                raise RefusRecu(409, refus["message"], phrase="La caméra des lunettes n'est pas utilisable pour l'instant.",
+                                detail=refus)
             except RefusRecu:
                 raise
             except Exception:
                 log.exception("échec de la photo des lunettes pour un reçu")
                 raise RefusRecu(500, "La prise de photo a échoué.")
-            finally:
-                if not deja_allumee and not self._camera_utilisee_ailleurs():
-                    capture.set(camera=False)
         finally:
-            self._verrou_camera.release()
+            verrou.release()
+            # Le témoin s'éteint seulement si personne d'autre ne s'en sert : ni un partage depuis les
+            # lunettes, ni une autre photo qui aurait déjà repris le verrou commun.
+            if allumee_ici and not deja_allumee and not self._camera_utilisee_ailleurs() and not verrou.locked():
+                capture.set(camera=False)
         if not getattr(resultat, "ok", False) or not getattr(resultat, "chemin", None):
+            if getattr(resultat, "chemin", None):  # une image partielle ne reste pas sur le disque
+                self._effacer_fichier(Path(resultat.chemin))
             raise RefusRecu(409, getattr(resultat, "constat", "") or "Aucune image n'est revenue des lunettes.",
                             phrase="Aucune image n'est revenue des lunettes.")
-        octets = await asyncio.to_thread(Path(resultat.chemin).read_bytes)
+        try:
+            octets = await asyncio.to_thread(Path(resultat.chemin).read_bytes)
+        except BaseException:
+            self._effacer_fichier(Path(resultat.chemin))
+            raise
         self.ctx.consent.log("lunettes_photo", detail="reçu")
         return octets, str(resultat.chemin)
 
@@ -904,26 +941,24 @@ class ServiceRecus:
                 raise RefusRecu(422, "Image illisible : format non reconnu.")
             texte_ocr = await self._ocr(jpeg)
             recu = await self._extraire(jpeg, texte_ocr)
-        except BaseException:
-            if chemin_photo and self._suspendue():
-                await asyncio.to_thread(self._effacer_fichier, Path(chemin_photo))
-            raise
 
-        suspendue = self._suspendue()
-        recu["duree_ms"] = int((time.monotonic() - debut) * 1000)
-        if suspendue:
+            suspendue = self._suspendue()
+            recu["duree_ms"] = int((time.monotonic() - debut) * 1000)
+            if suspendue:
+                note = MEMOIRE_SUSPENDUE.format(raison=suspendue)
+                recu.update({"id": None, "image_nom": None, "enregistre": False, "corrige": False,
+                             "cree_le": datetime.now().astimezone().isoformat(timespec="seconds"),
+                             "note": f"{recu['note']} {note}" if recu.get("note") else note})
+                self.ctx.consent.log("recu_analyse", detail="non enregistré (mémoire suspendue)")
+                return recu
+            enregistre = await asyncio.to_thread(self._enregistrer, recu, jpeg)
+        finally:
+            # Dans TOUS les cas, la photo en clair prise par les lunettes disparaît : réussite (la copie
+            # gardée est chiffrée dans les reçus), mémoire suspendue (rien n'est gardé), ou analyse ratée
+            # (image illisible, lecture impossible, panne) — personne n'a demandé à garder cette facture.
+            # Appel direct (un seul unlink) : il doit aussi passer quand la tâche est annulée.
             if chemin_photo:
-                await asyncio.to_thread(self._effacer_fichier, Path(chemin_photo))
-            note = MEMOIRE_SUSPENDUE.format(raison=suspendue)
-            recu.update({"id": None, "image_nom": None, "enregistre": False, "corrige": False,
-                         "cree_le": datetime.now().astimezone().isoformat(timespec="seconds"),
-                         "note": f"{recu['note']} {note}" if recu.get("note") else note})
-            self.ctx.consent.log("recu_analyse", detail="non enregistré (mémoire suspendue)")
-            return recu
-        enregistre = await asyncio.to_thread(self._enregistrer, recu, jpeg)
-        if chemin_photo:
-            # La copie gardée est chiffrée dans les reçus : la photo en clair des lunettes n'a plus lieu d'être.
-            await asyncio.to_thread(self._effacer_fichier, Path(chemin_photo))
+                self._effacer_fichier(Path(chemin_photo))
         self.ctx.consent.log("recu_analyse", detail=f"{'local' if recu['local'] else 'moteur'} / {source}")
         self.ctx.hub.publish("recu.nouveau", id=enregistre["id"], total=enregistre["total"],
                              devise=enregistre["devise"], confiance=enregistre["confiance"])
@@ -1087,9 +1122,9 @@ class ServiceRecus:
         ecrivain.writerow(COLONNES_CSV)
         for r in recus:
             ecrivain.writerow([
-                r["date"] or r["cree_le"][:10], r["commercant"] or "", r["categorie"],
+                r["date"] or r["cree_le"][:10], cellule_csv(r["commercant"]), cellule_csv(r["categorie"]),
                 montant_csv(r["sous_total"]), montant_csv(r["tps"]), montant_csv(r["tvq"]), montant_csv(r["tvh"]),
-                montant_csv(r["total"]), r["devise"], r["moyen_paiement"] or "",
+                montant_csv(r["total"]), cellule_csv(r["devise"]), cellule_csv(r["moyen_paiement"]),
             ])
         return "\ufeff" + tampon.getvalue()
 

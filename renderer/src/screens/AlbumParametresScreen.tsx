@@ -21,11 +21,18 @@ export function AlbumParametresScreen({ params: _params }: { params?: Record<str
   const [dossier, setDossier] = useState<string>(settings?.album_dossier_export || '')
   // Le dossier réellement utilisé, tel que le service le résout (le dossier Images quand le champ est vide).
   const [dossierReel, setDossierReel] = useState<string | null>(null)
+  // Ce que le service dit des copies exportées (limite, dossier synchronisé) : affiché tel quel, jamais reformulé.
+  const [limiteExport, setLimiteExport] = useState<string | null>(null)
+  const [noteSynchronise, setNoteSynchronise] = useState<string | null>(null)
 
   const lireDossierReel = (): void => {
     api
       .get('/api/album?type=photo')
-      .then((r) => setDossierReel(typeof r?.dossier_export === 'string' ? r.dossier_export : null))
+      .then((r) => {
+        setDossierReel(typeof r?.dossier_export === 'string' ? r.dossier_export : null)
+        setLimiteExport(typeof r?.limite === 'string' && r.limite ? r.limite : null)
+        setNoteSynchronise(r?.synchronise && typeof r?.note_synchronise === 'string' ? r.note_synchronise : null)
+      })
       .catch(() => setDossierReel(null))
   }
 
@@ -104,14 +111,16 @@ export function AlbumParametresScreen({ params: _params }: { params?: Record<str
           ) : settings?.album_dossier_export ? (
             <div className="bloc-note attention">Ce chemin n’est pas utilisable : indiquez un chemin complet, qui commence par une lettre de lecteur.</div>
           ) : null}
+          {noteSynchronise ? <div className="bloc-note attention" role="status">{noteSynchronise}</div> : null}
+          {limiteExport ? <div className="small muted" style={{ lineHeight: 1.45 }}>{limiteExport}</div> : null}
           <div className="row wrap" style={{ gap: 8 }}>
             <button type="button" className="btn sm" disabled={!dossierReel} onClick={ouvrirDossier}>Ouvrir le dossier</button>
           </div>
         </div>
 
         <div className="small muted" style={{ padding: '0 6px', lineHeight: 1.45 }}>
-          L’album et ses copies restent sur cet ordinateur : rien n’est envoyé en ligne. Les fichiers copiés hors d’IRIS ne sont pas effacés par la rétention ni
-          par l’effacement à distance.
+          L’album reste sur cet ordinateur : IRIS n’envoie rien en ligne. Les fichiers copiés hors d’IRIS ne sont pas effacés par la rétention ni
+          par l’effacement à distance, et un dossier synchronisé les emporte hors de l’ordinateur.
         </div>
       </div>
     </div>

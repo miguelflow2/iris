@@ -14,6 +14,7 @@ Ce qui est protégé ici :
 from __future__ import annotations
 
 import base64
+import csv
 import io
 import json
 from datetime import date, datetime, timedelta, timezone
@@ -25,6 +26,10 @@ import iris.chat as chat_module
 import iris.recus as recus
 from iris.connectors.base import BaseConnector, Chunk
 from iris.lunettes_camera import CameraIndisponible, ResultatPhoto
+
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
 
 NOMS_INTERDITS = ("claude", "anthropic", "openai", "gpt", "gemini", "google", "elevenlabs", "vosk", "piper",
                   "rapidocr", "openrouter")
@@ -402,11 +407,81 @@ def test_photo_des_lunettes_temoin_annonce_et_copie_en_clair_effacee(app, client
     assert ctx.recus.image(r.json()["id"]).startswith(b"\xff\xd8")
 
 
+def test_une_analyse_ratee_efface_quand_meme_la_photo_des_lunettes(app, client, faux_ocr, monkeypatch):
+    """La facture photographiée par les lunettes est en clair sur le disque : si l'analyse échoue, personne
+    n'a demandé à la garder (constat du 2026-09-14)."""
+    import asyncio
+
+    ctx = app.state.ctx
+    dossier = Path(ctx.settings.data_dir) / "captures"
+    photo = dossier / "lunettes-recu.jpg"
+    ctx.recus.fabrique_camera = lambda: FausseCamera(ctx, dossier)
+    monkeypatch.setattr(ctx.recus, "_dire", lambda texte: None)
+
+    # 422 : la lecture locale refuse l'image.
+    async def illisible(octets):
+        raise recus.RefusRecu(422, "Image illisible : format non reconnu.")
+
+    monkeypatch.setattr(ctx.recus, "_ocr", illisible)
+    r = client.post("/api/recus/analyser", json={"source": "lunettes"})
+    assert r.status_code == 422 and not photo.exists()
+
+    # 409 : ni lecture locale, ni moteur autorisé (la vraie méthode _ocr, lecture locale absente).
+    monkeypatch.delattr(ctx.recus, "_ocr")
+    monkeypatch.setattr(recus, "ocr_disponible", lambda: False)
+    r = client.post("/api/recus/analyser", json={"source": "lunettes"})
+    assert r.status_code == 409 and "Impossible de lire ce reçu" in r.json()["detail"] and not photo.exists()
+
+    # Panne imprévue : l'exception remonte, la photo est effacée quand même.
+    async def panne(octets):
+        raise RuntimeError("lecteur en panne")
+
+    monkeypatch.setattr(ctx.recus, "_ocr", panne)
+    with pytest.raises(RuntimeError):
+        asyncio.run(ctx.recus.analyser("lunettes"))
+    assert not photo.exists() and ctx.db.query("SELECT id FROM recus") == []
+
+
+def test_la_photo_du_recu_attend_le_verrou_commun_de_la_camera(app, faux_ocr, monkeypatch):
+    """Deux photos simultanées se disputeraient le Bluetooth : le reçu prend le verrou de la vision
+    d'accessibilité (celui que le partage de vision tient pour chaque image), pas un verrou à lui."""
+    import asyncio
+
+    ctx = app.state.ctx
+    camera = FausseCamera(ctx, Path(ctx.settings.data_dir) / "captures")
+    ctx.recus.fabrique_camera = lambda: camera
+    monkeypatch.setattr(ctx.recus, "_dire", lambda texte: None)
+    monkeypatch.setattr(recus, "DELAI_VERROU_CAMERA_S", 0.05)
+    commun = asyncio.Lock()
+    monkeypatch.setattr(ctx.accessibilite, "_verrou_camera", commun)
+    assert ctx.recus._verrou_camera() is commun
+
+    async def pendant_une_autre_photo():
+        await commun.acquire()
+        ctx.capture.set(camera=True)  # l'autre photo a allumé le témoin
+        try:
+            with pytest.raises(recus.RefusRecu) as refus:
+                await ctx.recus.analyser("lunettes")
+            return refus.value
+        finally:
+            commun.release()
+
+    refus = asyncio.run(pendant_une_autre_photo())
+    assert refus.status_code == 409 and refus.detail == recus.CAMERA_OCCUPEE
+    assert camera.temoin_pendant is None, "aucune seconde prise de vue pendant l'autre photo"
+    assert ctx.capture.snapshot()["camera"] is True, "le témoin de l'autre photo n'est pas éteint"
+    ctx.capture.set(camera=False)
+    # Verrou libre : la photo passe, et le verrou est rendu.
+    recu = asyncio.run(ctx.recus.analyser("lunettes"))
+    assert recu["enregistre"] is True and camera.temoin_pendant is True and not commun.locked()
+
+
 def test_camera_indisponible_rend_le_message_exact(app, client):
     ctx = app.state.ctx
     ctx.recus.fabrique_camera = lambda: FausseCamera(ctx, Path(ctx.settings.data_dir), CameraIndisponible("Ces lunettes n'ont pas de caméra."))
     r = client.post("/api/recus/analyser", json={"source": "lunettes"})
-    assert r.status_code == 409 and r.json()["detail"] == "Ces lunettes n'ont pas de caméra."
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "camera_absente"
+    assert "caméra" in r.json()["detail"]["message"]
     assert ctx.capture.snapshot()["camera"] is False
 
 
@@ -475,6 +550,21 @@ def test_export_csv_exact_pour_excel(client, service):
     assert client.get("/api/recus/export", params={"format": "xlsx"}).status_code == 422
 
 
+def test_export_csv_neutralise_les_formules_venues_du_recu(client, service):
+    """Le commerçant et le moyen de paiement sont lus sur un reçu imprimé par un tiers : Excel ne doit
+    jamais les exécuter comme des formules."""
+    enregistrer(service, date="2026-09-12", commercant="=1+1", moyen_paiement="@SUM(A1)")
+    enregistrer(service, date="2026-09-13", commercant='=HYPERLINK("http://exemple.invalid","IGA")',
+                moyen_paiement="+cmd|' /C calc'!A0")
+    enregistrer(service, date="2026-09-14", commercant="-2+3", moyen_paiement="Visa")
+    csv_texte = service.exporter_csv("2026-09-12", "2026-09-14")
+    lignes = list(csv.reader(io.StringIO(csv_texte.lstrip("\ufeff"))))
+    assert lignes[1][1] == "'=1+1" and lignes[1][9] == "'@SUM(A1)"
+    assert lignes[2][1].startswith("'=HYPERLINK") and lignes[2][9].startswith("'+cmd")
+    assert lignes[3][1] == "'-2+3" and lignes[3][9] == "Visa"
+    assert recus.cellule_csv("Métro Plus") == "Métro Plus" and recus.cellule_csv(None) == ""
+
+
 def test_la_retention_efface_recus_et_images(app, service):
     ancien = enregistrer(service)
     app.state.ctx.db.execute("UPDATE recus SET cree_le=? WHERE id=?",
@@ -504,3 +594,24 @@ def test_garde_ce_recu_a_la_voix(app, faux_ocr, monkeypatch):
     assert asyncio.run(service.interception("scanne ce reçu")) == "La caméra des lunettes n'est pas utilisable pour l'instant."
     noms = {nom: priorite for priorite, nom, _f in ctx.voice._interceptions}
     assert noms.get("quotidien-recus") == 50
+
+
+def test_un_moteur_muet_retombe_sur_lextraction_locale_dans_le_delai(client, faux_ocr, moteur, monkeypatch):
+    """Contre-vérification du 2026-09-14 : l'analyse d'un reçu (aussi à la voix, « garde ce reçu ») attendait
+    le moteur sans limite. Le délai de ChatService.demander_image_detail rend l'extraction locale, dite."""
+    import asyncio
+    import time
+
+    class MoteurMuet(FauxMoteur):
+        async def stream(self, messages, system, tools=None, run_tool=None, options=None):
+            await asyncio.sleep(5.0)
+            yield Chunk("text", text=FauxMoteur.reponse)
+            yield Chunk("done")
+
+    accorder(client, "image")
+    monkeypatch.setattr(chat_module, "build_connector", lambda name, settings, secrets: MoteurMuet())
+    monkeypatch.setattr(chat_module, "DELAI_MOTEUR_IMAGE_S", 0.3)
+    debut = time.monotonic()
+    recu = client.post("/api/recus/analyser", json={"source": "image", "image": image_json()}).json()
+    assert time.monotonic() - debut < 3.0, "l'analyse n'attend pas le moteur au-delà du délai"
+    assert recu["local"] is True and "le moteur VELA n'a pas répondu" in recu["note"] and recu["total"] == 24.42

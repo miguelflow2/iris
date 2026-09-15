@@ -8,6 +8,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranInterprete: View {
     @Environment(EnvironnementIRIS.self) private var env
 

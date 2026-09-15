@@ -3,13 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- Politique de contenu écrite dans la page elle-même : /m est servie par main.py sans en-têtes.
+<!-- Politique de contenu écrite dans la page elle-même, en plus de celle que l'ordinateur pose en
+     en-tête (routes_mobile.reponse_page, appelée par main.py) : les deux se cumulent, la plus stricte gagne.
      Scripts de cette origine seulement, aucun eval ; mobile.py y ajoute l'empreinte sha256 de la
-     coquille qu'il place en ligne (jamais 'unsafe-inline'). Les connexions restent ouvertes par
-     schéma (https:, wss:) parce que l'hôte du relais vient des réglages et ne peut pas être écrit
-     ici ; routes_mobile.py pose la politique exacte, hôte par hôte. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss: https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-<meta name="referrer" content="strict-origin-when-cross-origin">
+     coquille qu'il place en ligne (jamais 'unsafe-inline'). Connexions : cette origine, les deux
+     services OpenStreetMap du guidage, et les WebSocket par schéma (ws:, wss:) parce que l'hôte du
+     relais vient des réglages et ne peut pas être écrit ici. Plus de « https: » ouvert à toute origine.
+     Une balise meta ne peut pas interdire l'intégration dans un cadre (frame-ancestors) : c'est
+     l'en-tête de l'ordinateur qui le fait ; coeur.js refuse aussi de démarrer dans un cadre, au cas où
+     la page serait servie sans ses en-têtes. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss: https://nominatim.openstreetmap.org https://routing.openstreetmap.de; worker-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<!-- Aucun Referer vers une autre origine : il porterait le nom de la machine de la maison (.ts.net). -->
+<meta name="referrer" content="same-origin">
 <meta name="theme-color" content="#1b1b1d">
 <meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes">
@@ -97,6 +102,8 @@
       <input id="texte" placeholder="ou écrivez ici…" autocomplete="off" enterkeyhint="send">
       <button id="envoyer" class="bouton-sombre" type="button">Envoyer</button>
     </div>
+    <!-- Sans lunettes : messages écrits restants de l'aperçu du chat (coeur.js, afficherApercu). -->
+    <p id="apercu-lunettes" class="note-faible apercu-lunettes" role="status" hidden></p>
   </footer>
 </div>
 

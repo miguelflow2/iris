@@ -124,8 +124,7 @@ def test_routes_du_journal_et_de_la_memoire(client, app):
     assert client.delete("/api/ecoute/memoire/plage").status_code == 422
 
 
-@pytest.mark.xfail(strict=False, reason="main.py déclare DELETE /api/memory/{memory_id} avant ce routeur : "
-                                         "« plage » y est pris pour un identifiant (demande faite à la fondation)")
+# Corrigé dans main.py : DELETE /api/memory/plage est déclaré avant DELETE /api/memory/{memory_id}.
 def test_chemin_du_contrat_pour_la_memoire_par_plage(client, app):
     app.state.ctx.memory.add("souvenir à effacer")
     r = client.delete("/api/memory/plage", params={"debut": datetime.now().date().isoformat()})

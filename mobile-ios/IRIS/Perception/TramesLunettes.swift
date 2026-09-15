@@ -137,8 +137,10 @@ enum UUIDLunettes {
     /// Services qui trahissent des lunettes de cette famille, pour retrouver une paire déjà reliée à l'iPhone.
     static let servicesConnus = [serviceCamera, serviceCommande, serviceTransparent]
 
-    /// Indices de nom : génériques et propres à VELA, les mêmes que glasses.py (plus le nom de plateforme).
-    static let indicesNom = ["vela", "m01", "iris", "glass", "lunette", "k900", "smart"]
+    /// Indices de nom, pour la LISTE de recherche seulement (la vérification se fait sur les services, après
+    /// connexion). Volontairement plus étroits que glasses.py : « smart », « glass » et « iris » faisaient
+    /// entrer bracelets, montres et écouteurs. La vraie paire annonce « M01 Pro_F444 » (LUNETTES-DIAGNOSTIC.md).
+    static let indicesNom = ["vela", "m01", "lunette", "k900"]
 }
 
 // MARK: - Caméra (hypothèse non confirmée)

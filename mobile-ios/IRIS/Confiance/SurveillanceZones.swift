@@ -211,10 +211,15 @@ final class SurveillanceZones {
     }
 
     private func zoneCourante() -> String? {
-        let candidates = zones.filter { zonesDedans.contains($0.id) }.sorted { $0.rayonM < $1.rayonM }
+        Self.zoneCourante(zones: zones, dedans: zonesDedans)
+    }
+
+    /// La zone à signaler : la plus petite de celles où l'iPhone se trouve. Fonction pure (IRISTests).
+    nonisolated static func zoneCourante(zones: [ZoneSansMemoire], dedans: Set<String>) -> String? {
+        let candidates = zones.filter { dedans.contains($0.id) }.sorted { $0.rayonM < $1.rayonM }
         if let premiere = candidates.first { return premiere.id }
         // Liste pas encore chargée (réveil en arrière-plan) : on garde l'identifiant tel quel.
-        return zones.isEmpty ? zonesDedans.sorted().first : nil
+        return zones.isEmpty ? dedans.sorted().first : nil
     }
 
     private func signalerSiChange() async {

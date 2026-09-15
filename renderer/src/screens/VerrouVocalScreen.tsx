@@ -34,6 +34,9 @@ interface EtatVoix {
   texte_consentement: string
   note_legale: string
   phrase_suggeree: string
+  /** Faux tant que VELA n'a pas déclaré le traitement biométrique à la Commission d'accès à l'information. */
+  offerte?: boolean
+  raison_non_offerte?: string | null
 }
 
 interface ResultatTest {
@@ -216,6 +219,9 @@ export function VerrouVocalScreen({ params: _params }: { params?: Record<string,
   const nb = etat?.echantillons || 0
   const pret = Boolean(etat?.enregistree)
   const enEcoute = occupe === 'echantillon' || occupe === 'test'
+  // Constat du 2026-09-14 (LCCJTI, art. 44 et 45) : sans déclaration préalable de VELA, la fonction n'est pas
+  // offerte. On ne propose ni consentement, ni enregistrement, ni activation ; effacer reste possible.
+  const offerte = etat?.offerte !== false
 
   const erreurDe = (action: Action | Action[]): JSX.Element | null => {
     const liste = Array.isArray(action) ? action : [action]
@@ -257,8 +263,15 @@ export function VerrouVocalScreen({ params: _params }: { params?: Record<string,
 
         {succes ? <div className="bloc-note ok" aria-live="polite">{succes}</div> : null}
 
+        {etat && !offerte ? (
+          <div className="carte col" style={{ gap: 8 }} role="status">
+            <h3 style={{ margin: 0 }}>Fonction non encore offerte</h3>
+            <div className="desc">{etat.raison_non_offerte}</div>
+          </div>
+        ) : null}
+
         {/* ------------------------------------------------------------ 1. consentement exprès */}
-        {etat && !consenti ? (
+        {etat && !consenti && offerte ? (
           <div className="carte col vv-consentement" style={{ gap: 12 }}>
             <h3 style={{ margin: 0 }}>1. Votre consentement exprès</h3>
             <p className="vv-texte-legal">{etat.texte_consentement}</p>
@@ -281,8 +294,9 @@ export function VerrouVocalScreen({ params: _params }: { params?: Record<string,
         {/* ------------------------------------------------------------ 2. échantillons */}
         {etat && consenti ? (
           <>
-            {absentes ? <CarteLunettesRequises fonction="Enregistrer ou tester votre empreinte vocale" /> : null}
+            {absentes && offerte ? <CarteLunettesRequises fonction="Enregistrer ou tester votre empreinte vocale" /> : null}
 
+            {offerte ? (<>
             <div className="carte col" style={{ gap: 12 }}>
               <h3 style={{ margin: 0 }}>2. Enregistrer votre voix</h3>
               <div className="desc">
@@ -402,6 +416,7 @@ export function VerrouVocalScreen({ params: _params }: { params?: Record<string,
                 </div>
               ) : null}
             </div>
+            </>) : null}
 
             {/* ------------------------------------------------------------ effacer */}
             <div className="carte col" style={{ gap: 10 }}>

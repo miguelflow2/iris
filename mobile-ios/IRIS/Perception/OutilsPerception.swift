@@ -8,28 +8,39 @@ import UIKit
 
 /// Toute fonction qui CAPTE (voir, écouter) passe par ici avant d'ouvrir la caméra ou le micro.
 ///
-/// Deux règles, dans cet ordre : le mode confidentiel réglé sur l'ordinateur arrête tout ; les lunettes
-/// VELA doivent être présentes (connectées à cet iPhone, ou vues par l'ordinateur). L'environnement de
-/// l'app est lu À L'USAGE, jamais à la création : la fabrique de perception est appelée pendant que
-/// l'environnement lui-même se construit.
+/// Trois règles, dans cet ordre : IRIS verrouillée arrête tout ; le mode confidentiel réglé sur
+/// l'ordinateur arrête tout ; les lunettes VELA doivent être présentes. « Présentes » a UNE seule
+/// définition, EnvironnementIRIS.lunettesPresentes : l'ordinateur fait foi quand il répond, sinon des
+/// lunettes reliées à cet iPhone ET vérifiées par leurs services (un simple appareil Bluetooth relié ne
+/// suffit pas). L'environnement de l'app est lu À L'USAGE, jamais à la création : la fabrique de perception
+/// est appelée pendant que l'environnement lui-même se construit.
 @MainActor
 final class GardeCapture {
     private let lunettes: LunettesBLE
 
     static let messageConfidentiel = "Le mode confidentiel est actif sur ton ordinateur : IRIS ne capte rien tant qu'il l'est."
     static let messageLunettes = "Cette fonction marche avec les lunettes VELA. Connecte tes lunettes pour l'utiliser."
+    static let messageVerrou = "IRIS est verrouillée : rien ne capte tant qu'elle ne l'est plus."
 
     init(lunettes: LunettesBLE) {
         self.lunettes = lunettes
     }
 
+    /// Même définition que partout ailleurs dans l'app (voir EnvironnementIRIS.lunettesPresentes).
+    var lunettesPresentes: Bool {
+        EnvironnementIRIS.partage.lunettesPresentes
+    }
+
     /// nil si la capture est permise ; sinon l'erreur à afficher telle quelle.
     func refus(fonction: String) -> ErreurPont? {
         let env = EnvironnementIRIS.partage
+        if env.pont.verrouPersistant {
+            return .verrouillee(Self.messageVerrou)
+        }
         if env.reglages?.privacyMode == true {
             return .refus(statut: 409, message: Self.messageConfidentiel, detail: nil)
         }
-        if !(lunettes.etat.connectees || env.lunettesPresentes) {
+        if !env.lunettesPresentes {
             return .lunettesRequises(RefusLunettes(code: "lunettes_requises", fonction: fonction,
                                                    message: Self.messageLunettes,
                                                    acheterUrl: env.attestation.presence?.acheterUrl))

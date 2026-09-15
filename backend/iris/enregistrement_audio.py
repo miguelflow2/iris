@@ -9,7 +9,8 @@ Garde-fous, tous dits à l'utilisateur :
 - 4 heures au plus par fichier (≈ 460 Mo) ; au-delà, l'enregistrement s'arrête et le fichier est gardé ;
 - l'espace disque est vérifié au départ et pendant l'enregistrement : on s'arrête avant de remplir
   le disque, parce qu'un disque plein fait tomber tout IRIS, pas seulement l'enregistrement ;
-- mémoire suspendue (mode invité, zone sans mémoire) ou mode confidentiel : refus, avec la raison.
+- mémoire suspendue (mode invité, zone sans mémoire) ou mode confidentiel : refus, avec la raison ;
+  une suspension survenue pendant l'enregistrement l'arrête (ce qui précède est gardé).
 
 Le module `wave` réécrit l'en-tête à chaque écriture : si IRIS s'arrête brutalement, le fichier
 reste lisible jusqu'au dernier bloc écrit.
@@ -41,6 +42,11 @@ PREFIXES_GERES = ("enregistrement-", "cours-")  # fichiers dont ce module appliq
 
 DUREE_ATTEINTE = "Enregistrement arrêté : durée maximale de 4 heures atteinte. Le fichier est gardé."
 DISQUE_PLEIN = "Enregistrement arrêté : l'espace disque devient insuffisant. Le fichier est gardé."
+
+
+def arret_par_suspension(raison: str) -> str:
+    """Raison affichée quand la mémoire est suspendue pendant un enregistrement (mode invité, zone sans mémoire)."""
+    return f"Enregistrement arrêté : mémorisation suspendue ({raison}). Ce qui précède est gardé."
 
 
 def dossier_audio(ctx) -> Path:
@@ -179,6 +185,12 @@ class SessionEnregistrement:
                 if self.raison == ATTENTE_MICRO:
                     self.raison = None
                     self._signaler()
+                # Mode invité ou zone sans mémoire activés en cours de route : pas un bloc de plus sur le
+                # disque. Vérifié à chaque bloc (0,25 s) pour ne pas attendre le tour d'entretien.
+                suspendue = memoire_suspendue(self.ctx)
+                if suspendue:
+                    raison_fin = arret_par_suspension(suspendue)
+                    break
                 reste = int(self.duree_max_s * OCTETS_PAR_SECONDE) - self.octets_audio
                 if reste <= 0:
                     raison_fin = DUREE_ATTEINTE

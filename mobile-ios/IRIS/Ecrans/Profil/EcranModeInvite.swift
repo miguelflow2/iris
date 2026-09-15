@@ -5,6 +5,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranModeInvite: View {
     @Environment(EnvironnementIRIS.self) private var env
     @State private var etat: EtatInvite? = nil
@@ -49,7 +50,7 @@ struct EcranModeInvite: View {
                     ProgressView()
                 }
             } footer: {
-                Text("Pratique quand quelqu'un d'autre utilise IRIS ou qu'une conversation ne doit pas être retenue. Tu peux aussi dire « Dis-moi Iris, mode invité ».")
+                Text("Pratique quand quelqu'un d'autre utilise IRIS ou qu'une conversation ne doit pas être retenue. Sur l'iPhone, « Dis-moi Iris, mode invité » active le mode invité seulement si l'app IRIS est ouverte à l'écran. Pour en sortir, touche « Terminer » ici : IRIS ne sait pas qui parle dans les lunettes, elle refuse d'en sortir à la voix.")
             }
             .listRowBackground(Couleurs.carte)
             .disabled(enCours)

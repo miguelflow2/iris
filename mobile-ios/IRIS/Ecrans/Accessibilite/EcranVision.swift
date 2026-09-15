@@ -10,6 +10,7 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
+@MainActor
 struct EcranVision: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
@@ -96,6 +97,8 @@ struct EcranVision: View {
                             Toggle("Aperçu", isOn: $apercu)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .tint(Couleurs.bleu)
+                                // L'aperçu OUVRE la caméra : mêmes règles que la photo (lunettes, confidentiel).
+                                .disabled(!apercu && !env.lunettesPresentes)
                                 .accessibilityHint("Affiche ce que voit la caméra, pour cadrer.")
                         }
                     }
@@ -128,6 +131,11 @@ struct EcranVision: View {
         }
         .onChange(of: apercu) { _, actif in
             if actif {
+                if let refus = perception.garde.refus(fonction: "apercu_camera") {
+                    erreur = refus
+                    apercu = false
+                    return
+                }
                 Task {
                     do {
                         try await perception.camera.demarrer(pour: "apercu")
@@ -139,6 +147,18 @@ struct EcranVision: View {
             } else {
                 perception.camera.arreter(pour: "apercu")
             }
+        }
+        // Mode confidentiel ou verrou pendant que l'aperçu tourne : il se coupe (la fabrique arrête aussi la
+        // caméra ; ceci remet l'interrupteur dans le vrai état).
+        .onChange(of: env.reglages?.privacyMode) { _, confidentiel in
+            if confidentiel == true && apercu { apercu = false }
+        }
+        .onChange(of: env.pont.verrouPersistant) { _, verrouille in
+            if verrouille && apercu { apercu = false }
+        }
+        // Lunettes disparues : l'aperçu capte encore, il s'arrête comme toute capture.
+        .onChange(of: env.lunettesPresentes) { _, presentes in
+            if !presentes && apercu { apercu = false }
         }
         .onDisappear {
             if apercu { perception.camera.arreter(pour: "apercu") }

@@ -1,21 +1,50 @@
 // Style.swift — la charte visuelle des maquettes IRIS, portée en SwiftUI.
 //
 // Mêmes valeurs que renderer/src/styles.css (fond #1b1b1d, cartes #2c2c2e, bouton holographique
-// en dégradé pastel). Les écrans de l'équipe perception peuvent s'en servir aussi.
+// en dégradé pastel), SAUF le texte atténué, éclairci pour le contraste (voir PaletteRGB.attenue).
+// Les écrans de l'équipe perception peuvent s'en servir aussi.
 
 import SwiftUI
 
+/// Valeurs brutes des couleurs, pour pouvoir VÉRIFIER les contrastes (IRISTests, outils/verifier_ios.py).
+enum PaletteRGB {
+    static let fond: UInt32 = 0x1B1B1D
+    static let fond2: UInt32 = 0x232325
+    static let carte: UInt32 = 0x2C2C2E
+    static let carte2: UInt32 = 0x3A3A3C
+    static let texte2: UInt32 = 0xD1D1D6
+    /// Texte atténué. Était #8E8E93 : 4,27:1 sur les cartes, sous le seuil WCAG AA (4,5:1) pour du petit
+    /// texte lu par des personnes malvoyantes. #A1A1A6 donne ~5,4:1 sur #2C2C2E et ~6,7:1 sur #1B1B1D.
+    /// Encore sous AA sur #3A3A3C (~4,4:1) : ne pas l'employer pour du texte sur `carte2`. À faire valider
+    /// par le design (renderer/src/styles.css utilise encore #8E8E93).
+    static let attenue: UInt32 = 0xA1A1A6
+
+    /// Rapport de contraste WCAG 2.1 entre deux couleurs sRGB opaques (1 à 21).
+    static func contraste(_ a: UInt32, _ b: UInt32) -> Double {
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    static func luminance(_ rgb: UInt32) -> Double {
+        func canal(_ decalage: UInt32) -> Double {
+            let c = Double((rgb >> decalage) & 0xFF) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * canal(16) + 0.7152 * canal(8) + 0.0722 * canal(0)
+    }
+}
+
 enum Couleurs {
-    static let fond = Color(rgb: 0x1B1B1D)
-    static let fond2 = Color(rgb: 0x232325)
-    static let carte = Color(rgb: 0x2C2C2E)
-    static let carte2 = Color(rgb: 0x3A3A3C)
+    static let fond = Color(rgb: PaletteRGB.fond)
+    static let fond2 = Color(rgb: PaletteRGB.fond2)
+    static let carte = Color(rgb: PaletteRGB.carte)
+    static let carte2 = Color(rgb: PaletteRGB.carte2)
     static let carte3 = Color(rgb: 0x48484A)
     static let ligne = Color.white.opacity(0.08)
     static let ligne2 = Color.white.opacity(0.16)
     static let texte = Color.white
-    static let texte2 = Color(rgb: 0xD1D1D6)
-    static let attenue = Color(rgb: 0x8E8E93)
+    static let texte2 = Color(rgb: PaletteRGB.texte2)
+    static let attenue = Color(rgb: PaletteRGB.attenue)
     static let bleu = Color(rgb: 0x0A84FF)
     static let rouge = Color(rgb: 0xFF3B30)
     static let vert = Color(rgb: 0x30D158)
@@ -113,6 +142,7 @@ extension ButtonStyle where Self == StyleHolo {
 
 // MARK: - Cartes et textes
 
+@MainActor
 struct Carte<Contenu: View>: View {
     var titre: String?
     @ViewBuilder var contenu: () -> Contenu
@@ -135,6 +165,7 @@ struct Carte<Contenu: View>: View {
 }
 
 /// Phrase de vérité (limite, note, avertissement) : toujours visible, jamais cachée dans un « i ».
+@MainActor
 struct NoteVerite: View {
     let texte: String
     var genre: Genre = .limite

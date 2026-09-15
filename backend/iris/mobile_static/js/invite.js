@@ -97,7 +97,7 @@ function ouvrir(ctx) {
   corps.append(
     el('p', { class: 'note' }, "Pour prêter IRIS ou ses lunettes : pendant le mode invité, IRIS ne retient rien de la session, et ses conversations sont effacées à la fin."),
     statut, grandBouton, resultatFin, el('div', { class: 'carte' }, groupeDuree), el('div', { class: 'carte' }, el('h3', {}, 'Ce que le mode ne fait pas'), limite),
-    el('p', { class: 'note-faible' }, "À la voix, sur l'ordinateur ou les lunettes : « Iris, mode invité » et « Iris, fin du mode invité »."));
+    el('p', { class: 'note-faible' }, "À la voix, sur l'ordinateur ou les lunettes : « Iris, mode invité ». « Iris, fin du mode invité » n'est acceptée à la voix qu'avec le verrou vocal actif (pas encore offert) : sinon, terminez le mode ici ou il se termine tout seul à l'heure prévue."));
 
   if (!api) {
     statutTitre.textContent = 'La liaison avec votre ordinateur n’est pas prête : fermez puis rouvrez ce panneau.';

@@ -411,7 +411,7 @@ def test_sans_consentement_du_texte_rien_ne_part_et_le_refus_est_un_403_structur
     modele = FauxModele()
     m = construire(modele=modele)
 
-    def refuse():
+    def refuse(message=None):
         raise ConsentRequired("transcript")
 
     m.trad.verifier_envoi = refuse
@@ -602,11 +602,14 @@ def test_la_sortie_lunettes_suit_la_regle_des_autres_voix_et_se_replie_en_le_dis
 
 # =========================================================================== 8. l'écoute (fil audio, doublures)
 @pytest.fixture()
-def voix_app(app):
+def voix_app(app, monkeypatch):
     """L'écoute réelle de l'application, avec une voix muette, sans lunettes exigées, et l'interprète
     branché sur un faux modèle et une fausse voix de l'autre langue."""
     ctx = app.state.ctx
     ctx.settings.update({"demo_sans_lunettes": True})
+    # Le vérificateur choisit le moteur sur chaque message, comme demander_court : il faut qu'un moteur
+    # (en ligne) soit prêt, et c'est le faux modèle qui répond à sa place.
+    monkeypatch.setattr(ctx.chat.router, "available", lambda secrets: ["vela"])
     ctx.consent.set("audio_raw", True)
     ctx.consent.set("transcript", True)
     v = ctx.voice
@@ -638,23 +641,168 @@ def test_mode_interprete_anglais_a_la_voix_ouvre_sans_passer_par_le_modele(voix_
     assert voix_app._traduction_en_attente() is True  # _command_cycle enchaîne sur la boucle
 
 
-def test_le_consentement_du_texte_est_relu_a_chaque_envoi_mais_le_moteur_garde_quelques_secondes():
+def test_le_consentement_et_le_moteur_sont_choisis_a_chaque_envoi_sur_le_message_lui_meme():
     from iris.routes_interprete import fabriquer_verificateur
 
-    selections: list[bool] = []
+    selections: list[str] = []
     verifications: list[Any] = []
-    u = SimpleNamespace(local_only=False)
+    u = SimpleNamespace(local_only=False, agents={"vela": SimpleNamespace(local=False)})
     routeur = SimpleNamespace(available=lambda secrets: ["vela"],
-                              select=lambda texte, img, dispo, demande: selections.append(u.local_only) or ("vela", ""))
+                              select=lambda texte, img, dispo, demande: selections.append(texte) or ("vela", ""))
     ctx = SimpleNamespace(settings=SimpleNamespace(user=u), chat=SimpleNamespace(router=routeur, secrets=None),
                           consent=SimpleNamespace(check=lambda t, agent=None: verifications.append((t, agent))))
     verifier = fabriquer_verificateur(ctx)
-    verifier()
-    verifier()
-    assert verifications == [("transcript", "vela"), ("transcript", "vela")] and selections == [False]
-    u.local_only = True
-    verifier()
-    assert selections == [False, True], "le mode local qui change oblige à rechoisir le moteur"
+    assert verifier("À traduire :\n<<<hello>>>") == ("vela", False)
+    assert verifier("À traduire :\n<<<open the file>>>") == ("vela", False)
+    assert selections == ["À traduire :\n<<<hello>>>", "À traduire :\n<<<open the file>>>"], \
+        "aucun cache : le moteur est choisi sur CHAQUE message, comme demander_court"
+    assert verifications == [("transcript", "vela"), ("transcript", "vela")]
+    # Vérification préalable (aucun message) : un moteur en ligne est disponible, l'accord est exigé sans agent.
+    verifications.clear()
+    assert verifier(None) == (None, False) and verifications == [("transcript", None)]
+
+
+class FausseBase:
+    """Juste ce que le vrai ConsentGate lit et écrit : les accords et le registre chaîné."""
+
+    def __init__(self, accordes=()):
+        self.accordes = set(accordes)
+        self.registre: list[dict] = []
+
+    def one(self, sql: str, params=()):
+        if "FROM consents" in sql:
+            return {"granted": 1} if params[0] in self.accordes else None
+        if "FROM privacy_events" in sql:
+            return {"hash": self.registre[-1]["hash"]} if self.registre else None
+        return None
+
+    def execute(self, sql: str, params=()):
+        if "privacy_events" in sql:
+            cles = ("created_at", "event_type", "data_type", "agent", "detail", "prev_hash", "hash")
+            self.registre.append(dict(zip(cles, params)))
+
+
+class ModeleRoute(FauxModele):
+    """Comme ChatService.demander_court : le moteur est choisi par le VRAI routeur sur le message."""
+
+    def __init__(self, ctx, reponse: Any = None):
+        super().__init__()
+        self.ctx, self.reponse, self.envois = ctx, reponse, []
+
+    def __call__(self, systeme: str, message: str):
+        routeur = self.ctx.chat.router
+        agent, _r = routeur.select(message, False, routeur.available(None), "auto")
+        self.envois.append(agent)
+        if isinstance(self.reponse, Exception):
+            raise self.reponse
+        if self.reponse is not None:
+            return self.reponse
+        return super().__call__(systeme, message)
+
+
+def contexte_routage(accordes=()):
+    """Moteur par défaut LOCAL, moteur en ligne disponible, vrai routeur, vrai ConsentGate."""
+    from iris.consent import ConsentGate
+    from iris.router import AgentRouter
+
+    u = SimpleNamespace(local_only=False, routing_mode="auto", default_agent="custom",
+                        agents={"custom": SimpleNamespace(local=True, active=True),
+                                "claude": SimpleNamespace(local=False, active=True)})
+    settings = SimpleNamespace(user=u)
+    routeur = AgentRouter(settings)
+    routeur.available = lambda secrets: ["custom", "claude"]
+    base = FausseBase(accordes)
+    ctx = SimpleNamespace(settings=settings, chat=SimpleNamespace(router=routeur, secrets=None),
+                          consent=ConsentGate(base, settings, None))
+    return ctx, base
+
+
+def test_une_phrase_routee_vers_un_moteur_en_ligne_ne_part_jamais_sans_accord():
+    """Constat du 2026-09-14 : le vérificateur choisissait le moteur sur le mot « traduction » (IA locale,
+    donc aucun accord exigé) alors que l'envoi réel le choisit sur le message (mot-clé ordinateur ->
+    moteur en ligne)."""
+    from iris.routes_interprete import fabriquer_verificateur
+
+    ctx, base = contexte_routage()
+    modele = ModeleRoute(ctx)
+    t = ServiceTraduction(modele, settings=reglages(), registre=ctx.consent)
+    t.verifier_envoi = fabriquer_verificateur(ctx)
+    refuse = asyncio.run(t.traduire_texte("can you open the file on my computer", "en", "fr"))
+    assert not refuse.ok and "Confidentialité" in refuse.raison
+    assert modele.envois == [], "le faux moteur ne doit JAMAIS être appelé"
+    assert [e for e in base.registre if e["event_type"] == "external_send"] == []
+    # Une phrase sans mot-clé reste sur l'IA locale : elle passe, et rien n'est inscrit comme envoi externe.
+    local = asyncio.run(t.traduire_texte("where is the train station please", "en", "fr"))
+    assert local.ok and modele.envois == ["custom"] and base.registre == []
+    # Le chemin de l'interprète (téléphone) : la vérification préalable exige l'accord, rien ne part.
+    service = ServiceInterprete(t, reglages(), hub=FauxHub(), voix=FausseVoix(), ecoute=FausseEcoute())
+    with pytest.raises(RefusInterprete) as refus:
+        asyncio.run(service.traduire_texte("autre", "can you open the file on my computer"))
+    assert refus.value.statut == 403 and modele.envois == ["custom"]
+
+
+def test_chaque_envoi_est_inscrit_au_registre_avant_de_partir_meme_quand_il_echoue(monkeypatch):
+    from iris import traduction as traduction_mod
+    from iris.routes_interprete import fabriquer_verificateur
+
+    ctx, base = contexte_routage(accordes=("transcript",))
+    phrase = "can you open the file on my computer"
+    for reponse in (RuntimeError("panne du connecteur"), "TRADUCTION: ?", "TRADUCTION: can you open the file"):
+        base.registre.clear()
+        modele = ModeleRoute(ctx, reponse=reponse)
+        t = ServiceTraduction(modele, settings=reglages(), registre=ctx.consent)
+        t.verifier_envoi = fabriquer_verificateur(ctx)
+        resultat = asyncio.run(t.traduire_texte(phrase, "en", "fr"))
+        assert not resultat.ok and modele.envois == ["claude"]
+        (envoi,) = base.registre
+        assert envoi["event_type"] == "external_send" and envoi["data_type"] == "transcript"
+        assert envoi["agent"] == "claude", "le moteur réellement joint, pas une constante"
+        assert "caractères" in envoi["detail"] and "open" not in envoi["detail"] and "file" not in envoi["detail"]
+        assert "panne" not in t.erreur, "le détail technique reste au journal"
+
+    # Délai dépassé : le texte est parti, l'inscription aussi.
+    monkeypatch.setattr(traduction_mod, "DELAI_MODELE", 0.05)
+    base.registre.clear()
+
+    async def lent(systeme, message):
+        await asyncio.sleep(1.0)
+        return "TRADUCTION: trop tard"
+
+    t = ServiceTraduction(lent, settings=reglages(), registre=ctx.consent)
+    t.verifier_envoi = fabriquer_verificateur(ctx)
+    assert not asyncio.run(t.traduire_texte(phrase, "en", "fr")).ok
+    assert [e["event_type"] for e in base.registre] == ["external_send"]
+    # Succès : UNE inscription, pas deux.
+    base.registre.clear()
+    t = ServiceTraduction(ModeleRoute(ctx), settings=reglages(), registre=ctx.consent)
+    t.verifier_envoi = fabriquer_verificateur(ctx)
+    assert asyncio.run(t.traduire_texte(phrase, "en", "fr")).ok
+    assert len(base.registre) == 1
+
+
+def test_le_refus_dun_appel_nest_pas_dit_par_un_autre_appel_simultane():
+    """La boucle vocale et la route /texte partagent le même service : le refus est rendu, pas partagé."""
+
+    async def modele(systeme, message):
+        await asyncio.sleep(0.05)
+        return ""  # le moteur ne rend rien : échec ordinaire, sans refus
+
+    def verifier(message=None):
+        if message is not None and "secret" in message:
+            raise ConsentRequired("transcript")
+        return ("vela", False)
+
+    t = ServiceTraduction(modele, settings=reglages())
+    t.verifier_envoi = verifier
+
+    async def les_deux():
+        return await asyncio.gather(t.traduire_texte("where is the station", "en", "fr"),
+                                    t.traduire_texte("the secret code", "en", "fr"))
+
+    echec, refus = asyncio.run(les_deux())
+    assert not echec.ok and "Confidentialité" not in echec.raison
+    assert not refus.ok and "Confidentialité" in refus.raison
+    assert not hasattr(t, "_refus")
 
 
 def test_le_guetteur_ferme_linterprete_sur_iris_fin(voix_app):
@@ -774,6 +922,7 @@ def routes(client, app, monkeypatch):
     ctx.settings.update({"demo_sans_lunettes": True})
     ctx.consent.set("audio_raw", True)
     ctx.consent.set("transcript", True)
+    monkeypatch.setattr(ctx.chat.router, "available", lambda secrets: ["vela"])
     ctx.traduction._interroger = FauxModele()
     ctx.interprete.voix = FausseVoix(("en",))
     v = ctx.voice
@@ -837,3 +986,27 @@ def test_routes_refus_confidentiel_local_et_consentement(client, routes):
     assert r.status_code == 409 and "confidentiel" in str(r.json()["detail"])
     assert client.post("/api/interprete/texte", json={"qui": "moi", "texte": "bonjour madame"}).status_code == 409
     assert routes.voice.demarrages == [] and not routes.interprete.actif
+
+
+def test_dehors_lunettes_attestees_par_le_telephone_le_micro_du_pc_ne_souvre_pas(client, routes, monkeypatch):
+    """Erratum F : dehors, le téléphone n'appelle que /texte. Un client bogué ou ancien qui appellerait
+    /demarrer ouvrirait le micro de l'ordinateur resté à la maison : le service le refuse lui-même."""
+    routes.settings.update({"require_glasses": True, "demo_sans_lunettes": False,
+                            "glasses": {"name": "M01 Pro_F444", "address": "", "auto_connect": False}})
+    monkeypatch.setattr(routes.voice, "lunettes_presentes", lambda: False)
+    att = client.post("/api/lunettes/attestation", json={"nom": "M01 Pro_F444", "identifiant": "iphone-1", "source": "iphone"})
+    assert att.status_code == 200 and att.json()["source"] == "telephone"
+    try:
+        r = client.post("/api/interprete/demarrer", json={"langue_autre": "en", "sortie_autre": "telephone"})
+        assert r.status_code == 409 and "traduction par texte" in r.json()["detail"]
+        assert routes.voice.demarrages == [] and not routes.interprete.actif
+        # Le chemin prévu pour le téléphone reste ouvert.
+        texte = client.post("/api/interprete/texte", json={"qui": "moi", "texte": "Pouvez-vous m'aider ?"})
+        assert texte.status_code == 200 and texte.json()["traduction"] == "Can you help me find my hotel?"
+        # Les lunettes vues par l'ordinateur : l'interprète vocal redevient possible.
+        monkeypatch.setattr(routes.voice, "lunettes_presentes", lambda: True)
+        ouvert = client.post("/api/interprete/demarrer", json={"langue_autre": "en"})
+        assert ouvert.status_code == 200 and routes.voice.demarrages == [False]
+        client.post("/api/interprete/arreter")
+    finally:
+        client.delete("/api/lunettes/attestation")

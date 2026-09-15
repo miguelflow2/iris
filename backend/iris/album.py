@@ -18,7 +18,11 @@ Tout ce que ce module range vit dans data_dir/captures, sur l'ordinateur. Les r�
 - L'enregistrement automatique ne copie que les IMAGES (photos, BD) : un enregistrement audio peut
   peser des centaines de mégaoctets et n'a rien à faire dans le dossier Images ; il s'exporte à la main.
   Mémoire suspendue (mode invité, zone sans mémoire) ou mode confidentiel : aucune copie automatique,
-  et l'événement album.auto_ignore dit pourquoi.
+  et l'événement album.auto_ignore dit pourquoi. Les photos prises pour une DESCRIPTION (origine
+  « description » : lettre lue, billets, passants) ne sont jamais copiées automatiquement ; une photo
+  annoncée par album.nouveau doit porter origine « photo_utilisateur » pour l'être.
+- Une copie exportée échappe à IRIS (ni chiffrement, ni rétention, ni effacement de l'album) et, dans un
+  dossier OneDrive, quitte l'ordinateur : lister et exporter le disent (limite, synchronise).
 - La rétention (settings.user.retention_days) s'applique aux images de l'album (photos et BD à la
   racine de data_dir/captures). L'audio est purgé par l'écoute (enregistrement_audio.purger_fichiers).
 - Traduire l'écran : capture et lecture du texte PAR L'OCR LOCAL, puis seul le TEXTE part au moteur,
@@ -119,6 +123,21 @@ LOCAL_SEULEMENT = (
 AUCUN_MOTEUR = "Aucune IA n'est prête pour traduire le texte de l'écran."
 MOTEUR_EN_PANNE = "Le moteur VELA n'a pas pu traduire le texte. Réessayez dans un instant."
 MOTEUR_LENT = "Le moteur VELA n'a pas répondu à temps (2 minutes). Réessayez avec moins de texte à l'écran."
+LIMITE_EXPORT = (
+    "Les copies exportées ne sont plus gérées par IRIS : ni chiffrées, ni effacées selon la durée de conservation. "
+    "Si ce dossier est synchronisé (OneDrive…), elles quittent l'ordinateur."
+)
+NOTE_SYNCHRONISE = (
+    "Ce dossier semble synchronisé en ligne (OneDrive) : chaque copie y part hors de l'ordinateur. "
+    "Choisissez un dossier local si vous ne le voulez pas."
+)
+# Origine des photos que l'enregistrement automatique ne copie JAMAIS : une photo prise pour décrire
+# (une lettre lue, des billets, des passants) n'a rien à faire dans un dossier Images peut-être synchronisé.
+ORIGINES_SANS_COPIE_AUTO = ("description",)
+# Origine explicite exigée pour copier automatiquement une PHOTO annoncée par album.nouveau. glasses.photo,
+# lui, n'est publié que par une prise de photo demandée (route ou outil « photo ») ; une BD est toujours
+# créée à la main.
+ORIGINES_PHOTO_COPIABLES = ("photo_utilisateur",)
 
 
 class RefusAlbum(HTTPException):
@@ -433,6 +452,15 @@ def dossier_images_par_defaut() -> Path:
     return Path.home() / "Pictures" / "IRIS"
 
 
+def dossier_synchronise(dossier: Path | str | None) -> bool:
+    """Le dossier est-il sous OneDrive (redirection fréquente du dossier Images sous Windows 10/11) ?
+    Détection par le chemin seulement : un autre service de synchronisation n'est pas reconnu (dit dans
+    LIMITE_EXPORT)."""
+    if not dossier:
+        return False
+    return any("onedrive" in partie.lower() for partie in Path(str(dossier)).parts)
+
+
 def ecrire_sans_collision(dossier: Path, nom: str, ecrire: Callable[[Any], None]) -> Path:
     """Crée `nom`, sinon `base-2.ext`, `base-3.ext`… en création EXCLUSIVE (jamais d'écrasement, même
     si deux copies partent en même temps). `ecrire(fichier)` remplit le fichier ouvert."""
@@ -618,8 +646,11 @@ class ServiceAlbum:
             dossier_export = str(self.dossier_export(creer=False))
         except RefusAlbum:
             dossier_export = None
+        synchronise = dossier_synchronise(dossier_export)
         return {"elements": elements, "dossier_export": dossier_export,
-                "memoire_suspendue": self._memoire_suspendue()}
+                "memoire_suspendue": self._memoire_suspendue(),
+                "limite": LIMITE_EXPORT, "synchronise": synchronise,
+                "note_synchronise": NOTE_SYNCHRONISE if synchronise else None}
 
     def fichier(self, nom: Any) -> tuple[Path, str]:
         chemin = self.chemin_de(nom)
@@ -701,8 +732,11 @@ class ServiceAlbum:
             raise RefusAlbum(409, DOSSIER_IMPOSSIBLE.format(dossier=dossier))
         # Registre local : une copie hors du dossier d'IRIS est une sortie de données, même sur le disque.
         self.ctx.consent.log("album_exporte", detail=f"{chemin.name} -> {cible}")
-        self.ctx.hub.publish("album.exporte", nom=chemin.name, chemin=str(cible), filigrane=marquer, auto=auto)
-        return {"chemin": str(cible), "filigrane": marquer}
+        synchronise = dossier_synchronise(dossier)
+        self.ctx.hub.publish("album.exporte", nom=chemin.name, chemin=str(cible), filigrane=marquer, auto=auto,
+                             synchronise=synchronise)
+        return {"chemin": str(cible), "filigrane": marquer, "limite": LIMITE_EXPORT, "synchronise": synchronise,
+                "note_synchronise": NOTE_SYNCHRONISE if synchronise else None}
 
     async def exporter(self, nom: Any, filigrane: bool | None = None) -> dict:
         return await asyncio.to_thread(self.exporter_sync, nom, filigrane)
@@ -722,9 +756,13 @@ class ServiceAlbum:
             self._copies_auto.pop(nom, None)
 
     def nom_depuis_evenement(self, evenement: dict) -> str | None:
-        """Le nom d'image d'un événement glasses.photo ou album.nouveau, ou None s'il ne concerne pas
-        une image de l'album (audio, chemin hors du dossier des captures, événement étranger)."""
+        """Le nom d'image d'un événement glasses.photo ou album.nouveau à copier automatiquement, ou None
+        (audio, chemin hors du dossier des captures, événement étranger, photo prise pour une description,
+        photo annoncée par album.nouveau sans origine explicite)."""
         genre_evt = evenement.get("type")
+        origine = str(evenement.get("origine") or "")
+        if origine in ORIGINES_SANS_COPIE_AUTO:
+            return None
         if genre_evt == "glasses.photo":
             brut = evenement.get("chemin")
             if not brut:
@@ -744,7 +782,10 @@ class ServiceAlbum:
             verifier_nom(nom)
         except RefusAlbum:
             return None
-        return nom if type_de(nom) in ("photo", "bd") else None
+        genre = type_de(nom)
+        if genre_evt == "album.nouveau" and genre == "photo" and origine not in ORIGINES_PHOTO_COPIABLES:
+            return None
+        return nom if genre in ("photo", "bd") else None
 
     async def traiter_evenement(self, evenement: dict) -> dict | None:
         """Copie automatique d'une nouvelle image si le réglage le demande. Rend le résultat ou None."""

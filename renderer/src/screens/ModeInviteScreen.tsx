@@ -245,7 +245,9 @@ export function ModeInviteScreen({ params: _params }: { params?: Record<string, 
             <span>« {mot}, fin du mode invité »</span>
           </div>
           <div className="small muted" style={{ lineHeight: 1.45 }}>
-            Ces phrases passent avant tout le reste. À la voix, la fin du mode efface la session sans demander de confirmation.
+            Ces phrases passent avant tout le reste. IRIS ne sait pas qui parle dans les lunettes : « fin du mode invité » n’est
+            acceptée à la voix que si le verrou vocal est actif, ce qui n’est pas encore offert. Aujourd’hui, le mode se termine
+            depuis cet écran (ou l’application du téléphone) ou tout seul à l’heure prévue.
           </div>
         </div>
       </div>

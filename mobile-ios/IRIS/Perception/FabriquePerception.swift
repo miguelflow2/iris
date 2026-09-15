@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 
 @objc(IRISFabriquePerception)
 final class FabriquePerceptionIRIS: NSObject, FabriquePerception {
@@ -50,19 +51,15 @@ final class PerceptionIRIS: ServicesPerception {
         partageVue = PartageVueTelephone(pont: pont, voix: voix, camera: camera, garde: garde)
 
         // Mode confidentiel activé sur l'ordinateur, ou IRIS verrouillée : ce qui capte s'arrête sur
-        // l'iPhone aussi (les alertes suivent le même événement dans leur propre service). Le guidage à
-        // pied, lui, n'est pas coupé net : une personne peut être au milieu d'une rue.
+        // l'iPhone aussi. L'environnement de l'app appelle aussi suspendreCaptures quand il RELIT les réglages
+        // (un événement manqué app en arrière-plan ne laisse donc rien tourner).
         abonnement = pont.abonner { [weak self] evenement in
             guard let self else { return }
             let confidentiel = evenement.type == "settings.updated"
                 && evenement.champs["settings"]?["privacy_mode"]?.booleen == true
             let verrouillee = evenement.type == "verrou.etat" && evenement.champs["verrouille"]?.booleen == true
             guard confidentiel || verrouillee else { return }
-            self.sousTitres.arreter()
-            if verrouillee { self.alertesSonores.desactiver() }
-            if self.partageVue.phase != .repos {
-                Task { await self.partageVue.arreter() }
-            }
+            self.suspendreCaptures(raison: verrouillee ? GardeCapture.messageVerrou : GardeCapture.messageConfidentiel)
         }
     }
 
@@ -81,5 +78,32 @@ final class PerceptionIRIS: ServicesPerception {
 
     func ecranLunettes() -> AnyView {
         AnyView(EcranLunettes(lunettes: lunettesBLE))
+    }
+
+    func vueAlertePleinEcran(_ alerte: AlerteSonore, fermer: @escaping () -> Void) -> AnyView {
+        AnyView(AlertePleinEcran(alerte: alerte, fermer: fermer))
+    }
+
+    /// Idempotent : appelé par l'événement ET par la relecture des réglages. Le guidage à pied n'est pas
+    /// coupé net : une personne peut être au milieu d'une rue (il s'arrête depuis son écran).
+    func suspendreCaptures(raison: String) {
+        sousTitres.arreter()
+        if alertesSonores.actives {
+            alertesSonores.desactiver(raison: raison)
+        }
+        if partageVue.phase != .repos {
+            Task { await self.partageVue.arreter() }
+        }
+        camera.arreter(pour: "apercu")
+    }
+
+    var microOccupePar: String? {
+        micro.occupePar
+    }
+
+    func prendrePhotoTelephone() async throws -> ImageCapturee {
+        if let refus = garde.refus(fonction: "photo_telephone") { throw refus }
+        guard UIApplication.shared.applicationState != .background else { throw ErreurCamera.arrierePlan }
+        return try await camera.prendrePhoto()
     }
 }

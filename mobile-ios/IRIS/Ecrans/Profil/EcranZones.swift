@@ -6,6 +6,7 @@
 import CoreLocation
 import SwiftUI
 
+@MainActor
 struct EcranZones: View {
     @Environment(EnvironnementIRIS.self) private var env
     @State private var nom = ""

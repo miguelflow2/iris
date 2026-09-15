@@ -472,3 +472,37 @@ def test_un_refus_nenvoie_rien(app):
         "quelquun@exemple.com", "Essai", "Bonjour.", _refuser))
     assert resultat["envoye"] is False
     assert "rien envoyé" in resultat["message"] or "pas confirmé" in resultat["message"]
+
+
+def test_un_courriel_envoye_est_publie_sur_le_bus_local_pour_les_rappels(app):
+    """Les rappels liés à une personne guettent un nom dans un courriel (courriel.*). L'outil publie donc
+    courriel.envoye après un envoi RÉEL (accordé), et rien après un refus."""
+    from types import SimpleNamespace
+
+    from iris.tools import ToolContext, make_tool_runner
+
+    ctx = app.state.ctx
+    publies: list[tuple[str, dict]] = []
+    hub = SimpleNamespace(publish=lambda type_, **data: publies.append((type_, data)))
+
+    class _Postier:
+        def __init__(self, envoye: bool):
+            self.envoye = envoye
+
+        async def envoyer_apres_accord(self, destinataires, sujet, corps, confirmer, cc=None):
+            return {"ok": self.envoye, "envoye": self.envoye, "destinataires": [destinataires], "sujet": sujet}
+
+    def _outils(postier):
+        return make_tool_runner(ToolContext(
+            settings=ctx.settings, consent=ctx.consent, capture=ctx.capture, memory=ctx.memory, agent="test",
+            confirm=lambda titre, detail: True, hub=hub, courriel=postier,
+        ))
+
+    args = {"destinataires": "marc@exemple.com", "sujet": "Livre", "corps": "Salut Marc, je te rends ton livre."}
+    asyncio.run(_outils(_Postier(False))("envoyer_courriel", args))
+    assert publies == [], "rien n'est parti : aucun événement"
+    asyncio.run(_outils(_Postier(True))("envoyer_courriel", args))
+    assert publies == [("courriel.envoye", {"sujet": "Livre", "texte": "Salut Marc, je te rends ton livre.",
+                                             "destinataires": ["marc@exemple.com"]})]
+    rappels = ctx.rappels_contexte
+    assert rappels.concerne({"type": "courriel.envoye"})

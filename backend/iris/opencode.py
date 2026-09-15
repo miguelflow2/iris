@@ -1069,7 +1069,7 @@ class Contremaitre:
         Aucun raccourci n'est possible : sans accord, il n'y a rien à passer à `executer()`.
         """
         chantier = self.preparer(genre, dossier, consigne)
-        if (source or "").lower() == "voice":
+        if (source or "").lower() in ("voice", "voix_telephone"):
             # Aucune confirmation ne passe par la voix aujourd'hui : rien dans backend/iris/voice/
             # n'écoute « chat.confirm ». Ouvrir la modale ici, ce serait faire attendre Miguel
             # 180 secondes devant un écran qu'il ne regarde pas, pour finir sur un « refusé »

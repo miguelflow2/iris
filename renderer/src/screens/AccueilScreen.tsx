@@ -49,6 +49,10 @@ function messageErreur(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+// Constat du 2026-09-14 : un enregistrement audio capte aussi les personnes autour. Dit avant chaque démarrage.
+const AVERTISSEMENT_ENREGISTREMENT =
+  'Enregistrer une conversation à laquelle vous ne participez pas est illégal. Prévenez les personnes présentes. Pour un cours, demandez l’autorisation de l’enseignant : l’établissement peut interdire l’enregistrement.'
+
 /** Durée d'enregistrement lisible sur une tuile : « 0:42 », « 12:05 », « 1:02:33 ». */
 function chrono(secondes: number): string {
   const s = Math.max(0, Math.floor(secondes))
@@ -212,6 +216,8 @@ export function AccueilScreen(): JSX.Element {
   const basculerEnregistrement = useCallback(async () => {
     if (enregOccupe) return
     if (!enregistre && !exigerLunettes('Enregistrer l’audio')) return
+    // Constat du 2026-09-14 : l'enregistrement capte aussi des tiers. La limite légale est dite avant de démarrer.
+    if (!enregistre && !window.confirm(`Enregistrer l’audio ?\n\n${AVERTISSEMENT_ENREGISTREMENT}`)) return
     setEnregOccupe(true)
     try {
       if (!enregistre) {

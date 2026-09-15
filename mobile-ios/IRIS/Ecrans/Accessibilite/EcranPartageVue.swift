@@ -7,6 +7,7 @@
 import SwiftUI
 import UIKit
 
+@MainActor
 struct EcranPartageVue: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS

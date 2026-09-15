@@ -27,6 +27,10 @@ from iris import album as album_mod
 from iris.connectors.base import ConnectorError
 from iris.router import NoAgentAvailable
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 
 # =============================================================================== outils
 def attendre(condition, delai: float = 5.0) -> bool:
@@ -358,6 +362,23 @@ def test_export_dossier_par_defaut_cree_au_besoin(client, app, tmp_path, monkeyp
     assert r.status_code == 200 and Path(r.json()["chemin"]) == defaut / "a.jpg" and (defaut / "a.jpg").is_file()
 
 
+def test_les_copies_exportees_disent_ce_quiris_ne_gere_plus(client, app, tmp_path):
+    """Hors de l'album, une copie n'est ni chiffrée ni purgée ; un dossier OneDrive la fait sortir de l'ordinateur."""
+    ctx = app.state.ctx
+    (captures(app) / "b.jpg").write_bytes(image_octets())
+    ctx.settings.update({"album_dossier_export": str(tmp_path / "Images locales")})
+    corps = client.get("/api/album").json()
+    assert corps["limite"] == album_mod.LIMITE_EXPORT and corps["synchronise"] is False and corps["note_synchronise"] is None
+    r = client.post("/api/album/exporter", json={"nom": "b.jpg", "filigrane": False}).json()
+    assert r["limite"] == album_mod.LIMITE_EXPORT and r["synchronise"] is False
+    ctx.settings.update({"album_dossier_export": str(tmp_path / "OneDrive - Personnel" / "Images" / "IRIS")})
+    corps = client.get("/api/album").json()
+    assert corps["synchronise"] is True and "OneDrive" in corps["note_synchronise"]
+    assert client.post("/api/album/exporter", json={"nom": "b.jpg", "filigrane": False}).json()["synchronise"] is True
+    assert album_mod.dossier_synchronise(r"C:\Users\vous\OneDrive\Pictures\IRIS")
+    assert not album_mod.dossier_synchronise(r"C:\Users\vous\Pictures\IRIS")
+
+
 def test_filigrane_jpeg_garde_le_format(tmp_path):
     source = tmp_path / "photo.jpg"
     source.write_bytes(image_octets(640, 480, (30, 30, 30)))
@@ -394,22 +415,27 @@ def test_enregistrement_automatique_sur_le_vrai_bus(client, app, export):
     assert attendre(lambda: any(str(e.get("chemin", "")).endswith("p1.jpg") for e in traites))
     ctx.settings.update({"album_enregistrement_auto": True})
     ctx.hub.publish("glasses.photo", chemin=str(dossier / "p2.jpg"), octets=10)
-    ctx.hub.publish("album.nouveau", nom="p2.jpg", genre="photo", octets=10)  # même photo : pas de 2e copie
+    ctx.hub.publish("album.nouveau", nom="p2.jpg", genre="photo", octets=10, origine="photo_utilisateur")  # même photo : pas de 2e copie
     ctx.hub.publish("album.nouveau", nom="enregistrement-3.wav", genre="audio", octets=10)  # audio : jamais
     ctx.hub.publish("glasses.photo", chemin=str(dehors), octets=10)  # hors de l'album : ignoré
     ctx.hub.publish("album.nouveau", nom="../ailleurs.jpg", genre="photo", octets=10)
-    ctx.hub.publish("album.nouveau", nom="p3.jpg", genre="photo", octets=10)
-    # Les copies partent en tâches parallèles : on attend que les sept événements soient traités.
-    assert attendre(lambda: len(traites) == 7)
+    ctx.hub.publish("album.nouveau", nom="p3.jpg", genre="photo", octets=10, origine="photo_utilisateur")
+    # Photos prises pour DÉCRIRE (lettre, billets, passants) : jamais copiées, ni par l'un ni par l'autre événement.
+    ctx.hub.publish("glasses.photo", chemin=str(dossier / "p1.jpg"), octets=10, origine="description")
+    ctx.hub.publish("album.nouveau", nom="p1.jpg", genre="photo", octets=10, origine="description")
+    # Photo annoncée sans origine explicite : pas de copie automatique non plus.
+    ctx.hub.publish("album.nouveau", nom="p4.jpg", genre="photo", octets=10)
+    # Les copies partent en tâches parallèles : on attend que les dix événements soient traités.
+    assert attendre(lambda: len(traites) == 10)
     assert sorted(p.name for p in export.iterdir()) == ["p2.jpg", "p3.jpg"]
 
     ctx.memory.suspendre("zone:Clinique")
     try:
         ctx.hub.publish("glasses.photo", chemin=str(dossier / "p4.jpg"), octets=10)
-        assert attendre(lambda: len(traites) == 8)
+        assert attendre(lambda: len(traites) == 11)
     finally:
         ctx.memory.reprendre("zone:Clinique")
-    ctx.hub.publish("album.nouveau", nom="p5.jpg", genre="photo", octets=10)
+    ctx.hub.publish("album.nouveau", nom="p5.jpg", genre="photo", octets=10, origine="photo_utilisateur")
     assert attendre(lambda: (export / "p5.jpg").exists())
     assert not (export / "p4.jpg").exists(), "mémoire suspendue : aucune copie automatique"
     assert not (export / "enregistrement-3.wav").exists() and not (export / "ailleurs.jpg").exists()
@@ -421,7 +447,8 @@ def test_copie_automatique_ignoree_dit_pourquoi(app, export):
     ctx.hub.publish = lambda type_, **donnees: publies.append((type_, donnees)) or {}
     (captures(app) / "p.jpg").write_bytes(image_octets())
     ctx.settings.update({"album_enregistrement_auto": True, "privacy_mode": True})
-    resultat = asyncio.run(ctx.album.traiter_evenement({"type": "album.nouveau", "nom": "p.jpg", "genre": "photo"}))
+    resultat = asyncio.run(ctx.album.traiter_evenement({"type": "album.nouveau", "nom": "p.jpg", "genre": "photo",
+                                                         "origine": "photo_utilisateur"}))
     assert resultat is None and not export.exists()
     assert publies and publies[-1][0] == "album.auto_ignore" and "confidentiel" in publies[-1][1]["raison"]
 

@@ -82,11 +82,17 @@ export function PasAPasScreen({ params: _params }: { params?: Record<string, any
   const [avecEtapes, setAvecEtapes] = useState(false)
   const [etapesTexte, setEtapesTexte] = useState('')
   const [enCours, setEnCours] = useState<string | null>(null)
+  // Arrêter (terminer, annuler un minuteur) a son propre état : une vérification photo en vol ne doit
+  // jamais rendre le bouton rouge inopérant.
+  const [enArret, setEnArret] = useState<string | null>(null)
   const [refus, setRefus] = useState<(Refus & { action?: string; reessayer: () => void }) | null>(null)
   const [phrase, setPhrase] = useState('')
   const [verification, setVerification] = useState<Verification | null>(null)
   const [minutesPerso, setMinutesPerso] = useState('')
   const vivant = useRef(true)
+  // Incrémenté à chaque arrêt : la réponse tardive d'une commande partie avant l'arrêt (vérification
+  // photo de plusieurs secondes) ne doit pas réafficher la session terminée.
+  const generation = useRef(0)
   const commandeRef = useRef<(action: string, extra?: Record<string, unknown>) => void>(() => undefined)
 
   const absentes = presence !== null && !presence.presentes
@@ -165,21 +171,51 @@ export function PasAPasScreen({ params: _params }: { params?: Record<string, any
     }
   }
 
+  /** Terminer ou annuler un minuteur : envoyé même si une autre commande est en vol. */
+  const arreter = async (action: string): Promise<void> => {
+    if (enArret === action) return
+    setEnArret(action)
+    setRefus(null)
+    try {
+      const r = await api.post('/api/pas-a-pas/commande', { action, parler: true })
+      if (!vivant.current) return
+      if (action === 'terminer') generation.current += 1
+      const { phrase: p, verification: _v, ...etat } = r || {}
+      appliquer(etat as Session)
+      if (typeof p === 'string') setPhrase(p)
+    } catch (err) {
+      if (!vivant.current) return
+      if (err instanceof ApiError && err.status === 409 && /Aucun pas à pas/.test(err.message)) {
+        charger()
+        return
+      }
+      const x = lireRefus(err)
+      if (x) setRefus({ ...x, action, reessayer: () => arreter(action) })
+    } finally {
+      if (vivant.current) setEnArret(null)
+    }
+  }
+
   const commande = async (action: string, extra: Record<string, unknown> = {}): Promise<void> => {
+    if (SANS_LUNETTES.has(action)) {
+      await arreter(action)
+      return
+    }
     if (enCours) return
-    if (!SANS_LUNETTES.has(action) && !exigerLunettes('Pas à pas')) return
+    if (!exigerLunettes('Pas à pas')) return
     setEnCours(action)
     setRefus(null)
     if (action === 'verifier') setVerification(null)
+    const partie = generation.current
     try {
       const r = await api.post('/api/pas-a-pas/commande', { action, parler: true, ...extra })
-      if (!vivant.current) return
+      if (!vivant.current || partie !== generation.current) return
       const { phrase: p, verification: v, ...etat } = r || {}
       appliquer(etat as Session)
       if (typeof p === 'string') setPhrase(p)
       if (v && typeof v === 'object') setVerification(v as Verification)
     } catch (err) {
-      if (!vivant.current) return
+      if (!vivant.current || partie !== generation.current) return
       if (err instanceof ApiError && err.status === 409 && /Aucun pas à pas/.test(err.message)) {
         charger()
         return
@@ -330,7 +366,7 @@ export function PasAPasScreen({ params: _params }: { params?: Record<string, any
                 <IcoHorloge />
                 <span className="temps">{chrono(restant(minuteurEtape))}</span>
                 <span className="corps">Minuteur de l’étape {etape.n} ({dureeLisible(minuteurEtape.duree_s)})</span>
-                <Holo taille="mini" variante="sombre" disabled={Boolean(enCours)} onClick={() => commande('annuler_minuteur')}>Annuler</Holo>
+                <Holo taille="mini" variante="sombre" disabled={enArret === 'annuler_minuteur'} onClick={() => arreter('annuler_minuteur')}>Annuler</Holo>
               </div>
             ) : etape.minuteur_s ? (
               <div className="q-minuteur">
@@ -417,8 +453,9 @@ export function PasAPasScreen({ params: _params }: { params?: Record<string, any
                 </div>
               ) : null}
               <div className="q-note">
-                IRIS décrit une seule photo au regard de l’étape : ce n’est pas une garantie de cuisson ni de sécurité. Si la caméra de votre paire
-                n’est pas encore prise en charge, IRIS le dit ; choisissez alors une photo prise avec votre téléphone.
+                IRIS décrit une seule photo au regard de l’étape : ce n’est pas une garantie de cuisson ni de sécurité. La caméra des lunettes
+                n’est pas encore activée dans IRIS (protocole en cours de confirmation) : en attendant, choisissez une photo prise avec votre
+                téléphone.
               </div>
             </div>
 
@@ -438,7 +475,9 @@ export function PasAPasScreen({ params: _params }: { params?: Record<string, any
               </ol>
             </div>
 
-            <Holo variante="rouge" disabled={enCours === 'terminer'} onClick={() => commande('terminer')}>Terminer le pas à pas</Holo>
+            <Holo variante="rouge" disabled={enArret === 'terminer'} onClick={() => arreter('terminer')}>
+              {enArret === 'terminer' ? 'Arrêt…' : 'Terminer le pas à pas'}
+            </Holo>
           </>
         ) : null}
 

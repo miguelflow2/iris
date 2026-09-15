@@ -230,18 +230,36 @@ def test_avec_les_lunettes_le_verrou_seffance(app):
     assert voice.lunettes_requises() is None
 
 
-def test_lechappatoire_de_demonstration_debloque_et_est_dans_linterface(app):
-    """Sur scène, une déconnexion Bluetooth ne doit pas faire taire IRIS. Décision de Miguel du
-    7 septembre 2026 : le verrou devient strict (voix ET chat) mais l'échappatoire « mode
-    démonstration » est désormais EXPOSÉE — Miguel doit pouvoir l'activer d'un clic si les lunettes
-    lâchent pendant sa présentation. Elle vit dans l'écran Lunettes."""
+def test_lechappatoire_de_demonstration_est_un_acces_proprietaire_cache(app, client):
+    """Sur scène, une déconnexion Bluetooth ne doit pas faire taire IRIS : le mode démonstration débloque
+    toujours la voix. Mais la décision a changé le 2026-09-13 (« lunettes d'abord ») : ce n'est plus un
+    interrupteur dans l'écran Lunettes. C'est un accès propriétaire CACHÉ (À propos, geste sur le numéro
+    de version), protégé par le mot de passe du propriétaire. Aucun autre écran client ne doit nommer
+    ni le mode démonstration ni l'exigence des lunettes."""
     voice = app.state.ctx.voice
     voice.glasses_connected = lambda: False
     app.state.ctx.settings.update({"demo_sans_lunettes": True})
     assert voice.lunettes_requises() is None
+    app.state.ctx.settings.update({"demo_sans_lunettes": False})
 
-    vue = Path(__file__).resolve().parents[2] / "renderer" / "src" / "screens" / "LunettesScreen.tsx"
-    assert "demo_sans_lunettes" in vue.read_text(encoding="utf-8"), "Miguel doit pouvoir l'activer d'un clic"
+    ecrans = Path(__file__).resolve().parents[2] / "renderer" / "src" / "screens"
+    fautifs = [
+        f.name for f in ecrans.rglob("*.tsx")
+        if f.name != "AProposScreen.tsx"
+        and any(mot in f.read_text(encoding="utf-8") for mot in ("demo_sans_lunettes", "require_glasses"))
+    ]
+    assert fautifs == [], f"écrans client qui exposent le verrou ou la démonstration : {fautifs}"
+    assert "/api/demo/activer" in (ecrans / "AProposScreen.tsx").read_text(encoding="utf-8")
+
+    # Les réglages refusent de les changer ; seule la route protégée par mot de passe le peut.
+    assert client.patch("/api/settings", json={"demo_sans_lunettes": True}).status_code == 403
+    assert client.patch("/api/settings", json={"require_glasses": False}).status_code == 403
+    assert client.post("/api/demo/activer", json={"mot_de_passe": "x"}).status_code == 409, "sans compte : pas de démo"
+    assert client.post("/api/compte", json={"nouveau": "motdepasse-2026"}).status_code == 200
+    assert client.post("/api/demo/activer", json={"mot_de_passe": ""}).status_code == 403
+    assert client.post("/api/demo/activer", json={"mot_de_passe": "mauvais"}).status_code == 403
+    assert app.state.ctx.settings.user.demo_sans_lunettes is False
+    assert client.post("/api/demo/activer", json={"mot_de_passe": "motdepasse-2026"}).json()["source"] == "demo"
 
 
 def test_letat_publie_la_raison_du_verrou(app, monkeypatch):
@@ -267,9 +285,16 @@ def test_un_pc_neuf_sans_lunettes_ne_peut_pas_parler_a_iris(app, monkeypatch):
     assert voice.lunettes_presentes() is False
     assert voice.lunettes_requises() is not None, "sans lunettes, pas de voix, même sur un PC neuf"
     assert voice.status()["glasses_required"]
-    # Les lunettes attestées par le téléphone suffisent.
-    app.state.ctx.presence_lunettes.attester("M01 Pro_F444")
-    assert voice.lunettes_requises() is None
+    # Constat du 2026-09-14 : un PC qui n'a jamais connu de lunettes n'accepte pas d'attestation (sinon une simple
+    # requête ouvrait tout), et des lunettes attestées par le téléphone n'ouvrent pas le micro de l'ordinateur.
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as refus:
+        app.state.ctx.presence_lunettes.attester("M01 Pro_F444", "iphone-1")
+    assert refus.value.status_code == 409
+    app.state.ctx.settings.update({"glasses": {"name": "M01 Pro_F444", "address": "", "auto_connect": False}})
+    app.state.ctx.presence_lunettes.attester("M01 Pro_F444", "iphone-1")
+    assert voice.lunettes_requises() is not None, "dehors, le micro de l'ordinateur reste fermé"
 
 
 # --------------------------------------------------------------------------- la preuve de presence

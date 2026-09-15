@@ -90,6 +90,24 @@ LIMITES = [
 CONFIDENTIEL = "Mode confidentiel actif : aucune écoute ne démarre tant qu'il l'est."
 
 
+class PrenomHorsVocabulaire(LookupError):
+    """Le prénom n'existe pas dans le lexique du modèle local : la grammaire restreinte l'ignorerait."""
+
+
+def mot_connu(modele: Any, mot: str) -> bool:
+    """Le mot est-il dans le lexique du modèle de reconnaissance locale ? Vrai quand on ne peut pas le savoir
+    (modèle sans cette fonction) : on ne déclare pas une panne qu'on n'a pas constatée."""
+    for nom in ("vosk_model_find_word", "find_word"):
+        chercher = getattr(modele, nom, None)
+        if callable(chercher):
+            try:
+                return int(chercher(mot)) >= 0
+            except Exception as exc:
+                log.debug("lexique du modèle illisible : %s", exc)
+                return True
+    return True
+
+
 class EcouteRefusee(Exception):
     """Le service ne peut pas écouter maintenant ; le message est la raison exacte (réponse 409)."""
 
@@ -793,6 +811,7 @@ def signal_synthetique(type_: str, niveau_db: float = -20.0, bruit_db: float = -
 
 # --------------------------------------------------------------------------- service
 _VERROU_ECOUTE = threading.Lock()
+MICRO_NON_DEMARRE = "L'écoute du micro n'a pas pu démarrer. Vérifiez le micro dans Paramètres › Voix."
 
 
 def assurer_ecoute(ctx: Any) -> str | None:
@@ -812,8 +831,9 @@ def assurer_ecoute(ctx: Any) -> str | None:
             try:
                 voix.start()
             except Exception as exc:
+                # Détail technique (souvent en anglais) au journal ; une phrase claire pour l'utilisateur.
                 log.warning("écoute du micro non démarrée : %s", exc)
-                return f"L'écoute du micro n'a pas pu démarrer : {exc}"
+                return MICRO_NON_DEMARRE
     if not getattr(voix, "running", False) and getattr(voix, "state", "off") == "off":
         return getattr(voix, "error", None) or "L'écoute du micro est arrêtée."
     return None
@@ -999,6 +1019,12 @@ class ServiceAlertes:
             return
         try:
             reconnaisseur = self._fabrique_reconnaisseur(prenom)
+        except PrenomHorsVocabulaire:
+            # Cas CERTAIN, pas une limite générale : avec une grammaire restreinte, un mot absent du lexique
+            # est ignoré par la reconnaissance locale, et la détection ne se déclencherait jamais.
+            self.prenom_raison = (f"Le prénom « {prenom} » est absent du vocabulaire de la reconnaissance locale : "
+                                  "l'alerte prénom ne peut pas se déclencher.")
+            return
         except Exception as exc:
             # Le détail technique va au journal ; l'utilisateur lit une phrase sans nom de composant.
             log.warning("reconnaissance du prénom indisponible : %s", exc)
@@ -1021,6 +1047,8 @@ class ServiceAlertes:
             if chemin is None:
                 return None
             moteur = stt.VoskEngine(chemin)
+        if not mot_connu(getattr(moteur, "model", None), prenom):
+            raise PrenomHorsVocabulaire(prenom)
         return moteur.recognizer([prenom], words=True)
 
     # ------------------------------------------------------------------ signalement

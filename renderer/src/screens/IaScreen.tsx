@@ -489,7 +489,9 @@ export function IaScreen(): JSX.Element {
                 <IcoRobotDegrade className="robot" style={{ width: 70, height: 84 }} />
                 <h2 style={{ fontSize: 30 }}>Questions et réponses</h2>
                 <p className="sous" style={{ fontWeight: 700, color: 'var(--text-2)' }}>
-                  Permet la saisie vocale dans plusieurs langues, y compris des questions sur la météo, la vie quotidienne et d’autres questions et réponses. Compréhension des situations : « Quel temps fait-il aujourd’hui ? »
+                  Posez vos questions à voix haute en français, avec les lunettes, ou par écrit. La voix est reconnue sur cet ordinateur ; si vous
+                  avez accordé « Audio brut du micro », la commande est aussi envoyée en ligne pour être mieux reconnue. Une question sur la météo
+                  ou l’actualité demande une recherche en ligne, donc Internet. Le temps de réponse de chaque commande vocale est mesuré et affiché.
                 </p>
                 {showVoiceConv ? (
                   <div className="exemples bloc" style={{ width: '100%', textAlign: 'left', marginTop: 12 }}>

@@ -21,6 +21,10 @@ import pytest
 from iris import cours as cours_mod
 from iris.cours import AVERTISSEMENT_FICHES, decouper, lire_questions, lire_wav
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 PAROLE = (np.sin(np.arange(4000) * 2 * np.pi * 220 / 16000) * 9000).astype(np.int16).tobytes()
 SILENCE = np.zeros(4000, dtype=np.int16).tobytes()
 
@@ -204,6 +208,59 @@ def test_fiches_et_questions_par_decoupage_avec_consentement(client, app, moteur
     assert "## Questions d'examen probables" in md.text and "[00:00:05]" in md.text
 
 
+def test_long_cours_genere_en_arriere_plan_avec_progression(client, app, moteur, monkeypatch):
+    """Au-delà de TRANCHES_MAX_DIRECT parties : 202 tout de suite, progression publiée, résultat écrit ensuite.
+    La transcription est déchiffrée hors de la boucle du service."""
+    ctx = app.state.ctx
+    monkeypatch.setattr(cours_mod, "TRANCHES_MAX_DIRECT", 1)
+    phrase = "la photosynthèse transforme l'énergie lumineuse en énergie chimique dans les chloroplastes " * 4
+    cid = _cours_avec_transcription(ctx, [phrase] * 40)  # trois tranches
+    fils: dict[str, int] = {}
+    vraie_transcription = ctx.cours.transcription
+    monkeypatch.setattr(ctx.cours, "transcription",
+                        lambda i: fils.setdefault("transcription", threading.get_ident()) and vraie_transcription(i))
+    publies: list[dict] = []
+    original = ctx.hub.publish
+    monkeypatch.setattr(ctx.hub, "publish", lambda t, **d: publies.append({"type": t, **d}) or original(t, **d))
+
+    r = client.post(f"/api/cours/{cid}/generer", json={"quoi": "tout"})
+    assert r.status_code == 202, r.text
+    corps = r.json()
+    assert corps["en_arriere_plan"] is True and corps["parties"] == 3 and corps["fiches"] is False
+    assert "arrière-plan" in corps["phrase"]
+    assert attendre(lambda: client.get(f"/api/cours/{cid}").json()["questions"] is not None, 10)
+    d = client.get(f"/api/cours/{cid}").json()
+    assert d["fiches"].startswith("# Fiches de révision") and d["etat"] == "termine" and d["generation"] is None
+    progressions = [e["progression"] for e in publies if e["type"] == "cours.etat" and e.get("etat") == "generation"]
+    assert progressions[0] == 0.0 and progressions[-1] == 1.0 and len(progressions) == 1 + 7, progressions
+    assert fils["transcription"] != threading.get_ident()
+    assert len(moteur) == 7
+
+
+def test_un_moteur_trop_lent_rend_504_puis_une_erreur_de_generation_en_fond(client, app, monkeypatch):
+    import asyncio
+
+    ctx = app.state.ctx
+    ctx.consent.set("transcript", True)
+    monkeypatch.setattr(cours_mod, "agent_pour_texte", lambda _ctx, _m: ("vela", False))
+    monkeypatch.setattr(cours_mod, "DELAI_MOTEUR_S", 0.2)
+
+    async def lent(systeme, message):
+        await asyncio.sleep(3)
+        return "trop tard"
+
+    monkeypatch.setattr(ctx.chat, "demander_court", lent)
+    cid = _cours_avec_transcription(ctx, ["un cours assez long pour être résumé honnêtement par le moteur"] * 10)
+    debut = time.monotonic()
+    r = client.post(f"/api/cours/{cid}/generer", json={"quoi": "fiches"})
+    assert r.status_code == 504 and "à temps" in r.json()["detail"] and time.monotonic() - debut < 2.5
+    assert client.get(f"/api/cours/{cid}").json()["generation"] is None, "une génération ratée libère le cours"
+    monkeypatch.setattr(cours_mod, "TRANCHES_MAX_DIRECT", 0)
+    assert client.post(f"/api/cours/{cid}/generer", json={"quoi": "fiches"}).status_code == 202
+    assert attendre(lambda: client.get(f"/api/cours/{cid}").json()["erreur_generation"], 5)
+    assert "à temps" in client.get(f"/api/cours/{cid}").json()["erreur_generation"]
+
+
 def test_generation_refusee_sans_consentement_en_mode_local_ou_trop_courte(client, app, moteur, monkeypatch):
     ctx = app.state.ctx
     cid = _cours_avec_transcription(ctx, ["un cours assez long pour être résumé honnêtement par le moteur"] * 10)
@@ -268,6 +325,45 @@ def test_import_wav_reechantillonne_et_transcrit(client, app):
     assert client.get(f"/api/cours/{cours['id']}").status_code == 404
 
 
+def test_import_repond_tout_de_suite_et_convertit_dans_le_fil(client, app, monkeypatch):
+    """Le décodage et la conversion du son se font dans le fil de transcription, pas dans la requête."""
+    ctx = app.state.ctx
+    ctx.sous_titres.fabrique_reconnaisseur = lambda: FauxReconnaisseur(["un point"])
+    fils: list[str] = []
+    vraie = cours_mod.lire_wav
+    monkeypatch.setattr(cours_mod, "lire_wav", lambda source: fils.append(threading.current_thread().name) or vraie(source))
+    donnees = base64.b64encode(_wav(PAROLE * 4 + SILENCE * 2)).decode()
+    r = client.post("/api/cours/importer", json={"titre": "Direct", "data": donnees})
+    assert r.status_code == 200 and r.json()["etat"] == "transcription" and r.json()["duree_s"] == 1.5
+    assert attendre(lambda: client.get(f"/api/cours/{r.json()['id']}").json()["etat"] == "termine")
+    assert fils == ["iris-cours-import"]
+    # La limite est dite, avec quoi faire.
+    monkeypatch.setattr(cours_mod, "TAILLE_MAX_IMPORT", 1000)
+    r = client.post("/api/cours/importer", json={"titre": "Gros", "data": donnees})
+    assert r.status_code == 422 and "150 Mo" in r.json()["detail"] and "16 kHz mono" in r.json()["detail"]
+
+
+def test_import_en_octets_bruts_ecrit_sur_le_disque_sans_base64(client, app):
+    ctx = app.state.ctx
+    ctx.sous_titres.fabrique_reconnaisseur = lambda: FauxReconnaisseur(["premier point du cours"])
+    dossier = ctx.settings.data_dir / "captures" / "audio"
+    r = client.post("/api/cours/importer-wav?titre=Cours%204&matiere=Bio", content=_wav(PAROLE * 4 + SILENCE * 2),
+                    headers={"Content-Type": "audio/wav"})
+    assert r.status_code == 200, r.text
+    cours = r.json()
+    assert cours["titre"] == "Cours 4" and cours["source"] == "import" and cours["etat"] == "transcription"
+    assert attendre(lambda: client.get(f"/api/cours/{cours['id']}").json()["etat"] == "termine")
+    d = client.get(f"/api/cours/{cours['id']}").json()
+    assert [l["texte"] for l in d["transcription"]] == ["Premier point du cours"]
+    assert not list(dossier.glob(".import-*")), "le fichier reçu est effacé après conversion"
+    mp3 = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\x00" * 200
+    r = client.post("/api/cours/importer-wav?titre=x", content=mp3, headers={"Content-Type": "audio/mpeg"})
+    assert r.status_code == 422 and "WAV" in r.json()["detail"]
+    assert client.post("/api/cours/importer-wav?titre=x", content=b"").status_code == 422
+    assert not list(dossier.glob(".import-*")), "un refus ne laisse aucun fichier derrière lui"
+    client.delete(f"/api/cours/{cours['id']}")
+
+
 def test_import_refuse_clairement_les_autres_formats(client, app):
     app.state.ctx.sous_titres.fabrique_reconnaisseur = lambda: FauxReconnaisseur([])
     mp3 = base64.b64encode(b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\x00" * 200).decode()
@@ -320,3 +416,86 @@ def test_reparer_les_cours_interrompus(app):
     d = ctx.cours.detail(cid)
     assert d["etat"] == "termine" and d["duree_s"] == 10.0 and "interrompu" in d["erreur"]
     assert ctx.cours.detail("imp")["etat"] == "erreur"
+
+
+def _generation_lente(ctx, monkeypatch, envoyes: list, delai: float = 0.3):
+    import asyncio
+
+    ctx.consent.set("transcript", True)
+    monkeypatch.setattr(cours_mod, "agent_pour_texte", lambda _ctx, _m: ("vela", False))
+    monkeypatch.setattr(cours_mod, "TRANCHES_MAX_DIRECT", 0)
+
+    async def lent(systeme, message):
+        envoyes.append((ctx.memory.suspendue, ctx.settings.user.privacy_mode))
+        await asyncio.sleep(delai)
+        return "- notes"
+
+    monkeypatch.setattr(ctx.chat, "demander_court", lent)
+    phrase = "la photosynthèse transforme l'énergie lumineuse en énergie chimique dans les chloroplastes " * 4
+    return _cours_avec_transcription(ctx, [phrase] * 40)  # trois tranches : quatre envois pour les fiches
+
+
+def test_generation_en_fond_sarrete_quand_la_memoire_est_suspendue(client, app, monkeypatch):
+    """Mode invité activé pendant une rédaction en arrière-plan : plus aucun envoi au moteur, rien d'écrit,
+    et la raison est gardée sur le cours (finition du 2026-09-14)."""
+    ctx = app.state.ctx
+    envoyes: list = []
+    cid = _generation_lente(ctx, monkeypatch, envoyes)
+    assert client.post(f"/api/cours/{cid}/generer", json={"quoi": "fiches"}).status_code == 202
+    assert attendre(lambda: len(envoyes) >= 1, 5)
+    ctx.memory.suspendre("invite")
+    try:
+        assert attendre(lambda: client.get(f"/api/cours/{cid}").json()["erreur_generation"], 8)
+        time.sleep(0.4)
+        d = client.get(f"/api/cours/{cid}").json()
+        assert d["fiches"] is None, "des fiches ont été écrites pendant le mode invité"
+        assert "suspendue" in d["erreur_generation"]
+        assert [e for e in envoyes if e[0] is not None] == [], f"envoi au moteur pendant la suspension : {envoyes}"
+    finally:
+        ctx.memory.reprendre("invite")
+
+
+def test_mode_confidentiel_annule_la_generation_en_fond_et_refuse_la_suivante(client, app, monkeypatch):
+    ctx = app.state.ctx
+    envoyes: list = []
+    cid = _generation_lente(ctx, monkeypatch, envoyes, delai=2.0)
+    assert client.post(f"/api/cours/{cid}/generer", json={"quoi": "fiches"}).status_code == 202
+    assert attendre(lambda: len(envoyes) >= 1, 5)
+    ctx.settings.update({"privacy_mode": True})
+    try:
+        # L'entretien de l'écoute appelle verifier() depuis un fil : la tâche en cours est annulée tout de suite,
+        # sans attendre la fin de l'envoi en vol.
+        debut = time.monotonic()
+        threading.Thread(target=ctx.cours.verifier).start()
+        assert attendre(lambda: client.get(f"/api/cours/{cid}").json()["generation"] is None, 3)
+        assert time.monotonic() - debut < 1.8, "la rédaction a attendu la réponse du moteur au lieu d'être annulée"
+        d = client.get(f"/api/cours/{cid}").json()
+        assert d["fiches"] is None and "confidentiel" in (d["erreur_generation"] or "")
+        assert len(envoyes) == 1
+        r = client.post(f"/api/cours/{cid}/generer", json={"quoi": "fiches"})
+        assert r.status_code == 409 and "confidentiel" in r.json()["detail"]
+        assert len(envoyes) == 1
+    finally:
+        ctx.settings.update({"privacy_mode": False})
+
+
+def test_une_generation_directe_ne_secrit_pas_si_le_mode_change_pendant_le_moteur(client, app, monkeypatch):
+    import asyncio
+
+    ctx = app.state.ctx
+    ctx.consent.set("transcript", True)
+    monkeypatch.setattr(cours_mod, "agent_pour_texte", lambda _ctx, _m: ("vela", False))
+
+    async def moteur_puis_invite(systeme, message):
+        ctx.memory.suspendre("invite")  # activé pendant que le moteur rédige
+        await asyncio.sleep(0)
+        return "- notes"
+
+    monkeypatch.setattr(ctx.chat, "demander_court", moteur_puis_invite)
+    cid = _cours_avec_transcription(ctx, ["un cours assez long pour être résumé honnêtement par le moteur"] * 10)
+    try:
+        r = client.post(f"/api/cours/{cid}/generer", json={"quoi": "fiches"})
+        assert r.status_code == 409 and "suspendue" in r.json()["detail"]
+        assert client.get(f"/api/cours/{cid}").json()["fiches"] is None
+    finally:
+        ctx.memory.reprendre("invite")

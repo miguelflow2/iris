@@ -18,6 +18,8 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from .lunettes_presence import exiger_lunettes, exiger_lunettes_pc
+
 log = logging.getLogger("iris.quotidien.routes")
 
 PURGE_S = 3600.0
@@ -54,6 +56,7 @@ def _routes_resume(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list)
 
     @routeur.post("/api/resume/jour/parler")
     async def resume_jour_parler(body: ParlerIn | None = None):
+        exiger_lunettes(ctx, "resume_journee")
         return await service.parler(body.date if body else None)
 
     demarrages.append(service.brancher_voix)
@@ -74,6 +77,7 @@ def _routes_rappels(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list
 
     @routeur.post("/api/rappels-contexte")
     def rappels_creer(body: RappelIn):
+        exiger_lunettes(ctx, "rappels_contexte")
         return service.creer(body.personne, body.texte, origine="route")
 
     @routeur.delete("/api/rappels-contexte/{rappel_id}")
@@ -120,6 +124,8 @@ def _routes_recus(routeur: APIRouter, ctx: Any, demarrages: list, arrets: list, 
 
     @routeur.post("/api/recus/analyser")
     async def recus_analyser(body: AnalyserIn):
+        # Photo par la caméra reliée à l'ordinateur : lunettes vues par l'ordinateur ; photo du téléphone : attestation.
+        (exiger_lunettes_pc if (body.source or "") == "lunettes" else exiger_lunettes)(ctx, "recus")
         return await service.analyser(body.source, image=body.image.model_dump() if body.image else None)
 
     @routeur.get("/api/recus")

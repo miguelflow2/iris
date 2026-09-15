@@ -36,6 +36,9 @@ interface Exportation {
   nom: string
   chemin: string
   filigrane: boolean
+  /** Limite et note de synchronisation rendues par le service : affichées telles quelles. */
+  limite: string | null
+  noteSynchronise: string | null
 }
 
 const FILTRES: { id: Filtre; label: string }[] = [
@@ -341,7 +344,14 @@ export function AlbumScreen(): JSX.Element {
     try {
       // filigrane: null = le service applique le réglage « Filigrane » des paramètres d'album.
       const r = await api.post('/api/album/exporter', { nom: e.nom, filigrane: null })
-      if (monte.current) setExporte({ nom: e.nom, chemin: String(r?.chemin || ''), filigrane: Boolean(r?.filigrane) })
+      if (monte.current)
+        setExporte({
+          nom: e.nom,
+          chemin: String(r?.chemin || ''),
+          filigrane: Boolean(r?.filigrane),
+          limite: typeof r?.limite === 'string' && r.limite ? r.limite : null,
+          noteSynchronise: r?.synchronise && typeof r?.note_synchronise === 'string' ? r.note_synchronise : null
+        })
     } catch (err) {
       if (monte.current) setErreurModale(messageErreur(err))
     } finally {
@@ -556,6 +566,8 @@ export function AlbumScreen(): JSX.Element {
             <div className="bloc-note ok" role="status" style={{ marginTop: 8 }}>
               Copié dans <span className="mono" style={{ wordBreak: 'break-all' }}>{exporte.chemin}</span>
               {exporte.filigrane ? ' (avec filigrane, sans métadonnées)' : ''}.
+              {exporte.noteSynchronise ? <div style={{ marginTop: 6, fontWeight: 600 }}>{exporte.noteSynchronise}</div> : null}
+              {exporte.limite ? <div className="small" style={{ marginTop: 6 }}>{exporte.limite}</div> : null}
               <div style={{ marginTop: 8 }}>
                 <button type="button" className="btn sm" onClick={() => ouvrirDossier(dossierDe(exporte.chemin))}>Ouvrir le dossier d’exportation</button>
               </div>

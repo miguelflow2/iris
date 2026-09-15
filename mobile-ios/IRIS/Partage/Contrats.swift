@@ -71,7 +71,14 @@ enum ValeurJSON: Codable, Hashable, Sendable {
         var c = encoder.singleValueContainer()
         switch self {
         case .texte(let s): try c.encode(s)
-        case .nombre(let n): try c.encode(n)
+        case .nombre(let n):
+            // Un entier reste un entier : un événement réencodé (settings.updated, pas_a_pas.etat…) est relu
+            // dans des modèles aux champs Int, et « 1.0 » ne doit pas dépendre de la tolérance du décodeur.
+            if n.rounded() == n, abs(n) < 9_007_199_254_740_992 {
+                try c.encode(Int64(n))
+            } else {
+                try c.encode(n)
+            }
         case .booleen(let b): try c.encode(b)
         case .objet(let o): try c.encode(o)
         case .tableau(let t): try c.encode(t)
@@ -323,8 +330,16 @@ protocol ServiceVoix: AnyObject {
     func ecouterUnePhrase(langue: String, delaiMax: TimeInterval) async throws -> String
 
     /// Mot d'activation au premier plan. Suspendu pendant `ecouterUnePhrase` et pendant la parole.
+    /// `arreterMotActivation` est le choix de l'UTILISATEUR (retenu sur l'iPhone) : un service ne
+    /// l'appelle jamais pour une pause, il utilise `suspendreVeille`.
     func demarrerMotActivation()
     func arreterMotActivation()
+
+    /// Met l'écoute du mot d'activation en pause pour une raison nommée (mode confidentiel, micro pris
+    /// par les alertes…), SANS toucher au choix de l'utilisateur. La raison s'affiche telle quelle.
+    func suspendreVeille(cle: String, raison: String)
+    /// Lève la pause posée sous cette clé ; l'écoute reprend quand plus aucune pause ne reste.
+    func reprendreVeille(cle: String)
 }
 
 extension ServiceVoix {
@@ -341,7 +356,12 @@ struct AppareilLunettes: Identifiable, Hashable, Sendable {
 }
 
 struct EtatLunettes: Equatable, Sendable {
+    /// Lien Bluetooth établi avec un appareil. NE SUFFIT PAS : n'importe quel appareil peut être relié.
     var connectees: Bool = false
+    /// L'appareil relié expose au moins un service connu des lunettes VELA (UUIDLunettes.servicesConnus).
+    /// Faux tant que ses services ne sont pas découverts. Toute fonction « lunettes d'abord » exige
+    /// `connectees && verifiees`.
+    var verifiees: Bool = false
     var nom: String? = nil
     /// Identifiant stable envoyé au PC dans l'attestation (le PC refuse 403 d'autres lunettes).
     var identifiant: String? = nil
@@ -486,7 +506,10 @@ protocol ServiceAlertes: AnyObject {
     var dernieres: [AlerteSonore] { get }
     /// Limite réelle à afficher (précision, latence, app au premier plan…).
     var limite: String { get }
-    var surAlerte: (@MainActor (AlerteSonore) -> Void)? { get set }
+    /// La dernière alerte signalée (essais compris), observable. Le plein écran est affiché UNE seule
+    /// fois, à la racine de l'app, en observant cette valeur : un rappel unique partagé entre plusieurs
+    /// écrans se faisait écraser par l'ordre onAppear / onDisappear de SwiftUI.
+    var derniereSignalee: AlerteSonore? { get }
     func activer(types: [String]) async throws
     func desactiver()
 }
@@ -529,6 +552,18 @@ protocol ServicesPerception: AnyObject {
     func ecranAccessibilite() -> AnyView
     /// Écran d'appairage des lunettes (« Connecter mes lunettes »).
     func ecranLunettes() -> AnyView
+    /// Plein écran d'une alerte sonore (grand texte, un seul bouton), affiché par la racine de l'app.
+    func vueAlertePleinEcran(_ alerte: AlerteSonore, fermer: @escaping () -> Void) -> AnyView
+
+    /// Arrête tout ce qui capte sur l'iPhone (sous-titres, alertes, partage, aperçu) : mode
+    /// confidentiel activé sur l'ordinateur, ou IRIS verrouillée. Le guidage à pied n'est pas coupé net.
+    func suspendreCaptures(raison: String)
+    /// Qui tient le micro de perception en ce moment (« les alertes sonores », « les sous-titres »),
+    /// nil s'il est libre. La voix refuse d'ouvrir une seconde écoute sur le même micro.
+    var microOccupePar: String? { get }
+    /// Photo par la caméra de l'iPhone, après la garde « lunettes d'abord » et mode confidentiel
+    /// (reçus, prix, pas à pas). Lève l'erreur à afficher telle quelle.
+    func prendrePhotoTelephone() async throws -> ImageCapturee
 }
 
 /// L'équipe ios-perception écrit :
@@ -578,12 +613,22 @@ struct DemandeAttestation: Encodable, Sendable {
     let source: String   // "iphone"
 }
 
+/// POST /api/lunettes/association : associer CET iPhone aux lunettes déjà connues de l'ordinateur, quand un
+/// autre appareil l'a été avant lui (403 « pas encore associé »). Mot de passe du propriétaire exigé.
+struct DemandeAssociation: Encodable, Sendable {
+    let nom: String
+    let identifiant: String
+    let motDePasse: String?
+}
+
 // MARK: - Conversation avec IRIS (chat)
 
 struct Conversation: Codable, Identifiable, Sendable {
     let id: String
     let title: String?
     let messages: [MessageChat]?
+    /// nil sur un ordinateur plus ancien que le 2026-09-14.
+    var issueNonGardee: IssueNonGardee? = nil
 }
 
 struct MessageChat: Codable, Identifiable, Hashable, Sendable {
@@ -615,6 +660,42 @@ struct EnvoiMessage: Encodable, Sendable {
 struct ReponseEnvoiMessage: Codable, Sendable {
     let accepted: Bool?
     let conversationId: String?
+}
+
+/// POST /api/voix/commande (main.py, CommandeVocaleIn) : une phrase dite dans les lunettes, transcrite par
+/// l'iPhone. Elle passe sur l'ordinateur par les MÊMES interceptions qu'une commande dite à son micro (mode
+/// invité, pas à pas, entraînement, vision, résumé…), puis par le chat avec la règle de la voix.
+struct DemandeCommandeVocale: Encodable, Sendable {
+    let texte: String
+    let source: String
+    let conversationId: String?
+}
+
+/// Réponse synchrone de /api/voix/commande : la phrase à lire, et ce qui l'a empêchée le cas échéant.
+struct ReponseCommandeVocale: Decodable, Sendable {
+    let texte: String?
+    let intercepte: Bool?
+    let dureeMs: Int?
+    /// « micro_de_la_maison », « voix_non_verifiee »…
+    let refus: String?
+    let conversationId: String?
+    let messageId: String?
+    let lunettesRequises: Bool?
+    /// Type de donnée dont le consentement manque (« transcript »…).
+    let consentementRequis: String?
+}
+
+/// `issue_non_gardee` de GET /api/conversations/{id} : la dernière demande finie SANS message (consentement
+/// requis, erreur seulement publiée). Lue quand la liaison d'événements a été coupée pendant l'attente.
+struct IssueNonGardee: Codable, Hashable, Sendable {
+    struct Consentement: Codable, Hashable, Sendable {
+        let dataType: String?
+        let label: String?
+    }
+    /// Identifiant du message de l'utilisateur que cette issue conclut.
+    let apres: String?
+    let message: String?
+    let consentement: Consentement?
 }
 
 struct ReponseConfirmation: Encodable, Sendable {
@@ -677,6 +758,8 @@ struct CoursDetail: Codable, Identifiable, Sendable {
     let progression: Double?
     let erreur: String?
     let note: String?
+    /// Erreur d'une rédaction partie en arrière-plan (202 de /generer), à afficher telle quelle.
+    let erreurGeneration: String?
 }
 
 // MARK: - F. Interprète
@@ -745,6 +828,7 @@ struct ResumeJour: Codable, Sendable {
     let sections: SectionsResume?
     let local: Bool?
     let note: String?
+    let limite: String?
 }
 
 struct RappelContexte: Codable, Identifiable, Hashable, Sendable {
@@ -784,7 +868,38 @@ struct Recu: Codable, Identifiable, Sendable {
     let imageNom: String?
     let local: Bool?
     let enregistre: Bool?
+    let corrige: Bool?
     let note: String?
+    let dureeMs: Int?
+}
+
+/// GET /api/recus : totaux dans la devise réglée ; les autres devises à part, jamais converties.
+/// Attention : les clés de `parCategorie` sont des noms de catégorie (« Fournitures de bureau ») ; sans
+/// tiret bas, la conversion snake_case ne les touche pas.
+struct TotauxRecus: Codable, Sendable {
+    let nombre: Int?
+    let devise: String?
+    let sousTotal: Double?
+    let tps: Double?
+    let tvq: Double?
+    let tvh: Double?
+    let total: Double?
+    let parCategorie: [String: Double]?
+    let autresDevises: [String: Double]?
+    let sansTotal: Int?
+}
+
+struct ListeRecus: Codable, Sendable {
+    let recus: [Recu]
+    let totaux: TotauxRecus?
+    let limite: String?
+    let retentionJours: Int?
+}
+
+/// POST /api/recus/analyser. Depuis l'iPhone : source « image » (photo prise avec l'iPhone ou choisie).
+struct DemandeAnalyseRecu: Encodable, Sendable {
+    let source: String
+    let image: ImageEnvoyee?
 }
 
 // MARK: - H. Assistants
@@ -795,6 +910,13 @@ struct EtapePasAPas: Codable, Hashable, Sendable {
     let minuteurS: Int?
 }
 
+struct MinuteurPasAPas: Codable, Hashable, Sendable {
+    let etape: Int
+    let dureeS: Int?
+    let restantS: Int?
+}
+
+/// Réponse de /api/pas-a-pas/* (session à plat) ou contenu de l'événement pas_a_pas.etat {session: {…}}.
 struct SessionPasAPas: Codable, Sendable {
     let id: String?
     let sujet: String?
@@ -802,8 +924,28 @@ struct SessionPasAPas: Codable, Sendable {
     let etapes: [EtapePasAPas]?
     let index: Int?
     let actif: Bool
+    let minuteurs: [MinuteurPasAPas]?
+    let avertissement: String?
+    let local: Bool?
+    let ecouteActive: Bool?
     let limite: String?
     let phrase: String?
+}
+
+/// POST /api/pas-a-pas/demarrer. DEHORS, parler=false : la phrase rendue est lue par l'iPhone, pas par
+/// le haut-parleur de l'ordinateur resté à la maison.
+struct DemandePasAPas: Encodable, Sendable {
+    let sujet: String
+    let type: String
+    let etapes: [String]?
+    let parler: Bool
+}
+
+/// POST /api/pas-a-pas/commande : suivant, precedent, repeter, minuteur, annuler_minuteur, terminer.
+struct CommandePasAPas: Encodable, Sendable {
+    let action: String
+    let secondes: Int?
+    let parler: Bool
 }
 
 /// GET /api/entrainement/etat : sans séance, seulement {actif: false, limite}.
@@ -815,12 +957,49 @@ struct SeanceEntrainement: Codable, Sendable {
     let reposS: Int?
     let reposRestantS: Double?
     let debut: Horodatage?
+    let fin: Horodatage?
     let actif: Bool
+    /// « effort », « repos », « pause ».
+    let etat: String?
     let enPause: Bool?
     let dureeS: Double?
+    let ecouteActive: Bool?
+    /// À la fin : la séance a-t-elle été gardée (au moins une série, mémoire non suspendue) ?
+    let enregistree: Bool?
     let limite: String?
     let memoireSuspendue: String?
     let phrase: String?
+}
+
+/// Une séance gardée (GET /api/entrainement/seances) : pas de champ « actif », tout est facultatif.
+struct SeanceHistorique: Codable, Identifiable, Sendable {
+    let id: String
+    let exercice: String?
+    let series: Int?
+    let seriesCibles: Int?
+    let reposS: Int?
+    let debut: Horodatage?
+    let fin: Horodatage?
+    let dureeS: Double?
+}
+
+struct ListeSeances: Codable, Sendable {
+    let seances: [SeanceHistorique]
+    let memoireSuspendue: String?
+    let retentionJours: Int?
+}
+
+struct DemandeEntrainement: Encodable, Sendable {
+    let exercice: String?
+    let seriesCibles: Int?
+    let reposS: Int?
+    let parler: Bool
+}
+
+/// POST /api/entrainement/commande : serie, pause, reprendre, terminer.
+struct CommandeEntrainement: Encodable, Sendable {
+    let action: String
+    let parler: Bool
 }
 
 struct ProduitVu: Codable, Sendable {
@@ -828,7 +1007,8 @@ struct ProduitVu: Codable, Sendable {
     let marque: String?
     let format: String?
     let codeBarres: String?
-    let prixVu: String?
+    /// Montant lu sur l'étiquette : le service rend un NOMBRE (prix.py), pas un texte.
+    let prixVu: Double?
 }
 
 struct OffrePrix: Codable, Hashable, Sendable {
@@ -845,7 +1025,18 @@ struct ComparaisonPrix: Codable, Sendable {
     let resume: String?
     let avertissement: String?
     let local: Bool?
+    let description: String?
+    let dureeMs: Int?
     let phrase: String?
+}
+
+/// POST /api/achats/comparer. `requete` seule (sans image) : le produit est pris tel quel ; parler=false
+/// dehors (le résumé est lu par l'iPhone).
+struct DemandeComparaison: Encodable, Sendable {
+    let source: String
+    let image: ImageEnvoyee?
+    let requete: String?
+    let parler: Bool
 }
 
 // MARK: - I. Confiance

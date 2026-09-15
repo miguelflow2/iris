@@ -30,6 +30,7 @@ interface EtatVerrou {
   mot_de_passe_defini?: boolean
   courriel_defini?: boolean
   relais_connecte?: boolean
+  liaison_relais?: { etat: string; message: string } | null
   limite?: string
 }
 
@@ -45,7 +46,7 @@ function Commande({ texte, onCopier }: { texte: string; onCopier: (t: string) =>
 }
 
 export function ModeDehorsScreen({ params: _params }: { params?: Record<string, any> }): JSX.Element {
-  const { nav, settings, updateSettings, toast } = useStore()
+  const { nav, settings, updateSettings, toast, appInfo } = useStore()
   const [remote, setRemote] = useState<Remote | null>(null)
   const [verrou, setVerrou] = useState<EtatVerrou | null>(null)
   const [compteConfigure, setCompteConfigure] = useState<boolean | null>(null)
@@ -69,6 +70,11 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
       .catch(() => toast('Impossible de copier.', 'error'))
   }
 
+  // Version installée : les scripts du réseau privé (dossier « scripts ») et le guide docs/MODE-DEHORS.md ne sont
+  // pas dans l'installeur (electron-builder.yml). Un client ne doit pas recevoir, en mode administrateur, des
+  // commandes qui échouent sur « fichier introuvable ». Inconnu (navigateur, ancien process) = traité comme installé.
+  const installee = appInfo?.isPackaged !== false
+
   const reglage = (patch: Record<string, unknown>, message?: string): void => {
     updateSettings(patch)
       .then(() => {
@@ -76,6 +82,43 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
       })
       .catch((err: unknown) => toast(messageErreur(err), 'error'))
   }
+
+  // Procédure du code source : les commandes n'ont de sens que là où le dossier « scripts » existe.
+  const procedureCodeSource = (
+    <>
+      <div className="desc">Environ trente minutes la première fois. Gratuit pour un usage personnel. C’est vous qui créez et gardez le compte du réseau privé.</div>
+      <ol className="etapes">
+        <li>
+          Ouvrez PowerShell en administrateur (menu Démarrer, tapez « powershell », clic droit, « Exécuter en tant qu’administrateur »), dans le dossier d’IRIS :
+          <Commande texte=".\scripts\installer-tunnel.ps1 -Installer" onCopier={copier} />
+        </li>
+        <li>
+          Fermez la console, ouvrez-en une nouvelle, puis connectez la machine ; le navigateur s’ouvre pour créer ou ouvrir le compte :
+          <Commande texte="tailscale up" onCopier={copier} />
+        </li>
+        <li>Sur le téléphone, installez l’application Tailscale depuis la boutique d’applications, connectez-vous avec le même compte et laissez-la activée.</li>
+        <li>
+          Dans la console d’administration du réseau privé, réglages DNS, activez « MagicDNS » puis « HTTPS Certificates ». Sans le second, pas d’adresse
+          https://, donc pas de micro dans le navigateur du téléphone.
+          <Commande texte="https://login.tailscale.com/admin/dns" onCopier={copier} />
+        </li>
+        <li>
+          Publiez IRIS sur le réseau privé ; le script refuse s’il n’y a pas de mot de passe ou pas de https, et affiche l’adresse finale (du genre
+          https://bureau.tail1234.ts.net/m) :
+          <Commande texte=".\scripts\installer-tunnel.ps1 -Servir" onCopier={copier} />
+        </li>
+        <li>
+          Pour vérifier sans rien changer :
+          <Commande texte=".\scripts\installer-tunnel.ps1" onCopier={copier} />
+        </li>
+        <li>Essai qui prouve le mode dehors : coupez le WiFi du téléphone et ouvrez l’adresse en données cellulaires. N’ajoutez jamais « ?token=… » à cette adresse.</li>
+      </ol>
+      <div className="small muted" style={{ lineHeight: 1.45 }}>
+        Ces scripts sont fournis avec le code source d’IRIS (dossier « scripts ») ; ils ne sont pas encore inclus dans l’installeur. Guide complet :
+        docs/MODE-DEHORS.md.
+      </div>
+    </>
+  )
 
   return (
     <div className="ecran">
@@ -111,7 +154,7 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
               <li>L’ordinateur allumé, hors veille, IRIS ouverte.</li>
               <li>Internet des deux côtés, et le réseau privé actif sur le téléphone.</li>
               <li>La page IRIS à l’écran du téléphone : une page en arrière-plan ne reçoit plus rien, et il n’y a pas de notification.</li>
-              <li>Les lunettes VELA pour tout ce qui capte ou agit. Sur Android (Chrome), la page IRIS peut les signaler par Bluetooth. Sur iPhone, Safari n’a pas de Bluetooth : dehors, sur iPhone, il faut l’app IRIS (voir plus bas).</li>
+              <li>Les lunettes VELA pour tout ce qui capte ou agit. Sur Android (Chrome), la page IRIS peut les signaler par Bluetooth. Sur iPhone, Safari n’a pas de Bluetooth : la connexion passera par l’app IRIS, pas encore disponible (voir plus bas).</li>
             </ul>
           </div>
           <div>
@@ -166,37 +209,22 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
         {/* ------------------------------------------------------------ 2. réseau privé */}
         <h2 className="section-sous">2. Le réseau privé, pas à pas</h2>
         <div className="carte col" style={{ gap: 12 }}>
-          <div className="desc">Environ trente minutes la première fois. Gratuit pour un usage personnel. C’est vous qui créez et gardez le compte du réseau privé.</div>
-          <ol className="etapes">
-            <li>
-              Ouvrez PowerShell en administrateur (menu Démarrer, tapez « powershell », clic droit, « Exécuter en tant qu’administrateur »), dans le dossier d’IRIS :
-              <Commande texte=".\scripts\installer-tunnel.ps1 -Installer" onCopier={copier} />
-            </li>
-            <li>
-              Fermez la console, ouvrez-en une nouvelle, puis connectez la machine ; le navigateur s’ouvre pour créer ou ouvrir le compte :
-              <Commande texte="tailscale up" onCopier={copier} />
-            </li>
-            <li>Sur le téléphone, installez l’application Tailscale depuis la boutique d’applications, connectez-vous avec le même compte et laissez-la activée.</li>
-            <li>
-              Dans la console d’administration du réseau privé, réglages DNS, activez « MagicDNS » puis « HTTPS Certificates ». Sans le second, pas d’adresse
-              https://, donc pas de micro dans le navigateur du téléphone.
-              <Commande texte="https://login.tailscale.com/admin/dns" onCopier={copier} />
-            </li>
-            <li>
-              Publiez IRIS sur le réseau privé ; le script refuse s’il n’y a pas de mot de passe ou pas de https, et affiche l’adresse finale (du genre
-              https://bureau.tail1234.ts.net/m) :
-              <Commande texte=".\scripts\installer-tunnel.ps1 -Servir" onCopier={copier} />
-            </li>
-            <li>
-              Pour vérifier sans rien changer :
-              <Commande texte=".\scripts\installer-tunnel.ps1" onCopier={copier} />
-            </li>
-            <li>Essai qui prouve le mode dehors : coupez le WiFi du téléphone et ouvrez l’adresse en données cellulaires. N’ajoutez jamais « ?token=… » à cette adresse.</li>
-          </ol>
-          <div className="small muted" style={{ lineHeight: 1.45 }}>
-            Ces scripts sont fournis avec le code source d’IRIS (dossier « scripts ») ; ils ne sont pas encore inclus dans l’installeur. Guide complet :
-            docs/MODE-DEHORS.md.
-          </div>
+          {installee ? (
+            <>
+              <div className="bloc-note attention">
+                Cette mise en place n’est pas encore disponible dans la version installée d’IRIS : les scripts qu’elle utilise ne sont fournis qu’avec le
+                code source d’IRIS. Sans eux, l’accès de l’étape 1 ne fonctionne que sur le même réseau WiFi que l’ordinateur.
+              </div>
+              <details>
+                <summary className="small muted" style={{ cursor: 'pointer' }}>Installation depuis le code source (développeurs)</summary>
+                <div className="col" style={{ gap: 12, marginTop: 10 }}>
+                  {procedureCodeSource}
+                </div>
+              </details>
+            </>
+          ) : (
+            procedureCodeSource
+          )}
         </div>
 
         {/* ------------------------------------------------------------ 3. lunettes et téléphone */}
@@ -206,7 +234,7 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
             <li>Si les lunettes sont connectées à l’ordinateur, déconnectez-les d’abord : la connexion simultanée à deux appareils n’est pas confirmée pour ces lunettes.</li>
             <li>Mettez les lunettes en mode appairage, puis choisissez-les dans les réglages Bluetooth du téléphone.</li>
             <li>Vérifiez que la sortie audio du téléphone est bien les lunettes : la voix d’IRIS y sortira.</li>
-            <li>Android (Chrome) : dans la page IRIS, tuile « Mes lunettes », touchez « Connecter mes lunettes » : le téléphone signale alors leur présence à IRIS. iPhone : l’app IRIS s’en charge ; la page web ne le peut pas.</li>
+            <li>Android (Chrome) : dans la page IRIS, tuile « Mes lunettes », touchez « Connecter mes lunettes » : le téléphone signale alors leur présence à IRIS. iPhone : la page web ne le peut pas ; l’app IRIS, qui s’en chargera, n’est pas encore disponible.</li>
           </ol>
           <div className="small muted" style={{ lineHeight: 1.45 }}>
             Que le téléphone choisisse le micro des lunettes comme entrée n’a pas été vérifié avec ces lunettes.
@@ -233,7 +261,12 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
           titre="Verrouillage à distance"
           desc="Permet de verrouiller IRIS, ou d’effacer ses données, depuis la page de verrouillage du relais VELA avec votre code de secours."
           on={Boolean(settings?.verrou_distant_actif)}
-          onChange={(v) => reglage({ verrou_distant_actif: v })}
+          onChange={(v) => {
+            // Désactiver exige le mot de passe du propriétaire : cela se fait à l'écran dédié, qui le demande.
+            if (!v) nav.ouvrir('verrou-distant')
+            // « Activé » n'est pas « utilisable » : la liaison de l'ordinateur au compte se confirme par courriel.
+            else reglage({ verrou_distant_actif: true }, 'Verrouillage à distance activé. Il sera utilisable une fois cet ordinateur lié à votre compte (voir l’écran Verrouillage à distance).')
+          }}
         />
         {settings?.verrou_distant_actif && verrou ? (
           <div className="carte col" style={{ gap: 6 }}>
@@ -241,12 +274,16 @@ export function ModeDehorsScreen({ params: _params }: { params?: Record<string, 
             <div className="small">Code de secours : {verrou.code_defini ? 'défini' : 'à définir'}</div>
             <div className="small">Courriel du compte : {verrou.courriel_defini ? 'défini' : 'à définir'}</div>
             <div className="small">Liaison au relais : {verrou.relais_connecte ? 'connectée' : 'non connectée en ce moment'}</div>
+            <div className="small">
+              Ordinateur lié à votre compte :{' '}
+              {verrou.liaison_relais?.etat === 'confirmee' ? 'oui' : 'pas encore — le verrouillage à distance n’est pas encore utilisable'}
+            </div>
             {verrou.limite ? <div className="small muted" style={{ lineHeight: 1.45 }}>{verrou.limite}</div> : null}
           </div>
         ) : null}
         <CarteReglage
           titre="Télécommande par le relais"
-          desc="Autorise votre téléphone à piloter cet ordinateur à distance, par le relais VELA. Désactivée par défaut. Les actions sensibles (courriel, texto, appel, suppression) attendent votre accord sur le téléphone avant de s’exécuter."
+          desc="Autorise votre téléphone à piloter cet ordinateur à distance, par le relais VELA. Désactivée par défaut. Les courriels, textos et appels attendent toujours votre accord sur le téléphone. Les autres actions sur l’ordinateur (dont les suppressions) suivent le réglage « Confirmation avant une commande » (Réglages › Contrôle de l’ordinateur) : avec « Jamais », rien n’est demandé."
           on={Boolean(settings?.telecommande)}
           onChange={(v) => reglage({ telecommande: v })}
         />

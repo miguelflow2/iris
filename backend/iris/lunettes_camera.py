@@ -77,6 +77,41 @@ class ProtocoleNonConfirme(RuntimeError):
     """Levée quand on refuse d'écrire une trame dont les octets ne sont pas prouvés."""
 
 
+# --- Ce que le CLIENT lit quand la caméra refuse (demande de la revue renderer, 2026-09-14) ----------------
+# Le texte des exceptions ci-dessus est technique (charge utile en hexadécimal, chemin d'un document interne,
+# nom d'un réglage d'exploration qui écrirait des octets non prouvés dans la puce) : il reste au journal. Les
+# routes, les outils et la voix rendent {code, message}, avec une phrase qui dit ce qui est vrai.
+MESSAGE_CAMERA_NON_CONFIRMEE = (
+    "La caméra des lunettes n’est pas encore activée dans IRIS (son protocole est en cours de confirmation) : "
+    "aucune photo n’a été prise. En attendant, utilisez une photo prise avec votre téléphone, ou l’écran de "
+    "l’ordinateur."
+)
+MESSAGE_CAMERA_ABSENTE = "Ces lunettes n’exposent pas de caméra utilisable par IRIS : aucune photo n’a été prise."
+MESSAGE_LUNETTES_NON_CONNECTEES = "Les lunettes ne sont pas connectées."
+
+
+def refus_camera_client(exc: BaseException) -> dict:
+    """{"code", "message"} à rendre au client pour un refus du module caméra ; le texte technique va au journal.
+
+    Codes : camera_non_confirmee (protocole non prouvé : aucune paire n'écrit la commande photo), camera_absente
+    (pas d'interface caméra sur la paire connectée), lunettes_non_connectees."""
+    log.info("refus de la caméra des lunettes : %s", exc)
+    if isinstance(exc, ProtocoleNonConfirme):
+        return {"code": "camera_non_confirmee", "message": MESSAGE_CAMERA_NON_CONFIRMEE}
+    if str(exc).strip() == MESSAGE_LUNETTES_NON_CONNECTEES:
+        return {"code": "lunettes_non_connectees", "message": MESSAGE_LUNETTES_NON_CONNECTEES}
+    return {"code": "camera_absente", "message": MESSAGE_CAMERA_ABSENTE}
+
+
+def camera_lunettes_active(settings) -> bool:
+    """Le module accepte-t-il d'écrire la commande photo ? Faux tant que l'en-tête de trame n'est pas prouvé
+    (seul le réglage d'exploration du propriétaire l'autorise). Les écrans le lisent au lieu de le supposer."""
+    try:
+        return bool(settings.user.lunettes_exploration)
+    except Exception:
+        return False
+
+
 @dataclass
 class ResultatPhoto:
     """Ce qu'on rapporte APRÈS une tentative de photo. Honnête par construction : dit ce qui a
@@ -141,7 +176,7 @@ class CameraLunettes:
         qui n'a ni caméra ni service ae00. On le dit clairement plutôt que d'échouer en silence."""
         client = self._client
         if client is None or not getattr(client, "is_connected", False):
-            raise CameraIndisponible("Les lunettes ne sont pas connectées.")
+            raise CameraIndisponible(MESSAGE_LUNETTES_NON_CONNECTEES)
         ecriture = notification = None
         for service in client.services:
             for car in service.characteristics:

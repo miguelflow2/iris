@@ -25,6 +25,10 @@ import iris.chat as chat_module
 import iris.quotidien as quotidien
 from iris.connectors.base import BaseConnector, Chunk
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 NOMS_INTERDITS = ("claude", "anthropic", "openai", "gpt", "gemini", "google", "elevenlabs", "vosk", "piper",
                   "openrouter", "twilio")
 TABLES = ("tasks", "messages", "conversations", "memories", "reminders", "rappels_contexte", "recus", "journal_ecoute")
@@ -241,7 +245,10 @@ def test_avec_consentement_le_moteur_redige_sans_souvenirs_non_autorises(app, cl
     assert "UNIQUEMENT les faits fournis" in appel["system"] and "150 à 200" in appel["system"]
     message = appel["messages"][0]["content"]
     assert "Tâche terminée : Rapport mensuel" in message and "Demain à 9 h : Appeler le dentiste" in message
-    assert "Prépare le devis pour la cuisine des Tremblay." in message and "chalet samedi" in message
+    assert "Prépare le devis pour la cuisine des Tremblay." in message
+    assert "chalet samedi" not in message, "le journal d'écoute (paroles de tiers) reste local"
+    assert "Le devis est prêt" not in message, "les réponses d'IRIS ne partent pas, seulement le titre"
+    assert "1 phrase gardée dans le journal d'écoute" in message
     assert "code de la porte" not in message, "les souvenirs exigent « Extraits de mémoire »"
     envois = [e for e in app.state.ctx.consent.events(limit=30) if e["event_type"] == "external_send"]
     assert {e["data_type"] for e in envois} == {"transcript"}
@@ -251,6 +258,24 @@ def test_avec_consentement_le_moteur_redige_sans_souvenirs_non_autorises(app, cl
     client.get("/api/resume/jour")
     assert len(moteur.appels) == 2 and "code de la porte" in moteur.appels[1]["messages"][0]["content"]
     assert not any(n in moteur.appels[1]["system"].lower() for n in NOMS_INTERDITS)
+
+
+def test_le_journal_d_ecoute_ne_part_jamais_au_moteur(app, client, monkeypatch, moteur):
+    """Le journal, ce sont des sous-titres ambiants : la voix de tiers. Même avec tous les consentements,
+    aucune de ses phrases n'atteint le moteur ; seul le nombre de phrases est transmis."""
+    ctx = app.state.ctx
+    journee(app, monkeypatch)
+    secret = "le code du coffre de Julie est 4471"
+    ctx.journal.ajouter(secret, "sous-titres")
+    ctx.journal.ajouter("Julie part à Gaspé demain matin", "journal")
+    accorder(client, "transcript", "memory", "audio_raw")
+    resume = client.get("/api/resume/jour").json()
+    assert resume["local"] is False and moteur.appels
+    for appel in moteur.appels:
+        contenu = appel["system"] + " ".join(str(m.get("content")) for m in appel["messages"])
+        assert "4471" not in contenu and "coffre de Julie" not in contenu and "Gaspé" not in contenu
+        assert "chalet samedi" not in contenu
+    assert "3 phrases gardées dans le journal d'écoute" in moteur.appels[-1]["messages"][0]["content"]
 
 
 def test_mode_100_pour_cent_local_et_verbosite(app, client, monkeypatch, moteur):
@@ -335,3 +360,25 @@ def test_textes_fixes_sans_fournisseur_ni_promesse_absolue():
     assert not any(n in textes for n in NOMS_INTERDITS)
     for absolu in ("toujours", "parfait", "instantan", "entièrement"):
         assert absolu not in textes
+
+
+def test_un_moteur_muet_donne_le_resume_local_dans_le_delai(app, client, monkeypatch, moteur):
+    """Contre-vérification du 2026-09-14 : le résumé lu à la voix (interception « résume ma journée ») attendait
+    le moteur sans limite. Le délai de ChatService.demander_image_detail rend la version locale, dite."""
+    import time
+
+    class MoteurMuet(FauxMoteur):
+        async def stream(self, messages, system, tools=None, run_tool=None, options=None):
+            await asyncio.sleep(5.0)
+            yield Chunk("text", text=FauxMoteur.reponse)
+            yield Chunk("done")
+
+    journee(app, monkeypatch)
+    accorder(client, "transcript")
+    monkeypatch.setattr(chat_module, "build_connector", lambda name, settings, secrets: MoteurMuet())
+    monkeypatch.setattr(chat_module, "DELAI_MOTEUR_IMAGE_S", 0.3)
+    debut = time.monotonic()
+    resume = client.get("/api/resume/jour").json()
+    assert time.monotonic() - debut < 3.0, "le résumé n'attend pas le moteur au-delà du délai"
+    assert resume["local"] is True and resume["note"] == "Résumé rédigé sur l'ordinateur : le moteur VELA n'a pas répondu."
+    assert resume["texte"].startswith("Aujourd'hui, tu as terminé la tâche « Rapport mensuel »")

@@ -5,6 +5,12 @@ paramètre d'URL : les tests du service passaient, mais la création échouait e
 """
 from __future__ import annotations
 
+import pytest
+
+# Lunettes d'abord (2026-09-13) : ces tests portent sur les veilles elles-mêmes, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 
 def _pret(client):
     """Assistant minimal : les veilles n'exigent ni clé d'agent ni consentement."""

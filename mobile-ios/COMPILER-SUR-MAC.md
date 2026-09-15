@@ -61,6 +61,31 @@ d'arrière-plan). Ne modifie pas `Info.plist` à la main : modifie `project.yml`
 4. Sur l'iPhone : Réglages › Confidentialité et sécurité › Mode développeur › activer (iOS 16+),
    puis Réglages › Général › VPN et gestion de l'appareil › faire confiance au développeur.
 
+## 4 bis. Tests unitaires (IRISTests) — jamais lancés à ce jour
+
+Ajoutés le 2026-09-14. Ils couvrent les fonctions pures dont une erreur ne se verrait qu'en vrai :
+trames des lunettes (octets identiques au service Python), mot d'activation et phrases « mode invité »,
+adresses permises en `http://`, classement des refus 401/403/428 (verrouillée ≠ session refusée),
+horodatages et décodage des réponses (reçus, prix, pas à pas, séances), couleurs et billets lus sur
+l'iPhone, zone sans mémoire signalée, arrêt des alertes sans lunettes, contrastes WCAG.
+
+1. `xcodegen generate` crée aussi la cible `IRISTests` et l'ajoute au schéma `IRIS`.
+2. Choisir un simulateur iOS 17, puis Produit › Test (⌘U), ou en ligne de commande :
+   `xcodebuild test -scheme IRIS -destination 'platform=iOS Simulator,name=iPhone 15'`.
+3. Un test qui échoue dit ce qu'il attendait : corriger le code, pas l'attente, sauf si le service a
+   changé (voir le script ci-dessous).
+
+Depuis Windows, sans Mac, une partie se vérifie quand même (sans exécuter le Swift) :
+
+```sh
+backend/.venv/Scripts/python.exe mobile-ios/outils/verifier_ios.py
+```
+
+Le script recalcule côté Python les octets des trames, les motifs « mode invité », les noms de couleur et
+les contrastes attendus par les tests Swift ; il vérifie que chaque route `/api/…` appelée par l'app
+existe dans le service, que chaque champ envoyé existe dans le modèle de la route, et que les phrases de
+refus reconnues par l'app sont toujours celles du service. Il ne remplace ni la compilation ni ⌘U.
+
 ## 5. Brancher l'ordinateur
 
 1. Sur l'ordinateur : IRIS ouverte, un mot de passe créé et l'accès depuis le téléphone activé (Mon profil › Compte et sécurité).
@@ -107,6 +132,21 @@ Fonctions :
 - [ ] Cours : liste, fiches, questions, transcription ; « Garder sur cet iPhone », mode avion,
       relecture ; export Markdown par la feuille de partage.
 - [ ] Mode invité : activer 15 min depuis l'iPhone, vérifier sur l'ordinateur, terminer.
+- [ ] « Dis-moi Iris, mode invité » app ouverte : l'ordinateur passe en mode invité (mémoire suspendue) ;
+      « Dis-moi Iris, fin du mode invité » : refus dit à voix haute, le mode reste actif.
+- [ ] Mode confidentiel activé sur l'ordinateur : « Dis-moi Iris » s'arrête sur l'iPhone (état
+      « indisponible » avec la raison), « Parler », dictée, sous-titres, alertes et aperçu caméra refusent ;
+      le désactiver : l'écoute du mot d'activation reprend seule.
+- [ ] Alertes sonores actives, puis « Parler à IRIS » : refus clair (micro déjà pris), pas de plantage.
+- [ ] Un autre appareil Bluetooth (bracelet, écouteurs) relié à l'iPhone : « Appareil relié non
+      reconnu », aucune fonction des lunettes ne s'ouvre, rien n'est attesté à l'ordinateur.
+- [ ] Verrouiller IRIS à distance, tuer l'app, la relancer en mode avion : l'écran de verrouillage
+      reste, les cours gardés ne s'ouvrent pas ; réseau revenu et IRIS déverrouillée : il disparaît.
+- [ ] Photo : appel entrant pendant la prise de vue → message « iOS a coupé la caméra » en moins de
+      8 s, les boutons de vision redeviennent utilisables.
+- [ ] Reçus, prix, pas à pas, entraînement, résumé du jour depuis l'iPhone : rien n'est dit par le
+      haut-parleur de l'ordinateur (parler=false), la réponse est lue sur l'iPhone.
+- [ ] Alerte sonore détectée sur un autre onglet que Accessibilité : le plein écran s'affiche.
 - [ ] Zones : créer une zone ici, activer la surveillance « Toujours », quitter l'app, sortir de la
       zone à pied (plus de 200 m), revenir : l'ordinateur doit recevoir l'identifiant (journal
       d'IRIS), jamais la position. Mesurer le retard réel.
@@ -114,6 +154,16 @@ Fonctions :
 - [ ] Mode hors ligne : couper l'ordinateur ; l'app le dit en moins de 20 s et reste utilisable.
 - [ ] VoiceOver : tous les boutons ont un libellé ; taille de texte maximale lisible ; réglage
       « Grand texte » appliqué.
+- [ ] (réparation du 2026-09-14) Pas à pas démarré, app ouverte : « Dis-moi Iris, étape suivante » dans
+      les lunettes change d'étape (POST /api/voix/commande), sans passer par le modèle. Consentement
+      « transcript » retiré sur l'ordinateur, Wi-Fi coupé puis rétabli pendant une demande écrite : l'app dit
+      le consentement manquant en moins de 10 s, pas « connexion perdue » après 3 minutes.
+- [ ] Effacement à distance pendant que l'app est en arrière-plan : à la réouverture, écran de
+      verrouillage « effacées à distance » et Accueil › Mes cours vide.
+- [ ] Alertes sonores actives, app en arrière-plan : activer le mode confidentiel sur l'ordinateur ; les
+      alertes s'arrêtent en environ une minute (indicateur de micro d'iOS éteint).
+- [ ] Interprète ou « Parler » en cours, puis activer les sous-titres : aucune erreur audio, la voix
+      s'arrête avant que le micro des sous-titres démarre.
 
 ## 7. TestFlight (pilote)
 
@@ -142,3 +192,7 @@ Fonctions :
   perception ; si la classe n'est pas marquée `@objc(IRISFabriquePerception)`, l'onglet
   Accessibilité dira que le module manque alors qu'il est là.
 - Les vues SwiftUI (`Ecrans/`) : vérifier sur petit écran (iPhone SE) et en « Grand texte ».
+- `Ecrans/Quotidien/EcranQuotidien.swift` (reçus, prix, pas à pas, entraînement, résumé) : écrit le
+  2026-09-14, jamais affiché. Vérifier en particulier les `TimelineView` des minuteurs et du repos.
+- `Perception/CameraTelephone.swift` : délais maximaux de 8 s au démarrage et à la photo ; vérifier
+  qu'une caméra lente ne reste pas allumée après l'erreur (indicateur vert d'iOS).

@@ -20,20 +20,52 @@
 | Guidage, zones sans mémoire, vision partagée, achats, mode invité, interprète | modules chargés par `/m` (équipe mobile-dehors) | non |
 | Mémoire et données de l'utilisateur | celles de son ordinateur | aucune |
 
+## À faire avant le lancement (constat de revue du 2026-09-14)
+
+**Déploiement Netlify de ce dossier : NON vérifié.** L'adresse du site Netlify de `mobile-web/`
+n'est écrite nulle part dans le dépôt, et la revue n'a pas accès au compte Netlify. Tant que Miguel ne
+l'a pas confirmé, il faut supposer que la page est **encore en ligne**, sur Internet public, avec le
+widget vocal d'un fournisseur tiers et son attribution visible.
+
+Ce qui a été fait dans ce dossier le 2026-09-14 :
+- `index.html` est **remplacé** par une page d'information sans aucun script tiers ni identifiant
+  d'agent : « Cette page n'est plus utilisée », avec le chemin vers la page téléphone de l'ordinateur
+  (IRIS › Mode dehors) et la voie iPhone (app native). `assets/app.js` et `sw.js` ne servent plus
+  qu'à désinscrire l'ancien agent de service et vider ses caches sur les téléphones qui l'avaient installée.
+- `_headers` garde `script-src 'self'`, `microphone=(self)`, `noindex` et l'interdiction de cadre.
+- Test : `backend/tests/test_demandes_croisees.py` vérifie qu'aucun fichier de ce dossier ne contient
+  plus l'identifiant ni le script du widget.
+
+Ce qui reste à faire, par Miguel (hors dépôt) :
+1. **Redéployer ou dépublier** le site Netlify de `mobile-web/` : tant que ce n'est pas fait, l'ancienne
+   page reste en ligne. Noter ici la date : « Redéployé le … » ou « Dépublié le … ».
+2. **Désactiver l'agent vocal chez le fournisseur** : son identifiant public reste lisible dans
+   l'historique git et dans les copies déjà servies ; seul le fournisseur peut le rendre inutilisable.
+
 ## Ce que contient ce dossier, tel quel
 
-- `index.html` + `assets/` : une page d'accueil PWA qui intègre le **widget vocal ElevenLabs**
-  (script chargé depuis `elevenlabs.io`). Le widget affiche sa propre attribution de fournisseur :
-  c'est **incompatible avec le masque de marque** (aucun nom de fournisseur visible par le client).
-  Ne pas remettre cette page à un client en l'état.
+- `index.html` + `assets/` : depuis le 2026-09-14, une page d'information qui renvoie vers `/m`.
+  L'ancienne page intégrait un widget vocal tiers qui affichait l'attribution de son fournisseur,
+  incompatible avec le masque de marque ; elle ne doit pas revenir.
 - `telecommande.html` + `telecommande.js` : une télécommande qui passe par le relais VELA
-  (WebSocket, courriel d'achat + code d'appairage affiché par l'ordinateur). Voir
-  `backend/iris/telecommande.py` et `serveur/relais.py`. Non revérifiée dans ce chantier.
-- `manifest.webmanifest`, `sw.js`, icônes : installation sur l'écran d'accueil.
-- `_headers` : en-têtes Netlify. Depuis le 2026-09-13, la caméra, la position et l'écran allumé ne
-  sont plus bloqués pour cette origine (ils l'étaient : `camera=()`, `geolocation=()`), pour qu'une
-  fonction du téléphone servie ici un jour n'échoue pas en silence. La politique de contenu reste
-  ouverte à cause du widget vocal (explication dans le fichier).
+  (WebSocket `/telecommande/ws`, courriel + code d'appairage de l'ordinateur). Voir
+  `backend/iris/telecommande.py` et `serveur/relais.py`. Revérifiée le 2026-09-14 contre le code :
+  - corrigé : promesse absolue (« avant tout envoi ou toute action irréversible ») remplacée par ce que
+    le code fait (courriel, texto et appel attendent toujours l'accord ; les autres actions, dont les
+    suppressions, suivent le réglage « Confirmation avant une commande », et rien n'est demandé avec « Jamais ») ;
+    limites écrites (ordinateur allumé, délai non garanti, rien pendant le verrouillage, aperçu limité
+    sans lunettes VELA) ; adresse d'exemple d'un tunnel éphémère remplacée par `relais.velaglass.ca` ;
+    lien « Revenir à la voix » (la voix n'existe plus ici) ; raison réelle du relais affichée (429, 503)
+    au lieu de « injoignable » ; aucune reconnexion en rafale ; `noindex` ;
+  - **pas corrigé, à trancher** : l'application de bureau n'affiche PAS le code d'appairage (il n'est
+    que dans le fichier `telecommande-pairing` du dossier de données et dans le journal) et n'indique
+    nulle part l'adresse de cette page. Un client ne peut donc pas s'en servir sans aide : ce n'est pas
+    une fonction prête à vendre. La page le dit.
+- `manifest.webmanifest`, `sw.js`, icônes : installation sur l'écran d'accueil. Le manifeste ne
+  décrit plus une « assistante vocale » : il dit que la page n'est plus utilisée.
+- `_headers` : en-têtes Netlify. Caméra, micro, position et écran allumé permis pour cette origine
+  seulement. Depuis le 2026-09-14, la politique de contenu n'admet que les scripts de ce site, ce qui
+  bloque le widget vocal (explication dans le fichier).
 - `netlify.toml` : publication du dossier tel quel, sans compilation.
 
 ## Pourquoi `/m` sur l'ordinateur est la bonne page

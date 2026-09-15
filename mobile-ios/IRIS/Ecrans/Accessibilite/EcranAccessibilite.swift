@@ -4,17 +4,17 @@
 //
 // Lunettes d'abord : sans lunettes VELA présentes, l'invitation à les connecter est en tête et les
 // fonctions de capture refusent de démarrer (chaque écran le redit). Une fonction déjà en cours (alertes,
-// guidage, partage) n'est jamais coupée net par la disparition des lunettes : on peut toujours l'arrêter
-// d'ici.
+// guidage, partage) n'est pas coupée net par la disparition des lunettes : on peut toujours l'arrêter
+// d'ici. Les alertes sonores, elles, s'arrêtent seules après 10 minutes sans lunettes, et le disent.
 
 import SwiftUI
 import UIKit
 
+@MainActor
 struct EcranAccessibilite: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
     @State private var appairage = false
-    @State private var alertePleinEcran: AlerteSonore?
 
     private let modesVoir = ["scene", "lecture", "billets", "objet", "couleur", "personnes", "affichage"]
 
@@ -134,17 +134,7 @@ struct EcranAccessibilite: View {
             }
             .preferredColorScheme(.dark)
         }
-        .fullScreenCover(item: $alertePleinEcran) { alerte in
-            AlertePleinEcran(alerte: alerte) { alertePleinEcran = nil }
-        }
-        .onAppear {
-            perception.alertesSonores.surAlerte = { alerte in
-                alertePleinEcran = alerte
-            }
-        }
-        .onDisappear {
-            perception.alertesSonores.surAlerte = nil
-        }
+        // Le plein écran des alertes est affiché par la racine de l'app (RacineVue), pour tous les onglets.
     }
 
     // MARK: - Lunettes
@@ -157,7 +147,7 @@ struct EcranAccessibilite: View {
             HStack(spacing: 12) {
                 Image(systemName: "eyeglasses")
                     .font(.title2)
-                    .foregroundStyle(etat.connectees ? Couleurs.vert : Couleurs.attenue)
+                    .foregroundStyle(etat.connectees && etat.verifiees ? Couleurs.vert : Couleurs.attenue)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(titreLunettes(etat))
@@ -182,12 +172,19 @@ struct EcranAccessibilite: View {
     }
 
     private func titreLunettes(_ etat: EtatLunettes) -> String {
+        if etat.connectees && !etat.verifiees { return "Appareil relié non reconnu" }
         if etat.connectees { return etat.nom ?? "Lunettes connectées" }
         if env.lunettesPresentes { return "Lunettes vues par ton ordinateur" }
         return "Lunettes non connectées à cet iPhone"
     }
 
     private func detailLunettes(_ etat: EtatLunettes) -> String {
+        if etat.connectees && !etat.verifiees {
+            return etat.message ?? "Vérification de l'appareil en cours : IRIS attend ses services Bluetooth."
+        }
+        if etat.connectees && !env.lunettesPresentes, let refus = env.attestation.erreur {
+            return "Ton ordinateur refuse ces lunettes : \(refus)"
+        }
         if etat.connectees {
             let batterie = etat.batterie.map { "Batterie \($0) %" } ?? "Batterie inconnue"
             let camera = etat.cameraConfirmee
@@ -223,6 +220,7 @@ struct EcranAccessibilite: View {
 
 // MARK: - Où ai-je posé… ?
 
+@MainActor
 struct EcranOuEst: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
@@ -307,7 +305,9 @@ struct EcranOuEst: View {
                     }
                 }
 
-                NoteVerite(texte: "Consulter ta mémoire marche sans lunettes. Il faut que ton ordinateur réponde : la mémoire vit sur lui, pas sur l'iPhone. L'objet a pu être déplacé depuis le souvenir.")
+                // Pas « marche sans lunettes » : l'ordinateur exige aujourd'hui les lunettes sur cette route
+                // (routes_accessibilite.py, exiger_lunettes « ou_est »). Phrase à rétablir quand il ne le fera plus.
+                NoteVerite(texte: "Il faut que ton ordinateur réponde : la mémoire vit sur lui. L'objet a pu être déplacé depuis le souvenir.")
             }
             .padding()
         }

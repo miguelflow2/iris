@@ -124,7 +124,7 @@ function ouvrir(ctx) {
       "Dans une zone sans mémoire, IRIS ne retient rien : ni souvenirs, ni journal, ni cours, ni photos décrites, ni reçus. " +
       "Ce téléphone compare sa position à vos zones et n'envoie à votre ordinateur que le nom de code de la zone où il se trouve, ou « aucune »."),
     el('p', { class: 'note-faible' },
-      "Sur iPhone, la surveillance ne marche que tant que cette page est ouverte à l'écran. L'application IRIS pour iPhone, elle, peut surveiller en arrière-plan."));
+      "Sur iPhone, la surveillance ne marche que tant que cette page est ouverte à l'écran. La surveillance en arrière-plan est prévue pour l'app IRIS pour iPhone, qui n'est pas encore disponible."));
 
   const etat = el('div', { class: 'resultat', role: 'status', 'aria-live': 'polite' });
   const etatTitre = el('p', { class: 'resultat-texte' }, 'Chargement de vos zones…');

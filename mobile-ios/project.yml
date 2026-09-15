@@ -46,6 +46,10 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         INFOPLIST_FILE: IRIS/Info.plist
         ENABLE_PREVIEWS: YES
+    # ⌘U dans Xcode (ou `xcodebuild test`) lance IRISTests sur un simulateur iOS 17.
+    scheme:
+      testTargets:
+        - IRISTests
     info:
       path: IRIS/Info.plist
       properties:
@@ -67,32 +71,37 @@ targets:
         ITSAppUsesNonExemptEncryption: false
 
         # ---------------------------------------------------------------- permissions (textes en français)
+        # Tutoiement, comme toute l'app. Aucun nom de fournisseur (masque de marque) : on dit « iOS ».
         NSMicrophoneUsageDescription: >-
-          IRIS écoute le micro seulement quand l'app est ouverte à l'écran : pour entendre « Dis-moi Iris »,
-          vos commandes et les phrases de l'interprète. Le son est reconnu sur cet iPhone ; seul le texte
-          reconnu part à votre ordinateur.
+          Le micro sert à « Dis-moi Iris » et à tes commandes (app ouverte à l'écran), à l'interprète, et aux
+          sous-titres et alertes sonores que tu actives (les alertes peuvent continuer en arrière-plan).
+          Le son est traité sur cet iPhone : les sous-titres et les alertes n'envoient rien ; pour une
+          commande ou l'interprète, seul le texte reconnu part à ton ordinateur.
         NSSpeechRecognitionUsageDescription: >-
-          La reconnaissance de la parole se fait sur cet iPhone (sans envoi du son à Apple ni à VELA).
-          Elle transforme votre voix, ou celle de la personne que vous faites traduire, en texte.
+          La reconnaissance de la parole se fait sur cet iPhone, sans envoyer ta voix sur Internet.
+          Elle transforme ta voix, ou celle de la personne que tu fais traduire, en texte.
         NSCameraUsageDescription: >-
-          En attendant que la caméra des lunettes VELA soit confirmée, la photo à décrire ou à lire est
-          prise avec la caméra de cet iPhone, seulement quand vous le demandez.
+          En attendant que la caméra des lunettes VELA soit confirmée, la caméra de cet iPhone prend la photo
+          à décrire, à lire ou à analyser (reçu, étiquette), et les images de la vision partagée, seulement
+          quand tu le demandes.
         NSBluetoothAlwaysUsageDescription: >-
-          Le Bluetooth relie cet iPhone à vos lunettes VELA : connexion, batterie, caméra et boutons.
-          IRIS ne cherche aucun autre appareil.
+          Le Bluetooth relie cet iPhone à tes lunettes VELA : connexion, batterie, caméra et boutons.
+          IRIS parcourt les annonces Bluetooth proches et n'en retient que les lunettes VELA.
         NSLocationWhenInUseUsageDescription: >-
-          La position sert à « Où suis-je ? », au guidage et à ajouter une zone sans mémoire là où vous êtes.
-          Elle reste sur cet iPhone, sauf quand vous créez une zone centrée ici.
+          La position sert à « Où suis-je ? », au guidage à pied et à créer une zone sans mémoire. Pour
+          l'adresse et le trajet, elle est transmise au service de cartes d'iOS ; elle n'est envoyée à ton
+          ordinateur que lorsque tu crées une zone centrée ici.
         NSLocationAlwaysAndWhenInUseUsageDescription: >-
-          Pour que vos zones sans mémoire marchent même quand l'app est fermée : l'iPhone détecte l'entrée
-          ou la sortie d'une zone et IRIS envoie à votre ordinateur seulement le nom de code de la zone,
-          jamais votre position.
+          Pour que tes zones sans mémoire marchent même quand l'app est fermée : l'iPhone détecte l'entrée
+          ou la sortie d'une zone et IRIS envoie à ton ordinateur seulement le nom de code de la zone,
+          jamais ta position.
         NSLocalNetworkUsageDescription: >-
-          IRIS se connecte à votre ordinateur, qui fait le travail : à la maison par le réseau local,
-          dehors par votre réseau privé (Tailscale).
+          IRIS se connecte à ton ordinateur, qui fait le travail : à la maison par le réseau local,
+          dehors par ton réseau privé (Tailscale).
 
         # ---------------------------------------------------------------- arrière-plan
-        # audio : la réponse lue continue si l'écran se verrouille pendant la lecture.
+        # audio : la réponse lue continue si l'écran se verrouille pendant la lecture, et les alertes
+        # sonores activées continuent d'écouter en arrière-plan (indicateur de micro visible).
         # bluetooth-central : l'iPhone garde le lien avec les lunettes et est réveillé par elles.
         # location : les zones sans mémoire (surveillance de régions) réveillent l'app.
         # Aucun de ces modes ne permet d'écouter « Dis-moi Iris » en arrière-plan : iOS le réserve à Siri.
@@ -107,3 +116,20 @@ targets:
         # l'affiche alors comme « non chiffré » et refuse l'HTTP vers toute autre adresse.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+
+  # Tests unitaires des fonctions pures (trames des lunettes, mot d'activation, adresses, horodatages,
+  # refus du pont, billets, couleurs, zones, contrastes…). Hébergés par l'app (@testable import IRIS) :
+  # XcodeGen règle TEST_HOST et BUNDLE_LOADER pour une cible de tests qui dépend d'une application.
+  # Jamais lancés à ce jour : écrits sur Windows, sans compilateur Swift (voir COMPILER-SUR-MAC.md).
+  IRISTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: IRISTests
+    dependencies:
+      - target: IRIS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ca.velaglass.iris.tests
+        GENERATE_INFOPLIST_FILE: YES

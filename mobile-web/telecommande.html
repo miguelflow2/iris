@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr-CA">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#1B140E" />
-  <title>Iris — Télécommande</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <title>IRIS — Télécommande</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icone-192.png" />
   <style>
@@ -56,26 +57,35 @@
   </header>
 
   <h1>Télécommande</h1>
-  <p class="intro">Pilote ton ordinateur à distance. Iris exécute la commande chez elle et te
-    demande ton accord avant tout envoi ou toute action irréversible.</p>
+  <p class="intro">Envoie une commande écrite à IRIS, sur ton ordinateur resté à la maison, par le relais
+    VELA. IRIS l'exécute sur l'ordinateur avec ses outils habituels. Les courriels, textos et appels attendent
+    toujours ton accord ici. Les autres actions sur l'ordinateur (dont les suppressions) suivent le réglage
+    « Confirmation avant une commande » (IRIS › Réglages › Contrôle de l'ordinateur) : en mode « dangereuses »,
+    seules les commandes reconnues comme dangereuses te sont demandées ; avec « Jamais », rien n'est demandé.</p>
+  <p class="avert">Limites : l'ordinateur doit être allumé, connecté à Internet, avec la télécommande activée
+    (IRIS › Mode dehors) ; le délai de réponse dépend de la commande et du réseau et n'est pas garanti ; rien ne
+    s'exécute pendant qu'IRIS est verrouillée. Sans lunettes VELA présentes, les commandes écrites utilisent
+    l'aperçu limité d'IRIS, puis sont refusées.</p>
 
   <section class="carte" id="carte-connexion">
     <h2>Connexion</h2>
     <label for="relais">Adresse du relais</label>
-    <input id="relais" inputmode="url" autocomplete="off" placeholder="https://…trycloudflare.com" />
+    <input id="relais" inputmode="url" autocomplete="off" placeholder="https://relais.velaglass.ca" />
     <label for="courriel">Ton courriel VELA</label>
     <input id="courriel" inputmode="email" autocomplete="off" placeholder="toi@exemple.com" />
-    <label for="pairing">Code d'appairage (affiché par ton ordinateur)</label>
-    <input id="pairing" autocomplete="off" placeholder="ex. 3f9a1c22" />
+    <label for="pairing">Code d'appairage de ton ordinateur</label>
+    <input id="pairing" autocomplete="off" placeholder="8 caractères" />
+    <p class="avert">Ce code n'est pas encore affiché dans l'application IRIS : il est écrit dans le fichier
+      « telecommande-pairing » du dossier de données d'IRIS, sur l'ordinateur.</p>
     <button id="btn-connecter">Connecter</button>
     <div class="etat"><span class="point" id="point"></span><span id="etat-texte">Non connecté</span></div>
-    <p class="avert">Ton ordinateur doit tourner, avec la télécommande activée dans ses réglages.</p>
+    <p class="avert">L'adresse, le courriel et le code sont retenus dans ce navigateur seulement.</p>
   </section>
 
   <section class="carte" id="carte-commande" hidden>
     <h2>Commander</h2>
     <textarea id="commande" placeholder="Ex. : ouvre le bloc-notes, cherche le fichier budget, lance ma musique…"></textarea>
-    <button id="btn-envoyer" disabled>Envoyer à Iris</button>
+    <button id="btn-envoyer" disabled>Envoyer à IRIS</button>
   </section>
 
   <section class="carte" id="carte-accord" hidden>
@@ -94,7 +104,7 @@
     <div class="fil" id="fil"><div class="bulle sys">Connecte-toi pour commencer.</div></div>
   </section>
 
-  <a class="retour" href="index.html">← Revenir à la voix</a>
+  <a class="retour" href="index.html">← Retour</a>
 
   <script src="telecommande.js"></script>
 </body>

@@ -23,6 +23,44 @@ BATTERY_LEVEL_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
 DEVICE_NAME_UUID = "00002a00-0000-1000-8000-00805f9b34fb"
 # Indices de nom d'appareil : génériques et propres à VELA, sans nommer de fournisseur.
 GLASSES_HINTS = ("m01", "vela", "iris", "glass", "lunette", "smart")
+# Contre-vérification du 2026-09-14 : n'importe quel appareil Bluetooth basse énergie connecté par
+# POST /api/glasses/connect était enregistré comme « les lunettes », sous le nom fourni par l'appelant, et valait
+# preuve de présence. Un appareil n'est retenu comme lunettes VELA que s'il expose l'une de ces signatures :
+# l'écriture ae01 ET la notification ae02 dans un même service, ou le canal de commande des lunettes (de5bf72a…).
+# Limite dite telle quelle : c'est une signature logicielle, pas une preuve cryptographique (voir signature_vela).
+SIGNATURES_VELA = frozenset((
+    "0000ae00-0000-1000-8000-00805f9b34fb", "0000ae01-0000-1000-8000-00805f9b34fb",
+    "0000ae02-0000-1000-8000-00805f9b34fb", "0000ae03-0000-1000-8000-00805f9b34fb",
+    "0000ae3b-0000-1000-8000-00805f9b34fb", "de5bf72a-d711-4e47-af26-65e3012a5dc7",
+))
+MESSAGE_PAS_DES_LUNETTES = (
+    "Cet appareil Bluetooth n'expose aucun service des lunettes VELA : il n'est pas enregistré comme lunettes."
+)
+
+
+CANAL_COMMANDE_AUDIO = "de5bf72a-d711-4e47-af26-65e3012a5dc7"
+ECRITURE_RCSP = "0000ae01-0000-1000-8000-00805f9b34fb"
+NOTIFICATION_RCSP = "0000ae02-0000-1000-8000-00805f9b34fb"
+
+
+def signature_vela(services: list[dict]) -> bool:
+    """L'appareil connecté expose-t-il ce dont IRIS se sert réellement sur les lunettes VELA ?
+
+    Finition B du 2026-09-14 : un service 0000ae00 annoncé SEUL suffisait. Ces UUID courts sont ceux du profil
+    générique du fabricant de la puce, présents sur beaucoup d'appareils bon marché, et un appareil qui annonçait
+    ae00 avec le nom du micro intégré du PC devenait « les lunettes ». La signature exige maintenant, soit le canal
+    de commande des lunettes audio (de5bf72a, prouvé sur la paire M01 Pro), soit un même service qui porte À LA FOIS
+    l'écriture ae01 et la notification ae02 — les deux dont le module caméra a besoin (SDK des lunettes-caméra).
+    Limite dite telle quelle : c'est encore une signature logicielle, pas une preuve cryptographique ; une autre
+    puce du même fabricant qui expose ae01 et ae02 passerait. La preuve positive (motif du nom des lunettes
+    vendues, vérifié sur le vrai matériel) reste à établir."""
+    for service in services or []:
+        caracteristiques = {str(car.get("uuid") or "").lower() for car in service.get("characteristics") or []}
+        if CANAL_COMMANDE_AUDIO in caracteristiques:
+            return True
+        if ECRITURE_RCSP in caracteristiques and NOTIFICATION_RCSP in caracteristiques:
+            return True
+    return False
 
 
 def now_iso() -> str:
@@ -249,12 +287,29 @@ class GlassesService:
                     if attempt < attempts:
                         await self.scan(4.0)
                     continue
+                services = await self._on_ble(self._ble_subscribe(client))
+                if not signature_vela(services):
+                    try:
+                        await self._on_ble(client.disconnect())
+                    except Exception:
+                        pass
+                    self.error = MESSAGE_PAS_DES_LUNETTES
+                    log.warning("connexion refusée : appareil sans signature des lunettes VELA")
+                    return self.status()
                 self.client = client
-                self.device = {"address": address, "name": name or getattr(target, "name", None) or address}
+                # Le nom retenu est celui qu'ANNONCE l'appareil (nom GATT lu plus bas, sinon nom vu au scan),
+                # jamais celui fourni par l'appelant : il sert ensuite de preuve dans la liste des micros.
+                vu_au_scan = self._found.get(address_key)
+                annonce = (getattr(vu_au_scan, "name", None) or "").strip()
+                self.device = {"address": address, "name": annonce or address}
                 self.connected_at = now_iso()
-                self.services = await self._on_ble(self._ble_subscribe(client))
+                self.services = services
                 await self._on_ble(self._read_basics(client))
-                self.settings.update({"glasses": {"address": address, "name": self.device["name"], "auto_connect": self.settings.user.glasses.auto_connect}})
+                nom_retenu = self.device["name"] if self.device["name"] != address else ""
+                memorise = self.settings.user.glasses
+                if not nom_retenu and (memorise.address or "").upper() == address_key:
+                    nom_retenu = memorise.name  # même appareil, nom illisible cette fois : on garde celui déjà prouvé
+                self.settings.update({"glasses": {"address": address, "name": nom_retenu, "auto_connect": self.settings.user.glasses.auto_connect}})
                 self.hub.publish("glasses.connected", device=self.device)
                 return self.status()
             self.error = (

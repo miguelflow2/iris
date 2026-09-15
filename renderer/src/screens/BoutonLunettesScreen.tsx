@@ -14,6 +14,11 @@ import './AccessibiliteScreen.css'
    2 s sans toucher, puis quelques secondes d'appuis. L'échec est un résultat
    possible et normal (beaucoup de boutons ne sortent pas des lunettes) : il est
    dit tel quel, sans promesse.
+
+   La caméra des lunettes n'est pas encore activée par le service (protocole de
+   la trame photo non confirmé, lunettes_camera.py) : tout mode qui prend une
+   photo est refusé. L'écran le dit AVANT l'apprentissage et propose le mode
+   « Décris l'écran », qui fonctionne.
    ========================================================================= */
 
 interface EtatBouton {
@@ -35,6 +40,9 @@ interface ModeVision {
 type Phase = { etat: 'reference' | 'appuyez'; fin: number; total: number } | null
 
 const DUREE_APPUI_S = 6
+const MODE_ECRAN = 'ecran'
+const CAMERA_NON_ACTIVEE =
+  'La caméra des lunettes n’est pas encore activée dans IRIS (protocole non confirmé) : un appui avec un mode qui prend une photo sera refusé. En attendant, choisissez le mode « Décris l’écran », qui décrit l’écran de cet ordinateur.'
 
 const ACTIONS: Record<string, string> = {
   decrire: 'description lancée',
@@ -138,8 +146,18 @@ export function BoutonLunettesScreen({ params: _params }: { params?: Record<stri
     }
   }
 
+  const choisirMode = (mode: string): void => {
+    updateSettings({ bouton_description_mode: mode })
+      .then(charger)
+      .catch((err: unknown) => toast(messageErreur(err), 'error'))
+  }
+
   const connectees = Boolean(etat?.lunettes_connectees)
   const derniere = etat?.derniere_action
+  const modeCourant = etat?.mode || 'scene'
+  const modePhoto = modeCourant !== MODE_ECRAN
+  const nomEcran = modes.find((m) => m.id === MODE_ECRAN)?.nom || 'Décris l’écran'
+  const descriptionIndisponible = etat !== null && !etat.description_disponible
 
   return (
     <div className="ecran">
@@ -150,9 +168,19 @@ export function BoutonLunettesScreen({ params: _params }: { params?: Record<stri
         <div className="carte col" style={{ gap: 8 }}>
           <h3 style={{ margin: 0 }}>Décrire d’un appui</h3>
           <div className="desc">
-            Si votre bouton envoie un signal à l’ordinateur, IRIS peut l’apprendre : un appui prendra alors une photo avec les lunettes et la décrira à voix haute,
-            quelques secondes plus tard.
+            Si votre bouton envoie un signal à l’ordinateur, IRIS peut l’apprendre : un appui lancera alors le mode choisi plus bas, et le résultat sera lu à
+            voix haute quelques secondes plus tard.
           </div>
+          {descriptionIndisponible ? (
+            <div className="bloc-note attention">
+              La description visuelle n’est pas disponible sur cet ordinateur : un appui ne déclenchera qu’une phrase qui le dit.
+            </div>
+          ) : modePhoto ? (
+            <div className="bloc-note attention">
+              {CAMERA_NON_ACTIVEE}{' '}
+              <button type="button" className="btn sm" onClick={() => choisirMode(MODE_ECRAN)}>Choisir « {nomEcran} »</button>
+            </div>
+          ) : null}
         </div>
 
         {etat && !connectees && !absentes ? (
@@ -181,7 +209,17 @@ export function BoutonLunettesScreen({ params: _params }: { params?: Record<stri
           )}
           {erreur ? <div className="bloc-note erreur" role="alert">{erreur}</div> : null}
           {resultat?.etat === 'appris' ? (
-            <div className="bloc-note ok" role="status">Bouton appris. Appuyez-y pour essayer : une description devrait suivre en quelques secondes.</div>
+            descriptionIndisponible ? (
+              <div className="bloc-note attention" role="status">Bouton appris. La description visuelle n’est pas disponible sur cet ordinateur : un appui ne déclenchera qu’une phrase qui le dit.</div>
+            ) : modePhoto ? (
+              <div className="bloc-note attention" role="status">
+                Bouton appris. Le mode choisi prend une photo avec les lunettes, et leur caméra n’est pas encore activée : un appui sera refusé. Pour
+                l’essayer maintenant, choisissez « {nomEcran} ».{' '}
+                <button type="button" className="btn sm" onClick={() => choisirMode(MODE_ECRAN)}>Choisir « {nomEcran} »</button>
+              </div>
+            ) : (
+              <div className="bloc-note ok" role="status">Bouton appris. Appuyez-y pour essayer : la description de l’écran devrait être lue en quelques secondes.</div>
+            )
           ) : resultat?.etat === 'echec' ? (
             <div className="bloc-note erreur" role="alert">Échec de l’apprentissage : {resultat.raison || 'aucun signal utilisable reçu.'}</div>
           ) : null}
@@ -198,13 +236,15 @@ export function BoutonLunettesScreen({ params: _params }: { params?: Record<stri
           ) : (
             <div className="desc">Aucun bouton appris pour le moment.</div>
           )}
-          <Field label="Ce que déclenche l’appui" hint="Le mode « Décris l’écran » capture l’écran de l’ordinateur au lieu de prendre une photo.">
-            <select
-              className="select"
-              value={etat?.mode || 'scene'}
-              onChange={(e) => updateSettings({ bouton_description_mode: e.target.value }).then(charger).catch((err: unknown) => toast(messageErreur(err), 'error'))}
-            >
-              {(modes.length ? modes : [{ id: 'scene', nom: 'Qu’est-ce qu’il y a devant moi ?' }]).map((m) => (
+          <div className="small">
+            Description visuelle sur cet ordinateur : {etat === null ? '…' : etat.description_disponible ? 'disponible' : 'indisponible'}
+          </div>
+          <Field
+            label="Ce que déclenche l’appui"
+            hint={`Le mode « ${nomEcran} » capture l’écran de l’ordinateur ; les autres modes prennent une photo avec les lunettes, refusée tant que leur caméra n’est pas activée.`}
+          >
+            <select className="select" value={modeCourant} onChange={(e) => choisirMode(e.target.value)}>
+              {(modes.length ? modes : [{ id: 'scene', nom: 'Qu’est-ce qu’il y a devant moi ?' }, { id: MODE_ECRAN, nom: 'Décris l’écran' }]).map((m) => (
                 <option key={m.id} value={m.id}>{m.nom}</option>
               ))}
             </select>

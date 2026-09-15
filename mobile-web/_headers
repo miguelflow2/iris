@@ -1,26 +1,20 @@
-# En-têtes Netlify pour l'app web téléphone d'IRIS (format : chemin, puis en-têtes indentés).
+# En-têtes Netlify de l'ANCIEN site téléphone d'IRIS (format : chemin, puis en-têtes indentés).
 #
-# ── Pourquoi PAS de Content-Security-Policy stricte ici (contrairement au site vitrine) ──
-# Le cœur de cette app est le widget vocal ElevenLabs : il charge un script depuis elevenlabs.io,
-# puis ouvre des connexions temps réel (WebRTC/WebSocket) vers des serveurs média dont la liste
-# n'est ni fixe ni publiée. Une CSP trop serrée casserait la voix SANS message visible — exactement
-# le « déploiement menteur » que ce projet s'interdit. On garde donc les autres protections, et on
-# laisse la CSP ouverte tant qu'on n'a pas vérifié en direct la liste exacte des domaines à autoriser.
-# Pour la durcir plus tard : ouvrir l'app, parler à Iris, relever dans l'onglet Réseau du navigateur
-# les origines réellement contactées, puis composer script-src / connect-src / media-src en
-# conséquence et tester que la voix marche encore avant de livrer.
+# ── État au 2026-09-14 : index.html remplacé par une page d'information ──
+# L'ancienne page intégrait le widget vocal d'un fournisseur tiers ; elle est remplacée par une page sans
+# script tiers ni identifiant d'agent, qui renvoie à la page téléphone servie par l'ordinateur (/m).
+# « script-src 'self' » reste : aucun script d'un autre domaine ne peut revenir par erreur.
 
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  # Le micro est autorisé pour cette origine ET pour elevenlabs.io — selon sa version, le widget
-  # vocal tourne en page ou dans un cadre elevenlabs.io ; autoriser les deux évite un micro bloqué
-  # en silence.
-  # Caméra, position et écran allumé : autorisés pour cette origine seulement (2026-09-13). Les
-  # fonctions du téléphone (photo à décrire, guidage, zones sans mémoire, vision partagée) en ont
-  # besoin ; les bloquer ici les ferait échouer sans un mot si elles sont un jour servies par ce site.
+  Content-Security-Policy: script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
+  X-Frame-Options: DENY
+  # Ancien site, pas une page à trouver par un moteur de recherche.
+  X-Robots-Tag: noindex, nofollow
+  # Micro, caméra, position et écran allumé : cette origine seulement (plus aucun domaine de fournisseur).
   # Paiement et USB restent fermés. La page de référence reste /m, servie par l'ordinateur (README).
-  Permissions-Policy: microphone=(self "https://elevenlabs.io"), camera=(self), geolocation=(self), screen-wake-lock=(self), payment=(), usb=()
+  Permissions-Policy: microphone=(self), camera=(self), geolocation=(self), screen-wake-lock=(self), payment=(), usb=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 # L'agent de service ne doit JAMAIS être servi depuis le cache du navigateur : sinon une nouvelle

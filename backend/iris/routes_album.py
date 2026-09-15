@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .album import ServiceAlbum
+from .lunettes_presence import exiger_lunettes, exiger_lunettes_pc
 
 
 class NomIn(BaseModel):
@@ -49,6 +50,7 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/album/bd")
     async def bd(body: NomIn):
+        exiger_lunettes(ctx, "lumiere_bd")
         return await service.bd(body.nom)
 
     @routeur.post("/api/album/exporter")
@@ -57,6 +59,7 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/traduction/ecran")
     async def traduction_ecran(body: TraductionEcranIn):
+        exiger_lunettes_pc(ctx, "traduction_ecran")  # capture de l'écran de l'ordinateur
         return await service.traduire_ecran(body.langue_cible)
 
     routeur.iris_demarrage = service.demarrer  # type: ignore[attr-defined]

@@ -27,16 +27,20 @@ import json
 import logging
 import os
 import re
+import secrets
+import smtplib
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from threading import Lock
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -309,6 +313,208 @@ def lire_jeton(jeton: str) -> dict | None:
         }
     except Exception:
         return None
+
+
+# --------------------------------------------------------------------------- limitation de débit
+# Fenêtres glissantes en mémoire (constat du 2026-09-14 : /api/appareil n'était pas limité). Un redémarrage
+# du relais les remet à zéro : c'est un frein contre l'abus, pas une comptabilité.
+APPAREIL_PAR_IP = 30
+APPAREIL_PAR_COURRIEL = 10
+FENETRE_APPAREIL_S = 900.0
+_TENTATIVES: dict[str, list[float]] = {}
+_TENTATIVES_VERROU = Lock()
+
+
+def adresse_ip(entetes, client) -> str:
+    """L'adresse de l'appelant. Derrière le mandataire de l'hébergeur, on prend la DERNIÈRE entrée de
+    X-Forwarded-For (celle qu'ajoute le mandataire le plus proche ; les premières sont forgeables)."""
+    transmis = (entetes.get("x-forwarded-for") or "") if entetes is not None else ""
+    if transmis.strip():
+        return transmis.split(",")[-1].strip()[:64]
+    return ((getattr(client, "host", "") if client else "") or "inconnue")[:64]
+
+
+def limiter(cles: list[str], maximum: int, fenetre_s: float) -> float:
+    """Compte une tentative pour chaque clé ; renvoie le délai d'attente en secondes (0 = permis, rien n'est
+    compté si l'une des clés est déjà au plafond)."""
+    maintenant = time.time()
+    with _TENTATIVES_VERROU:
+        if len(_TENTATIVES) > 20000:
+            for cle in [c for c, t in _TENTATIVES.items() if not t or t[-1] < maintenant - 3600 * 24]:
+                _TENTATIVES.pop(cle, None)
+        attente = 0.0
+        for cle in cles:
+            recentes = [t for t in _TENTATIVES.get(cle, []) if t > maintenant - fenetre_s]
+            _TENTATIVES[cle] = recentes
+            if len(recentes) >= maximum:
+                attente = max(attente, recentes[0] + fenetre_s - maintenant)
+        if attente > 0:
+            return attente
+        for cle in cles:
+            _TENTATIVES[cle].append(maintenant)
+    return 0.0
+
+
+# --------------------------------------------------------------------------- liaison ordinateur ↔ courriel
+# Constat bloquant du 2026-09-14. Le jeton d'appareil s'obtient sans preuve pour n'importe quel courriel :
+# il ne peut donc pas, à lui seul, désigner l'ordinateur qui reçoit un verrouillage ou un effacement. Un
+# ordinateur est LIÉ à un courriel quand :
+# 1. il a publié une clé secrète de 32 octets (générée chez lui) par POST /api/appareil/liaison ;
+# 2. le propriétaire du courriel a ouvert le lien envoyé à cette adresse et confirmé (POST /api/appareil/confirmer).
+# Ensuite, /appareil/ws exige de lui la preuve d'un défi (HMAC-SHA256 de la clé sur un nonce tiré ici) : un
+# ordinateur qui ne la donne pas ne peut ni remplacer l'ordinateur lié, ni recevoir de message « verrou ».
+# La clé est gardée ici emballée (XOR avec une clé dérivée de VELA_SECRET et d'un identifiant propre à chaque
+# liaison) : le fichier de données seul ne suffit pas à se faire passer pour l'ordinateur.
+# Limites dites telles quelles : sans serveur de courriel configuré (VELA_SMTP_HOTE), aucune liaison ne peut être
+# confirmée, et le verrouillage à distance reste inutilisable ; tant qu'aucun ordinateur n'est lié à un courriel,
+# la télécommande garde l'ancien fonctionnement (le dernier ordinateur connecté remplace le précédent).
+FICHIER_LIAISONS = "liaisons-pc.json"
+DUREE_CONFIRMATION_S = 24 * 3600.0
+RENVOI_CONFIRMATION_S = 600.0
+LIAISONS_PAR_IP = 20  # demandes de liaison par heure depuis une adresse
+LIAISONS_PAR_CLE = 5  # par (courriel, clé d'ordinateur) et par jour
+LIAISONS_PAR_COURRIEL_IP = 5  # par (courriel, adresse) et par jour : un tiers n'épuise pas le quota de la victime
+COURRIELS_LIAISON_PAR_JOUR = 20  # anti-pourriel ; au-delà, les attentes restent confirmables par un lien déjà reçu
+ATTENTES_PAR_COURRIEL = 20
+# Finition B du 2026-09-14 : une rafale de clés depuis quelques adresses évinçait l'attente du propriétaire. Une
+# adresse garde au plus ATTENTES_PAR_ADRESSE attentes pour un courriel (deux ordinateurs derrière la même box) ; quand
+# la table du courriel est pleine, seule cède l'attente la moins récemment vue d'une adresse qui en garde PLUSIEURS.
+# L'attente seule de son adresse (celle du propriétaire, en pratique) ne cède jamais ; si toutes sont seules, la
+# nouvelle demande est refusée. Limite dite : un tiers disposant de ATTENTES_PAR_COURRIEL adresses distinctes
+# empêche une NOUVELLE attente pendant 24 h, sans jamais retirer celles qui existent.
+ATTENTES_PAR_ADRESSE = 2
+ECHECS_CONFIRMATION_MAX = 5  # codes erronés recopiés depuis un même lien
+CONFIRMATIONS_PAR_IP = 20
+FENETRE_PREUVE_S = 300.0
+ITERATIONS_MIN, ITERATIONS_MAX = 100_000, 2_000_000
+_COURRIEL_VALIDE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}$")
+_LIAISONS_VERROU = Lock()
+_PREUVES_VUES: dict[str, float] = {}
+MESSAGE_PC_NON_LIE = (
+    "Un autre ordinateur est lié à ce compte pour le verrouillage à distance. Limite actuelle : un seul ordinateur "
+    "par compte peut être lié, et tant qu'il l'est, les autres ordinateurs du compte ne reçoivent ni la "
+    "télécommande du téléphone ni la création de partage. Pour lier celui-ci à sa place, activez le verrouillage "
+    "à distance dans IRIS et confirmez le courriel reçu avec le code affiché."
+)
+
+
+def _cle_emballage(courriel: str, ident: str) -> bytes:
+    return hmac.new(SECRET_JETON, f"liaison-pc|{courriel}|{ident}".encode("utf-8"), hashlib.sha256).digest()
+
+
+def _xor(a: bytes, b: bytes) -> bytes:
+    return bytes(x ^ y for x, y in zip(a, b))
+
+
+def _lire_liaisons() -> dict:
+    donnees = _lire(FICHIER_LIAISONS)
+    return donnees if isinstance(donnees, dict) else {}
+
+
+def smtp_configure() -> bool:
+    return bool(os.environ.get("VELA_SMTP_HOTE", "").strip())
+
+
+def envoyer_courriel(destinataire: str, sujet: str, corps: str) -> bool:
+    """Envoie un courriel par SMTP (variables VELA_SMTP_*). Bloquant : à appeler dans un fil. Ne lève jamais ;
+    le destinataire et le contenu ne sont pas journalisés."""
+    hote = os.environ.get("VELA_SMTP_HOTE", "").strip()
+    if not hote:
+        return False
+    try:
+        port = int(os.environ.get("VELA_SMTP_PORT", "587") or 587)
+    except ValueError:
+        port = 587
+    message = EmailMessage()
+    message["From"] = os.environ.get("VELA_COURRIEL_EXPEDITEUR", "").strip() or "VELA <no-reply@velaglass.ca>"
+    message["To"] = destinataire
+    message["Subject"] = sujet
+    message.set_content(corps)
+    try:
+        serveur = smtplib.SMTP_SSL(hote, port, timeout=20) if port == 465 else smtplib.SMTP(hote, port, timeout=20)
+        with serveur:
+            if port != 465 and os.environ.get("VELA_SMTP_TLS", "1").strip().lower() not in ("0", "non", "false"):
+                serveur.starttls()
+            utilisateur = os.environ.get("VELA_SMTP_UTILISATEUR", "").strip()
+            if utilisateur:
+                serveur.login(utilisateur, os.environ.get("VELA_SMTP_MOTDEPASSE", ""))
+            serveur.send_message(message)
+        return True
+    except Exception as exc:
+        log.warning("liaison : courriel de confirmation non envoyé (%s)", type(exc).__name__)
+        return False
+
+
+def liaison_confirmee(courriel: str) -> dict | None:
+    fiche = _lire_liaisons().get(normaliser(courriel))
+    if isinstance(fiche, dict) and fiche.get("confirme_le") and fiche.get("cle"):
+        return fiche
+    return None
+
+
+def _cle_de(courriel: str, fiche: dict) -> bytes | None:
+    try:
+        emballee = _debase64(str(fiche["cle"]))
+        return _xor(emballee, _cle_emballage(courriel, str(fiche["id"])))
+    except Exception:
+        return None
+
+
+def verifier_preuve_pc(courriel: str, message: str, preuve: str) -> bool:
+    """La preuve (HMAC-SHA256, base64 URL) a-t-elle été faite avec la clé de l'ordinateur LIÉ à ce courriel ?"""
+    courriel = normaliser(courriel)
+    fiche = liaison_confirmee(courriel)
+    cle = _cle_de(courriel, fiche) if fiche else None
+    if not cle or not isinstance(preuve, str) or len(preuve) > 128:
+        return False
+    attendue = _b64(hmac.new(cle, message.encode("utf-8"), hashlib.sha256).digest())
+    return hmac.compare_digest(attendue, preuve)
+
+
+def verifier_preuve_horodatee(courriel: str, contexte: str, horodatage: Any, preuve: str) -> bool:
+    """Preuve sans aller-retour (création d'un partage) : HMAC de « contexte|v1|courriel|horodatage », horodatage
+    à moins de FENETRE_PREUVE_S de l'heure du relais, et chaque preuve n'est acceptée qu'une fois."""
+    try:
+        instant = int(horodatage)
+    except (TypeError, ValueError):
+        return False
+    maintenant = time.time()
+    if abs(maintenant - instant) > FENETRE_PREUVE_S:
+        return False
+    courriel = normaliser(courriel)
+    if not verifier_preuve_pc(courriel, f"{contexte}|v1|{courriel}|{instant}", preuve):
+        return False
+    with _LIAISONS_VERROU:
+        for vue in [p for p, t in _PREUVES_VUES.items() if t < maintenant - 2 * FENETRE_PREUVE_S]:
+            _PREUVES_VUES.pop(vue, None)
+        if preuve in _PREUVES_VUES:
+            return False
+        _PREUVES_VUES[preuve] = maintenant
+    return True
+
+
+def publier_infos_verrou(courriel: str, infos: Any) -> None:
+    """Sel et nombre d'itérations du code de secours, publiés par l'ordinateur LIÉ (jamais le code) : la page
+    /verrou en a besoin pour calculer sa preuve. Ignoré si mal formé."""
+    courriel = normaliser(courriel)
+    sel, iterations = None, None
+    if isinstance(infos, dict):
+        try:
+            brut = _debase64(str(infos.get("sel") or ""))
+            valeur = int(infos.get("iterations") or 0)
+            if 16 <= len(brut) <= 64 and ITERATIONS_MIN <= valeur <= ITERATIONS_MAX:
+                sel, iterations = _b64(brut), valeur
+        except Exception:
+            sel, iterations = None, None
+    with _LIAISONS_VERROU:
+        liaisons = _lire_liaisons()
+        fiche = liaisons.get(courriel)
+        if not isinstance(fiche, dict) or not fiche.get("confirme_le"):
+            return
+        if fiche.get("sel") == sel and fiche.get("iterations") == iterations:
+            return
+        fiche["sel"], fiche["iterations"] = sel, iterations
+        _ecrire(FICHIER_LIAISONS, liaisons)
 
 
 # --------------------------------------------------------------------------- quotas
@@ -594,6 +800,9 @@ def sante():
         # La voix a sa propre monnaie : ElevenLabs facture au caractère, pas au jeton.
         "plafond_caracteres": PLAFOND_CARACTERES_GLOBAL,
         "caracteres": int(compteurs.get("tous|caracteres", 0)) if compteurs.get("mois") == _mois() else 0,
+        # Contre-vérification du 2026-09-14 : sans serveur de courriel, aucun ordinateur ne peut être lié, donc
+        # le verrouillage à distance n'atteint personne. Dit ici, et lu par la page /verrou pour l'écrire.
+        "liaison_possible": smtp_configure(),
     }
     if not ok:
         reponse["detail"] = ("aucune cle IA configuree (VELA_OPENROUTER_KEY ou VELA_ANTHROPIC_KEY)"
@@ -602,9 +811,16 @@ def sante():
 
 
 @app.post("/api/appareil")
-def enregistrer_appareil(corps: Appareil):
+def enregistrer_appareil(corps: Appareil, request: Request):
     """Premier contact d'une installation d'IRIS. Aucun mot de passe : le jeton n'ouvre l'accès
-    qu'à l'IA, jamais aux données de qui que ce soit."""
+    qu'à l'IA, jamais aux données de qui que ce soit. Il ne prouve PAS que le courriel appartient à
+    l'appelant : piloter ou verrouiller un ordinateur exige en plus la liaison confirmée par courriel
+    (voir « liaison ordinateur ↔ courriel » plus bas). Limité en débit (constat du 2026-09-14)."""
+    delai = limiter([f"appareil-ip:{adresse_ip(request.headers, request.client)}"], APPAREIL_PAR_IP, FENETRE_APPAREIL_S) \
+        or limiter([f"appareil-courriel:{normaliser(corps.email)}"], APPAREIL_PAR_COURRIEL, FENETRE_APPAREIL_S)
+    if delai:
+        raise HTTPException(429, "Trop de demandes d'accès en peu de temps. Réessayez dans quelques minutes.",
+                            headers={"Retry-After": str(int(delai) + 1)})
     if not CLE_AMONT and not CLE_ANTHROPIC:
         raise HTTPException(503, "Le relais n'a pas de clé IA configurée.")
     etat = abonnement(corps.email)
@@ -861,6 +1077,402 @@ async def completions(request: Request, authorization: str | None = Header(defau
     return StreamingResponse(flux(), media_type="text/event-stream")
 
 
+# --------------------------------------------------------------------------- liaison : routes
+ENTETES_PAGES_SENSIBLES = {
+    "Cache-Control": "no-store",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+                                "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"),
+    "X-Content-Type-Options": "nosniff",
+    "X-Robots-Tag": "noindex",
+}
+
+
+def _base_publique(request: Request) -> str:
+    """Adresse du relais pour le lien de confirmation envoyé par courriel. VELA_URL_PUBLIQUE prime (à définir en
+    production). Sans elle, on ne suit PAS X-Forwarded-Host : ce lien part chez le propriétaire du courriel, et
+    c'est l'appelant qui choisit cet en-tête — il y mettrait son propre site pour recevoir le jeton de
+    confirmation dès que le lien est ouvert. Seul l'en-tête Host (celui par lequel l'hébergeur a routé la
+    requête jusqu'ici) sert, en HTTPS sauf sur un poste local."""
+    imposee = os.environ.get("VELA_URL_PUBLIQUE", "").strip().rstrip("/")
+    if imposee:
+        return imposee
+    hote = (request.headers.get("host") or "").split(",")[0].strip()
+    if not re.match(r"^[A-Za-z0-9.\-]+(:\d{1,5})?$", hote):
+        hote = request.url.netloc
+    local = hote.split(":")[0].lower() in ("localhost", "127.0.0.1", "testserver")
+    return f"{'http' if local else 'https'}://{hote}"
+
+
+async def _corps_json(request: Request) -> dict:
+    # Lu à la main : une erreur de validation automatique renverrait les valeurs reçues (clé comprise).
+    try:
+        corps = await request.json()
+    except Exception:
+        corps = None
+    return corps if isinstance(corps, dict) else {}
+
+
+@app.post("/api/appareil/liaison")
+async def demander_liaison(request: Request):
+    """Un ordinateur demande à être lié au courriel de son jeton, avec sa clé. Rien n'est lié avant la
+    confirmation par courriel. Réponses : 200 confirmee · 202 en_attente · 503 confirmation_indisponible.
+    La réponse porte `empreinte` : le code de 6 caractères qu'IRIS affiche et que la page de confirmation
+    demande de recopier.
+
+    Contre-vérification du 2026-09-14 : une seule attente par courriel, écrasée à chaque demande, et un
+    compteur de 5 demandes par jour partagé par tous. Un tiers muni d'un jeton pour le courriel de la victime
+    épuisait ce compteur (le vrai PC recevait 429 pendant 24 h) et le seul lien encore valable liait SA clé.
+    Désormais : une attente PAR CLÉ (indexée par empreinte), des limites par (courriel, clé), par (courriel,
+    adresse IP) et par adresse IP, et la confirmation exige de recopier l'empreinte affichée dans IRIS — un lien
+    ouvert ne lie jamais la clé d'un autre ordinateur, et n'importe quel lien encore valable lie la sienne."""
+    corps = await _corps_json(request)
+    info = lire_jeton(str(corps.get("jeton") or ""))
+    courriel = normaliser((info or {}).get("courriel") or "")
+    if not info or not _COURRIEL_VALIDE.match(courriel):
+        return JSONResponse({"etat": "refuse", "message": "Jeton d'appareil invalide, ou aucun courriel de compte."},
+                            status_code=401)
+    try:
+        cle = _debase64(str(corps.get("cle") or ""))
+    except Exception:
+        cle = b""
+    if len(cle) != 32:
+        return JSONResponse({"etat": "invalide", "message": "Clé d'ordinateur mal formée."}, status_code=422)
+    machine = " ".join(str(corps.get("machine") or "").split())[:64] or "ordinateur"
+    empreinte = empreinte_cle(cle)
+    maintenant = time.time()
+    fiche = _lire_liaisons().get(courriel)
+    fiche = fiche if isinstance(fiche, dict) else {}
+    if fiche.get("confirme_le"):
+        actuelle = _cle_de(courriel, fiche)
+        if actuelle and hmac.compare_digest(actuelle, cle):
+            return {"etat": "confirmee", "empreinte": empreinte,
+                    "message": "Cet ordinateur est lié à votre compte pour le verrouillage à distance."}
+    message_attente = (
+        "Un courriel de confirmation a été envoyé à l'adresse de votre compte VELA. Ouvrez son lien (valable "
+        f"24 heures) et recopiez le code {empreinte} affiché ici pour lier cet ordinateur au verrouillage à distance."
+    )
+    ip = adresse_ip(request.headers, request.client)
+    deja = _attentes_valides(fiche, maintenant).get(empreinte)
+    if deja and _cle_attente(courriel, deja) == cle:
+        # Finition B du 2026-09-14 : IRIS redemande la liaison à chaque reconnexion (réveil du portable, redémarrage
+        # du relais). Chaque relance après 10 minutes renvoyait un courriel, REMPLAÇAIT l'attente (le lien du courriel
+        # précédent donnait 410) et comptait dans LIAISONS_PAR_CLE : à la 6e, IRIS affichait « Trop de demandes »
+        # alors qu'un lien valable attendait dans la boîte. Tant que l'attente de CETTE clé est valable, aucune relance
+        # n'envoie de courriel, ne remplace le lien, ni ne compte dans les limites.
+        _toucher_attente(courriel, empreinte, maintenant, _empreinte_ip(courriel, ip))
+        premiere = maintenant - float(deja.get("envoye_a") or 0) < RENVOI_CONFIRMATION_S and deja.get("jeton")
+        return JSONResponse({"etat": "en_attente", "empreinte": empreinte,
+                             "message": message_attente if premiere else _message_deja_envoye(deja, empreinte, maintenant)},
+                            status_code=202)
+    delai = limiter([f"liaison-ip:{ip}"], LIAISONS_PAR_IP, 3600.0) \
+        or limiter([f"liaison-cle:{courriel}|{empreinte}"], LIAISONS_PAR_CLE, 24 * 3600.0) \
+        or limiter([f"liaison-courriel-ip:{courriel}|{ip}"], LIAISONS_PAR_COURRIEL_IP, 24 * 3600.0)
+    if delai:
+        return JSONResponse({"etat": "trop_de_demandes", "empreinte": empreinte,
+                             "message": "Trop de demandes de liaison depuis cet ordinateur. Réessayez plus tard."},
+                            status_code=429, headers={"Retry-After": str(int(delai) + 1)})
+    if not smtp_configure():
+        return JSONResponse({"etat": "confirmation_indisponible",
+                             "message": ("Le relais VELA ne peut pas envoyer de courriel de confirmation pour le moment : cet "
+                                         "ordinateur ne peut pas encore être lié au verrouillage à distance.")},
+                            status_code=503)
+    trop_plein = _place_pour_attente(fiche, _empreinte_ip(courriel, ip), empreinte, maintenant)
+    if trop_plein:
+        return JSONResponse({"etat": "trop_de_demandes", "empreinte": empreinte, "message": trop_plein},
+                            status_code=429, headers={"Retry-After": "3600"})
+    ident = secrets.token_hex(8)
+    jeton_confirmation = secrets.token_urlsafe(32)
+    nouvelle = {"id": ident, "cle": _b64(_xor(cle, _cle_emballage(courriel, ident))), "machine": machine,
+                "jeton": hashlib.sha256(jeton_confirmation.encode()).hexdigest(), "cree": maintenant,
+                "envoye_a": maintenant, "vu_a": maintenant, "echecs": 0, "ip": _empreinte_ip(courriel, ip)}
+    # Anti-pourriel : au plus COURRIELS_LIAISON_PAR_JOUR courriels par adresse. Au-delà, l'attente est quand même
+    # gardée : la page de n'importe quel lien encore valable (reçu dans les 24 h) accepte le code de CET ordinateur.
+    if not limiter([f"liaison-courriel:{courriel}"], COURRIELS_LIAISON_PAR_JOUR, 24 * 3600.0):
+        lien = f"{_base_publique(request)}/appareil/confirmer/{jeton_confirmation}"
+        remplace = (" Si vous confirmez, il remplacera l'ordinateur lié jusqu'ici à votre compte." if fiche.get("confirme_le") else "")
+        corps_courriel = (
+            "Bonjour,\n\n"
+            f"Un ordinateur nommé « {machine} » demande à être lié à votre compte VELA pour recevoir les commandes de "
+            f"verrouillage et d'effacement à distance d'IRIS.{remplace}\n\n"
+            "Si c'est bien vous, ouvrez ce lien dans les 24 heures. La page vous demandera de recopier le code de "
+            "6 caractères affiché dans IRIS, sur votre ordinateur (Profil › Verrouillage à distance) :\n"
+            f"{lien}\n\n"
+            "Le nom de l'ordinateur ci-dessus vient de la demande elle-même : ne vous y fiez pas. Seul le code "
+            "affiché dans IRIS désigne votre ordinateur. Si IRIS ne vous en montre aucun, ne confirmez rien.\n\n"
+            "Si vous n'avez rien demandé, ignorez ce courriel : rien ne sera lié.\n\nVELA"
+        )
+        envoye = await asyncio.to_thread(envoyer_courriel, courriel, "VELA : confirmer l'ordinateur lié à votre compte",
+                                         corps_courriel)
+        if not envoye:
+            return JSONResponse({"etat": "courriel_non_envoye",
+                                 "message": "Le courriel de confirmation n'a pas pu partir. Réessayez dans quelques minutes."},
+                                status_code=502)
+    else:
+        nouvelle["jeton"] = ""  # aucun lien propre : on confirme par un lien déjà reçu
+        message_attente = (
+            "Plusieurs courriels de confirmation ont déjà été envoyés aujourd'hui à l'adresse de votre compte VELA. "
+            f"Ouvrez le plus récent (valable 24 heures) et recopiez le code {empreinte} affiché ici."
+        )
+    with _LIAISONS_VERROU:
+        liaisons = _lire_liaisons()
+        actuelle = liaisons.get(courriel) if isinstance(liaisons.get(courriel), dict) else {}
+        en_cours = _attentes_valides(actuelle, maintenant)
+        precedente = en_cours.get(empreinte)
+        if precedente and not nouvelle["jeton"]:
+            nouvelle["jeton"] = precedente.get("jeton") or ""
+        # Relu sous le verrou : une demande concurrente a pu remplir la table entre-temps. On n'évince jamais
+        # l'attente seule de son adresse (voir ATTENTES_PAR_ADRESSE).
+        refus = _place_pour_attente(actuelle, nouvelle["ip"], empreinte, maintenant, evincer=en_cours)
+        if refus:
+            return JSONResponse({"etat": "trop_de_demandes", "empreinte": empreinte, "message": refus},
+                                status_code=429, headers={"Retry-After": "3600"})
+        en_cours[empreinte] = nouvelle
+        actuelle.pop("attente", None)
+        actuelle["attentes"] = en_cours
+        liaisons[courriel] = actuelle
+        _ecrire(FICHIER_LIAISONS, liaisons)
+    return JSONResponse({"etat": "en_attente", "empreinte": empreinte, "message": message_attente}, status_code=202)
+
+
+def empreinte_cle(cle: bytes) -> str:
+    """Code court de la clé d'un ordinateur (6 caractères base32 de SHA-256), affiché par IRIS et recopié sur
+    la page de confirmation. Même calcul dans backend/iris/telecommande.py (empreinte_cle)."""
+    return base64.b32encode(hashlib.sha256(cle).digest()).decode("ascii")[:6]
+
+
+def _normaliser_empreinte(texte: Any) -> str:
+    """Base32 : ni 0, ni 1, ni 8 ; une saisie « O/0 », « I/1 » ou « B/8 » confondue est ramenée à la bonne lettre."""
+    brut = str(texte or "").upper().replace("0", "O").replace("1", "I").replace("8", "B")
+    return re.sub(r"[^A-Z2-7]", "", brut)[:6]
+
+
+def _attentes_valides(fiche: dict, maintenant: float) -> dict:
+    """Les attentes de confirmation d'un courriel, par empreinte, sans les expirées. Reprend l'ancien format
+    (une seule « attente »)."""
+    brutes = dict(fiche.get("attentes") or {}) if isinstance(fiche.get("attentes"), dict) else {}
+    ancienne = fiche.get("attente")
+    if isinstance(ancienne, dict) and ancienne.get("id"):
+        brutes.setdefault("ancienne-" + str(ancienne["id"]), ancienne)
+    return {e: a for e, a in brutes.items()
+            if isinstance(a, dict) and maintenant - float(a.get("cree") or 0) <= DUREE_CONFIRMATION_S}
+
+
+def _cle_attente(courriel: str, attente: dict) -> bytes | None:
+    try:
+        return _xor(_debase64(str(attente.get("cle"))), _cle_emballage(courriel, str(attente.get("id"))))
+    except Exception:
+        return None
+
+
+def _toucher_attente(courriel: str, empreinte: str, maintenant: float, ip: str | None = None) -> None:
+    with _LIAISONS_VERROU:
+        liaisons = _lire_liaisons()
+        fiche = liaisons.get(courriel)
+        attentes = fiche.get("attentes") if isinstance(fiche, dict) else None
+        attente = attentes.get(empreinte) if isinstance(attentes, dict) else None
+        if isinstance(attente, dict):
+            attente["vu_a"] = maintenant
+            if ip:
+                attente["ip"] = ip  # un portable change d'adresse : l'attente suit son ordinateur
+            _ecrire(FICHIER_LIAISONS, liaisons)
+
+
+MESSAGE_TROP_D_ATTENTES = (
+    "Trop d'ordinateurs attendent déjà une confirmation pour ce compte VELA. Les demandes non confirmées expirent "
+    "24 heures après leur envoi ; si un courriel de confirmation vous est déjà parvenu, ouvrez-le et recopiez le "
+    "code affiché ici.")
+MESSAGE_TROP_D_ATTENTES_ADRESSE = (
+    "Trop d'ordinateurs attendent déjà une confirmation depuis cette connexion Internet pour ce compte VELA. Les "
+    "demandes non confirmées expirent 24 heures après leur envoi.")
+
+
+def _empreinte_ip(courriel: str, ip: str) -> str:
+    """L'adresse IP n'est pas écrite en clair dans le fichier des liaisons : seulement une empreinte liée au courriel."""
+    return hmac.new(SECRET_JETON, f"liaison-ip|{courriel}|{ip}".encode("utf-8"), hashlib.sha256).hexdigest()[:24]
+
+
+def _place_pour_attente(fiche: dict, ip: str, empreinte: str, maintenant: float,
+                        evincer: dict | None = None) -> str | None:
+    """None s'il y a place pour une nouvelle attente de cette adresse, sinon le message de refus. Quand la table est
+    pleine, l'attente la moins récemment vue d'une adresse qui en garde PLUSIEURS cède sa place (retirée de `evincer`
+    s'il est donné ; sans lui, simple lecture). L'attente seule de son adresse ne cède jamais."""
+    en_cours = evincer if evincer is not None else _attentes_valides(fiche, maintenant)
+    autres = {e: a for e, a in en_cours.items() if e != empreinte}
+    if sum(1 for a in autres.values() if a.get("ip") == ip) >= ATTENTES_PAR_ADRESSE:
+        return MESSAGE_TROP_D_ATTENTES_ADRESSE
+    if len(autres) < ATTENTES_PAR_COURRIEL:
+        return None
+    par_adresse: dict[str, int] = {}
+    for a in autres.values():
+        cle_adresse = str(a.get("ip") or "")
+        par_adresse[cle_adresse] = par_adresse.get(cle_adresse, 0) + 1
+    # Une attente sans adresse connue (ancien format) compte comme seule : on ne l'évince pas.
+    cedables = [e for e, a in autres.items() if a.get("ip") and par_adresse.get(str(a.get("ip")), 0) > 1]
+    if not cedables:
+        return MESSAGE_TROP_D_ATTENTES
+    if evincer is not None:
+        evincer.pop(min(cedables, key=lambda e: float(autres[e].get("vu_a") or 0)), None)
+    return None
+
+
+def _message_deja_envoye(attente: dict, empreinte: str, maintenant: float) -> str:
+    """Relance d'une attente encore valable : aucun nouveau courriel. Le message dit où chercher et quand un nouveau
+    courriel pourra partir, au lieu d'un « Trop de demandes » alors qu'un lien valable attend."""
+    heures = max(1, round((DUREE_CONFIRMATION_S - (maintenant - float(attente.get("cree") or 0))) / 3600))
+    ouvrir = "Ouvrez son lien" if attente.get("jeton") else "Ouvrez le plus récent des courriels de confirmation reçus"
+    return (
+        "Un courriel de confirmation a déjà été envoyé à l'adresse de votre compte VELA pour cet ordinateur. "
+        f"{ouvrir} et recopiez le code {empreinte} affiché ici. Pas reçu ? Regardez dans les courriels indésirables : "
+        f"aucun nouveau courriel ne part tant que ce lien reste valable (encore environ {heures} h)."
+    )
+
+
+def _attente_du_jeton(jeton: str) -> tuple[str, dict, dict] | tuple[None, None, None]:
+    """(courriel, fiche, attente) du lien reçu par courriel, s'il est encore valable."""
+    empreinte_jeton = hashlib.sha256(str(jeton or "").encode()).hexdigest()
+    maintenant = time.time()
+    for courriel, fiche in _lire_liaisons().items():
+        if not isinstance(fiche, dict):
+            continue
+        for attente in _attentes_valides(fiche, maintenant).values():
+            if attente.get("jeton") and hmac.compare_digest(str(attente.get("jeton")), empreinte_jeton):
+                return courriel, fiche, attente
+    return None, None, None
+
+
+@app.get("/appareil/confirmer/{jeton}", response_class=HTMLResponse)
+def page_confirmer_liaison(jeton: str):
+    """Page du lien reçu par courriel. Elle NE confirme rien d'elle-même (un logiciel qui ouvre les liens d'un
+    courriel pour les analyser ne doit pas lier un ordinateur) : il faut recopier le code affiché dans IRIS et
+    appuyer sur le bouton. Elle ne montre ni ce code ni le nom de l'ordinateur : ce nom vient de la demande."""
+    courriel, fiche, attente = _attente_du_jeton(jeton)
+    if not attente:
+        return HTMLResponse(PAGE_LIAISON.replace("{{CONTENU}}", "<p>Ce lien n'est plus valable (déjà utilisé, ou plus "
+                                                 "de 24 heures). Relancez la liaison depuis IRIS.</p>"),
+                            status_code=410, headers=ENTETES_PAGES_SENSIBLES)
+    remplace = ("<p><strong>Attention :</strong> un ordinateur est déjà lié à votre compte ; celui dont vous recopiez "
+                "le code le remplacera.</p>") if fiche.get("confirme_le") else ""
+    contenu = (
+        "<p>Un ordinateur demande à recevoir les commandes de verrouillage et d'effacement à distance de votre "
+        f"compte VELA.</p>{remplace}"
+        "<p>Sur <strong>votre</strong> ordinateur, ouvrez IRIS › Profil › Verrouillage à distance : un code de "
+        "6 caractères y est affiché. Recopiez-le ici. Si IRIS ne vous montre aucun code, ne confirmez rien : "
+        "la demande ne vient pas de vous.</p>"
+        '<label for="empreinte">Code affiché dans IRIS</label>'
+        '<input id="empreinte" name="empreinte" autocomplete="off" autocapitalize="characters" spellcheck="false" '
+        'maxlength="12">'
+        '<button id="confirmer" type="button">Confirmer cet ordinateur</button>'
+        '<p id="statut" role="status" aria-live="polite"></p>'
+    )
+    return HTMLResponse(PAGE_LIAISON.replace("{{CONTENU}}", contenu), headers=ENTETES_PAGES_SENSIBLES)
+
+
+@app.post("/api/appareil/confirmer")
+async def confirmer_liaison(request: Request):
+    """{jeton, empreinte} : le lien reçu par courriel ET le code recopié depuis IRIS. Le code désigne l'ordinateur
+    à lier parmi ceux en attente pour ce courriel ; un code qui ne correspond à rien est refusé (403) et compté :
+    au 5e, le lien ne sert plus."""
+    delai = limiter([f"confirmation-ip:{adresse_ip(request.headers, request.client)}"], CONFIRMATIONS_PAR_IP, 900.0)
+    if delai:
+        return JSONResponse({"ok": False, "message": "Trop de tentatives. Réessayez dans quelques minutes."},
+                            status_code=429)
+    corps = await _corps_json(request)
+    jeton = str(corps.get("jeton") or "")
+    code = _normaliser_empreinte(corps.get("empreinte"))
+    maintenant = time.time()
+    with _LIAISONS_VERROU:
+        courriel, _, attente = _attente_du_jeton(jeton)
+        if not attente:
+            return JSONResponse({"ok": False, "message": "Ce lien n'est plus valable. Relancez la liaison depuis IRIS."},
+                                status_code=410)
+        liaisons = _lire_liaisons()
+        actuelle = liaisons.get(courriel) if isinstance(liaisons.get(courriel), dict) else {}
+        en_cours = _attentes_valides(actuelle, maintenant)
+        choisie = en_cours.get(code) if len(code) == 6 else None
+        if choisie is None:
+            for a in en_cours.values():
+                if a.get("jeton") and hmac.compare_digest(str(a.get("jeton")), str(attente.get("jeton"))):
+                    a["echecs"] = int(a.get("echecs") or 0) + 1
+                    if a["echecs"] >= ECHECS_CONFIRMATION_MAX:
+                        a["jeton"] = ""  # lien épuisé : plus aucun essai par lui
+            actuelle.pop("attente", None)
+            actuelle["attentes"] = en_cours
+            liaisons[courriel] = actuelle
+            _ecrire(FICHIER_LIAISONS, liaisons)
+            return JSONResponse({"ok": False, "message": (
+                "Ce code ne correspond à aucun ordinateur en attente pour votre compte. Recopiez exactement le code "
+                "affiché dans IRIS, sur votre ordinateur. Si IRIS n'en affiche aucun, ne confirmez rien.")},
+                status_code=403)
+        liaisons[courriel] = {"id": choisie["id"], "cle": choisie["cle"], "machine": choisie.get("machine"),
+                              "confirme_le": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                              "sel": None, "iterations": None}
+        _ecrire(FICHIER_LIAISONS, liaisons)
+    # L'ordinateur connecté jusqu'ici (lié à l'ancienne clé, ou pas lié du tout) est déconnecté : le nouvel
+    # ordinateur lié se reconnecte et prouve sa clé.
+    pc = _pc_par_courriel.pop(courriel, None)
+    if pc is not None:
+        try:
+            await pc["ws"].close(code=4003)
+        except Exception:
+            pass
+    log.info("liaison : ordinateur lié confirmé")
+    return {"ok": True, "message": "C'est confirmé : cet ordinateur est lié à votre compte pour le verrouillage à distance."}
+
+
+PAGE_LIAISON = """<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lier un ordinateur · VELA</title>
+<style>
+:root { --fond:#f6f7f9; --carte:#ffffff; --texte:#14161a; --accent:#1f4fd1; --focus:#ffb300; }
+@media (prefers-color-scheme: dark) { :root { --fond:#0f1115; --carte:#181b21; --texte:#eef0f3; --accent:#8fb0ff; } }
+body { margin:0; background:var(--fond); color:var(--texte); font:18px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width:36rem; margin:0 auto; padding:1.5rem 1rem 3rem; }
+.carte { background:var(--carte); border-radius:14px; padding:1.25rem; }
+label { display:block; font-weight:600; margin:1rem 0 .35rem; }
+input { width:100%; box-sizing:border-box; font-size:1.3rem; letter-spacing:.2em; padding:.7rem; border-radius:10px;
+  border:2px solid #8a919c; background:var(--fond); color:var(--texte); text-transform:uppercase; }
+button { width:100%; min-height:3.2rem; font-size:1.15rem; font-weight:700; border:none; border-radius:12px;
+  background:var(--accent); color:#fff; margin-top:1rem; cursor:pointer; }
+:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+#statut { font-weight:600; min-height:1.5rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Lier un ordinateur à votre compte VELA</h1>
+<div class="carte">{{CONTENU}}</div>
+</main>
+<script>
+(function () {
+  var bouton = document.getElementById('confirmer');
+  if (!bouton) return;
+  var jeton = location.pathname.split('/').pop();
+  var champ = document.getElementById('empreinte');
+  bouton.addEventListener('click', function () {
+    var statut = document.getElementById('statut');
+    var code = ((champ && champ.value) || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (code.length !== 6) { statut.textContent = 'Recopiez les 6 caractères du code affiché dans IRIS.'; if (champ) champ.focus(); return; }
+    bouton.disabled = true;
+    statut.textContent = 'Confirmation en cours…';
+    fetch('../../api/appareil/confirmer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store', body: JSON.stringify({ jeton: jeton, empreinte: code }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j || {} }; }); })
+      .then(function (res) { statut.textContent = res.j.message || 'Réponse inattendue.'; if (!res.ok) bouton.disabled = false; })
+      .catch(function () { statut.textContent = 'Le relais est injoignable. Réessayez.'; bouton.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>
+"""
+
+
 # --------------------------------------------------------------------------- télécommande (canal inverse)
 # Le relais devient un COURTIER. L'ordinateur d'un abonné ouvre un WebSocket SORTANT et s'y annonce ;
 # le téléphone du MÊME courriel envoie des commandes, routées vers cet ordinateur, exécutées CHEZ LUI
@@ -872,22 +1484,45 @@ _pc_par_courriel: dict[str, dict] = {}   # courriel -> {"ws": WebSocket, "pairin
 _req_en_cours: dict[str, dict] = {}       # req_id -> {"tel": WebSocket, "courriel": str}
 
 
+async def _hello_complet(ws: WebSocket) -> tuple[str | None, str, dict]:
+    """Attend {type:'hello', jeton, pairing, preuve?}. Renvoie (courriel, pairing, message), ou (None, '', {})."""
+    try:
+        premier = await asyncio.wait_for(ws.receive_json(), timeout=15)
+    except Exception:
+        return None, "", {}
+    if not isinstance(premier, dict) or premier.get("type") != "hello":
+        return None, "", {}
+    info = lire_jeton(str(premier.get("jeton") or ""))
+    if not info or not info.get("courriel"):
+        return None, "", {}
+    return normaliser(info["courriel"]), str(premier.get("pairing") or ""), premier
+
+
 async def _hello(ws: WebSocket) -> tuple[str | None, str]:
     """Attend {type:'hello', jeton, pairing}. Renvoie (courriel, pairing), ou (None, '') si refusé.
 
     Le jeton d'appareil (émis sans mot de passe par /api/appareil) suffit pour l'IA, mais PAS pour
     piloter un ordinateur : connaître un courriel ne doit pas donner la main sur une machine. Le
     CODE D'APPAIRAGE — affiché par l'ordinateur, saisi dans le téléphone — est le second facteur."""
+    courriel, pairing, _ = await _hello_complet(ws)
+    return courriel, pairing
+
+
+async def _defi_ordinateur(ws: WebSocket, courriel: str) -> bool:
+    """Défi-réponse de l'ordinateur qui l'annonce ({preuve: 1} dans son hello). Vrai seulement si la réponse
+    est faite avec la clé de l'ordinateur LIÉ à ce courriel ; il publie alors aussi le sel de son code de secours."""
+    nonce = _b64(secrets.token_bytes(32))
+    await ws.send_json({"type": "defi", "nonce": nonce})
     try:
-        premier = await asyncio.wait_for(ws.receive_json(), timeout=15)
+        reponse = await asyncio.wait_for(ws.receive_json(), timeout=15)
     except Exception:
-        return None, ""
-    if not isinstance(premier, dict) or premier.get("type") != "hello":
-        return None, ""
-    info = lire_jeton(str(premier.get("jeton") or ""))
-    if not info or not info.get("courriel"):
-        return None, ""
-    return normaliser(info["courriel"]), str(premier.get("pairing") or "")
+        return False
+    if not isinstance(reponse, dict) or reponse.get("type") != "preuve":
+        return False
+    if not verifier_preuve_pc(courriel, f"vela-appareil-ws|v1|{courriel}|{nonce}", str(reponse.get("preuve") or "")):
+        return False
+    publier_infos_verrou(courriel, reponse.get("verrou"))
+    return True
 
 
 def _pc_pour(courriel: str, pairing: str) -> dict | None:
@@ -905,9 +1540,22 @@ async def appareil_ws(ws: WebSocket):
     Il ne reçoit QUE les commandes des téléphones de son propre courriel, et ne renvoie un message
     qu'au téléphone qui a lancé la requête concernée (routage par req_id vérifié côté courriel)."""
     await ws.accept()
-    courriel, pairing = await _hello(ws)
+    courriel, pairing, hello = await _hello_complet(ws)
     if not courriel or not pairing:  # jeton invalide OU aucun code d'appairage : on refuse
         await ws.close(code=4001)
+        return
+    # Constat bloquant du 2026-09-14 : quand un ordinateur est LIÉ à ce courriel (confirmé par courriel), seul
+    # celui qui prouve sa clé est accepté ; il remplace alors l'ancienne connexion. Sans liaison, l'ancien
+    # fonctionnement demeure (télécommande seulement : aucun message « verrou » n'est jamais envoyé).
+    annonce_preuve = bool(hello.get("preuve"))
+    prouve = await _defi_ordinateur(ws, courriel) if annonce_preuve else False
+    lie = liaison_confirmee(courriel) is not None
+    if lie and not prouve:
+        try:
+            await ws.send_json({"type": "refus", "raison": "liaison", "message": MESSAGE_PC_NON_LIE})
+            await ws.close(code=4003)
+        except Exception:
+            pass
         return
     ancien = _pc_par_courriel.get(courriel)
     if ancien is not None and ancien.get("ws") is not ws:
@@ -915,16 +1563,23 @@ async def appareil_ws(ws: WebSocket):
             await ancien["ws"].close(code=4000)  # un seul ordinateur par courriel : le neuf remplace l'ancien
         except Exception:
             pass
-    _pc_par_courriel[courriel] = {"ws": ws, "pairing": pairing}
-    await ws.send_json({"type": "pret"})
-    log.info("telecommande : ordinateur connecte (%s)", courriel)
+    _pc_par_courriel[courriel] = {"ws": ws, "pairing": pairing, "prouve": prouve}
+    await ws.send_json({"type": "pret", "prouve": prouve, "liaison": "confirmee" if lie else "absente"}
+                       if annonce_preuve else {"type": "pret"})
+    log.info("telecommande : ordinateur connecte%s", " (lié)" if prouve else "")
     try:
         while True:
             msg = await ws.receive_json()
             if not isinstance(msg, dict):
                 continue
+            if msg.get("type") == "verrou_info":
+                if prouve:  # code de secours changé sur l'ordinateur lié : nouveau sel
+                    publier_infos_verrou(courriel, msg.get("verrou"))
+                continue
             req_id = str(msg.get("req_id") or "")
             entree = _req_en_cours.get(req_id)
+            if entree and entree.get("verrou") and not prouve:
+                continue  # la réponse à un verrouillage ne vient que de l'ordinateur lié
             # ne router que vers le téléphone qui a lancé CETTE requête, et seulement s'il est du bon courriel
             if entree and entree["courriel"] == courriel:
                 try:

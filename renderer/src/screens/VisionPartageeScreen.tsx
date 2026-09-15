@@ -67,22 +67,24 @@ const CADENCES: { id: Cadence; label: string; intervalle: number; sous: string }
 
 const SOURCES: { id: Source; nom: string; sous: string }[] = [
   {
-    id: 'lunettes',
-    nom: 'Lunettes',
-    sous: 'Pas de vidéo : IRIS prend une photo par Bluetooth, l’envoie, puis recommence. Comptez une image toutes les quelques secondes.'
-  },
-  {
     id: 'ecran',
     nom: 'Écran de l’ordinateur',
     sous: 'L’écran principal, tel qu’il s’affiche, quelques images par seconde. Tout ce qui y apparaît est visible, notifications comprises.'
+  },
+  {
+    id: 'lunettes',
+    nom: 'Lunettes',
+    sous: 'La caméra des lunettes n’est pas encore activée dans IRIS (protocole en cours de confirmation) : ce partage est refusé pour l’instant. Même activée, pas de vidéo : une photo par Bluetooth, envoyée, puis une autre, toutes les quelques secondes.'
   }
 ]
 
+// Par défaut, l'écran : la caméra des lunettes n'est pas encore activée par le service (protocole non confirmé).
+// Un choix explicite des lunettes, gardé sur cet ordinateur, est respecté.
 function lireSource(): Source {
   try {
-    return window.localStorage.getItem(CLE_SOURCE) === 'ecran' ? 'ecran' : 'lunettes'
+    return window.localStorage.getItem(CLE_SOURCE) === 'lunettes' ? 'lunettes' : 'ecran'
   } catch {
-    return 'lunettes'
+    return 'ecran'
   }
 }
 

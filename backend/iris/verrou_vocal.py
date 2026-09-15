@@ -11,9 +11,16 @@ D'où trois règles :
 - l'empreinte est chiffrée (ctx.crypto) et reste sur cet ordinateur ; retirer le consentement l'efface ;
 - AUCUN son n'est conservé : chaque échantillon est réduit sur-le-champ à des statistiques (nombre de
   trames, moyenne et moyenne des carrés de 12 coefficients), puis l'audio est jeté.
-La fonction est livrée désactivée (réglage `verrou_vocal_actif`) : la création d'une banque de
-caractéristiques biométriques doit être déclarée à la Commission d'accès à l'information avant la mise
-en marché.
+Fonction NON OFFERTE tant que VELA n'a pas fait sa déclaration (constat du 2026-09-14). La Loi concernant
+le cadre juridique des technologies de l'information exige, pour vérifier une identité par la voix, le
+consentement exprès ET une déclaration à la Commission d'accès à l'information (art. 44), et la création
+d'une banque de caractéristiques doit lui être divulguée au moins 60 jours avant sa mise en service
+(art. 45). « Livrée désactivée » ne suffisait pas : l'interrupteur était offert à tous les clients. Donc
+`DECLARATION_CAI` (date de la déclaration faite par VELA) reste None dans le code livré : tant qu'il l'est,
+consentir, enregistrer, tester et activer répondent 409 (`NON_OFFERTE`), et aucun vérificateur n'est
+installé. Ce n'est PAS un réglage : PATCH /api/settings ne peut pas l'ouvrir. Retirer son consentement et
+effacer l'empreinte restent toujours permis. À faire valider par un juriste (y compris qui est
+responsable quand l'empreinte ne quitte pas l'appareil).
 
 Caractéristiques (numpy seul) : pré-accentuation 0,97 ; fenêtres de Hamming de 25 ms au pas de 10 ms ;
 spectre de puissance (512 points) ; banc de 26 filtres mel ; logarithme ; DCT-II orthonormée,
@@ -85,9 +92,17 @@ TEXTE_CONSENTEMENT = (
     "Aucun enregistrement de votre voix n'est gardé, seulement des mesures. "
     "Vous pouvez l'effacer à tout moment, et retirer votre consentement l'efface."
 )
+# Date (AAAA-MM-JJ) de la déclaration du processus à la Commission d'accès à l'information, faite par VELA.
+# None : fonction non offerte. Se change dans le code d'une version publiée, jamais par un réglage.
+DECLARATION_CAI: str | None = None
 NOTE_LEGALE = (
-    "Au Québec, une banque de caractéristiques biométriques doit être déclarée à la Commission d'accès "
-    "à l'information avant sa mise en service : cette fonction est livrée désactivée."
+    "Au Québec, la vérification d'identité par la voix et la banque d'empreintes doivent être déclarées à la "
+    "Commission d'accès à l'information au moins 60 jours avant leur mise en service (LCCJTI, art. 44 et 45). "
+    "Personne n'est obligé d'utiliser la biométrie : le mot de passe reste une autre façon de s'identifier."
+)
+NON_OFFERTE = (
+    "Fonction non encore offerte : VELA doit d'abord déclarer ce traitement biométrique à la Commission "
+    "d'accès à l'information. Le mot de passe du propriétaire reste la protection d'IRIS."
 )
 PHRASE_SUGGEREE = (
     "Le vieux chat gris saute sur la table pendant que je prépare un café bien chaud pour mes amis."
@@ -95,6 +110,11 @@ PHRASE_SUGGEREE = (
 CONFIDENTIEL = "Mode confidentiel actif : le micro est coupé, aucun échantillon ne peut être enregistré."
 MICRO_MUET = "Micro coupé (muet) : réactivez le micro pour enregistrer votre voix."
 ATTENTE_MICRO = "En attente du micro : aucun son reçu depuis quelques secondes."
+
+
+def fonction_offerte() -> bool:
+    """Vrai seulement quand VELA a déclaré le processus (DECLARATION_CAI renseignée dans le code livré)."""
+    return bool(DECLARATION_CAI)
 
 
 class RefusVerrouVocal(Exception):
@@ -280,6 +300,8 @@ class VerrouVocal:
             return None
 
     def definir_consentement(self, accepte: bool) -> dict:
+        if accepte and not fonction_offerte():
+            raise RefusVerrouVocal(NON_OFFERTE, 409)
         if accepte:
             self.fichier_consentement.parent.mkdir(parents=True, exist_ok=True)
             self.fichier_consentement.write_text(json.dumps({
@@ -329,6 +351,8 @@ class VerrouVocal:
             "texte_consentement": TEXTE_CONSENTEMENT,
             "note_legale": NOTE_LEGALE,
             "phrase_suggeree": PHRASE_SUGGEREE,
+            "offerte": fonction_offerte(),
+            "raison_non_offerte": None if fonction_offerte() else NON_OFFERTE,
         }
 
     def appliquer(self) -> None:
@@ -336,7 +360,7 @@ class VerrouVocal:
         voice = getattr(self.ctx, "voice", None)
         if voice is None:
             return
-        voulu = (bool(getattr(self.ctx.settings.user, "verrou_vocal_actif", False))
+        voulu = (fonction_offerte() and bool(getattr(self.ctx.settings.user, "verrou_vocal_actif", False))
                  and self.pret and self.consentement() is not None)
         installe = getattr(voice, "verificateur_locuteur", None) == self.verifier
         if voulu and not installe:
@@ -348,6 +372,8 @@ class VerrouVocal:
 
     # ------------------------------------------------------------------ échantillons
     def ajouter_echantillon_pcm(self, pcm: bytes) -> dict:
+        if not fonction_offerte():
+            raise RefusVerrouVocal(NON_OFFERTE, 409)
         if self.consentement() is None:
             raise RefusVerrouVocal(
                 "Consentement biométrique requis avant d'enregistrer votre voix.", 403)
@@ -395,6 +421,8 @@ class VerrouVocal:
         return False, f"voix non reconnue (score {score} sur 100, seuil {seuil})"
 
     def tester_pcm(self, pcm: bytes) -> dict:
+        if not fonction_offerte():
+            raise RefusVerrouVocal(NON_OFFERTE, 409)
         if not self.pret:
             raise RefusVerrouVocal(
                 f"Empreinte incomplète : enregistrez au moins {ECHANTILLONS_REQUIS} échantillons.", 409)

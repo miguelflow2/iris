@@ -17,6 +17,60 @@ for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_var, "1")
 
 
+class FiltreTexteJournal(logging.Filter):
+    """Masque, sous le niveau WARNING, ce qui ressemble à du texte dit ou écrit par l'utilisateur.
+
+    Constat du 2026-09-14 : le journal technique (backend.log, recopié par Electron) n'est ni chiffré, ni
+    soumis à la rétention, ni au mode invité. Les appels de journalisation d'IRIS ne passent plus que des
+    métadonnées ; ce filtre est le filet pour un oubli : tout argument formaté par « %r » et toute chaîne
+    de plus de LONGUEUR_MAX caractères deviennent « <texte masqué : N caractères> ». Les avertissements et
+    les erreurs restent intacts (ils servent au diagnostic et ne portent pas de transcription)."""
+
+    LONGUEUR_MAX = 160
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING or not record.args:
+            return True
+        try:
+            gabarit = str(record.msg)
+            args = record.args if isinstance(record.args, tuple) else None
+            if args is None:
+                return True
+            # Ordre des spécificateurs (%% ignoré) : « r » pour %r, autre chose sinon.
+            specs: list[str] = []
+            i = 0
+            while i < len(gabarit):
+                if gabarit[i] == "%":
+                    j = i + 1
+                    while j < len(gabarit) and gabarit[j] in "#0- +.123456789":
+                        j += 1
+                    if j < len(gabarit) and gabarit[j] != "%":
+                        specs.append(gabarit[j])
+                    i = j + 1
+                else:
+                    i += 1
+            nouveaux = []
+            for rang, valeur in enumerate(args):
+                spec = specs[rang] if rang < len(specs) else "s"
+                if isinstance(valeur, str) and (spec == "r" or len(valeur) > self.LONGUEUR_MAX):
+                    nouveaux.append(f"<texte masqué : {len(valeur)} caractères>")
+                else:
+                    nouveaux.append(valeur)
+            record.args = tuple(nouveaux)
+            if "r" in specs and "%%r" not in gabarit:
+                # La valeur masquée est déjà une phrase : pas de guillemets de repr autour.
+                record.msg = gabarit.replace("%r", "%s")
+        except Exception:  # un filtre qui plante ne doit jamais faire taire un journal
+            return True
+        return True
+
+
+def installer_filtre_journal() -> None:
+    filtre = FiltreTexteJournal()
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(filtre)
+
+
 def selftest() -> int:
     """Vérifie, dans l'exécutable empaqueté, que les bibliothèques natives se chargent dans l'ordre réel de l'app.
     Utilisé par scripts/build-backend.ps1 : une DLL manquante ou incompatible fait échouer la construction."""
@@ -154,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    installer_filtre_journal()
 
     import uvicorn
 

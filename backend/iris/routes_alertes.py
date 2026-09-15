@@ -5,6 +5,8 @@ alertes_sonores.py, ecoute_assistee.py et bouton_lunettes.py ; ce fichier tradui
 et tient le seul abonnement au bus d'événements dont ces services ont besoin :
 - settings.updated / privacy.mode : les alertes démarrent et s'arrêtent selon alertes_actives, tout
   s'arrête en mode confidentiel ;
+- lunettes.presence, glasses.state, glasses.connected, voice.state : des alertes voulues qui attendaient
+  les lunettes démarrent dès qu'elles sont là ;
 - glasses.packet : les paquets des lunettes vont au bouton (apprentissage et déclenchement).
 """
 from __future__ import annotations
@@ -18,8 +20,13 @@ from pydantic import BaseModel
 from .alertes_sonores import CONFIDENTIEL, TYPES_ACOUSTIQUES, EcouteRefusee, ServiceAlertes, prenom_depuis
 from .bouton_lunettes import ServiceBouton
 from .ecoute_assistee import ServiceEcouteAssistee
+from .lunettes_presence import exiger_lunettes_pc, raison_capture_pc
 
 log = logging.getLogger("iris.routes_alertes")
+
+# Ce qui peut rendre les lunettes présentes après coup : attestation du téléphone, connexion Bluetooth
+# basse énergie, micro des lunettes retrouvé par l'écoute (publié avec voice.state).
+EVENEMENTS_PRESENCE = ("lunettes.presence", "glasses.state", "glasses.connected", "voice.state")
 
 
 class TesterIn(BaseModel):
@@ -93,6 +100,7 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/alertes/activer")
     async def activer():
+        exiger_lunettes_pc(ctx, "alertes_sonores")  # micro de l'ordinateur
         if ctx.settings.user.privacy_mode:
             raise HTTPException(409, CONFIDENTIEL)
         try:
@@ -117,6 +125,7 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/ecoute/assistee/demarrer")
     async def assistee_demarrer(body: AssisteeIn | None = None):
+        exiger_lunettes_pc(ctx, "ecoute_assistee")  # micro et haut-parleur de l'ordinateur
         body = body or AssisteeIn()
         try:
             await asyncio.to_thread(assistee.demarrer, body.gain_db, body.reduction)
@@ -136,6 +145,7 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/lunettes/bouton/apprendre")
     async def apprendre(body: ApprendreIn | None = None):
+        exiger_lunettes_pc(ctx, "bouton_lunettes")  # lien Bluetooth de l'ordinateur
         body = body or ApprendreIn()
         return await bouton.apprendre(body.secondes)
 
@@ -158,12 +168,22 @@ def creer_routeur(ctx) -> APIRouter:
             suivi["prenom"] = prenom
             alertes.recharger_prenom()
         if u.alertes_actives and not alertes.actif:
+            raison_pc = raison_capture_pc(ctx)
+            if raison_pc is not None:
+                # Lunettes d'abord : activées par les réglages, les alertes attendent les lunettes et le disent.
+                # Attestées par le téléphone seulement, elles sont dehors : le micro de l'ordinateur reste fermé.
+                alertes.raison = raison_pc
+                return
             try:
                 alertes.demarrer()
             except EcouteRefusee as exc:
                 alertes.raison = str(exc)
         elif not u.alertes_actives and alertes.actif:
             alertes.arreter()
+
+    def alertes_en_attente() -> bool:
+        u = ctx.settings.user
+        return bool(u.alertes_actives) and not u.privacy_mode and not alertes.actif
 
     async def reagir_reglages() -> None:
         async with verrou_reglages:
@@ -182,6 +202,11 @@ def creer_routeur(ctx) -> APIRouter:
                     if genre == "glasses.packet":
                         bouton.recevoir_paquet(evenement)
                     elif genre in ("settings.updated", "privacy.mode"):
+                        asyncio.get_running_loop().create_task(reagir_reglages())
+                    elif genre in EVENEMENTS_PRESENCE and alertes_en_attente():
+                        # Lunettes arrivées (téléphone attesté, Bluetooth, micro des lunettes) ou écoute
+                        # relancée : des alertes voulues mais pas démarrées démarrent maintenant. Filtré ici
+                        # pour ne pas lancer une tâche à chaque changement d'état de la voix.
                         asyncio.get_running_loop().create_task(reagir_reglages())
                 except Exception as exc:  # un événement mal formé ne coupe pas le suivi
                     log.warning("événement %s non traité : %s", genre, exc)

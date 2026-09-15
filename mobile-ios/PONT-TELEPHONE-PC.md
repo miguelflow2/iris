@@ -81,6 +81,18 @@ C'est le cœur, et c'est un copier-coller conceptuel du JS de `mobile.py` :
   proprement et surtout recevoir des **notifications push** (voir plus bas). *Le sondage reste une
   base parfaitement fonctionnelle pour commencer.*
 
+**Ajouté le 2026-09-14 (demandes de l'équipe iOS), côté service — l'app ne les utilise pas encore :**
+- `POST /api/voix/commande` `{ "texte", "source": "iphone", "conversation_id": null }` → `{ "texte", "intercepte",
+  "duree_ms", "conversation_id"?, "message_id"?, "refus"?, "lunettes_requises"?, "consentement_requis"? }`.
+  Une phrase dite dans les lunettes reliées à l'iPhone, transcrite par l'iPhone : interceptions du service d'abord
+  (mode invité, pas à pas, vision, résumé…), puis le chat avec la règle de la voix (lunettes exigées, 428 sinon ;
+  pas d'aperçu écrit ; réponse orale courte). L'ordinateur ne lit rien à voix haute : l'iPhone lit `texte`.
+  Mode traduction et interprète refusés (`refus: "micro_de_la_maison"`), car ils ouvriraient le micro de la maison.
+  Remplacera `/messages` + `CommandesLocales.swift` pour la voix. Limite : une demande d'accord d'un outil
+  s'affiche comme `chat.confirm` (événement), jamais à voix haute sur l'ordinateur.
+- `GET /api/conversations/{id}?depuis=<id du dernier message lu>` (ou `?limit=N`, les N derniers) : seulement la
+  suite. `depuis_trouve: false` = message inconnu, recharger toute la conversation.
+
 ---
 
 ## Les brouillons SMS / appel : la route qui manquait, déjà rebouchée

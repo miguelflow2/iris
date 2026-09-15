@@ -7,12 +7,12 @@
 import SwiftUI
 import UIKit
 
+@MainActor
 struct EcranAlertes: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
     @State private var erreur: Error?
     @State private var bascule = false
-    @State private var alertePleinEcran: AlerteSonore?
 
     // Initialiseur explicite : les propriétés privées (@State, @Environment) rendraient l'initialiseur
     // implicite privé, donc inaccessible depuis les autres fichiers.
@@ -49,6 +49,11 @@ struct EcranAlertes: View {
 
                     if alertes.actives && alertes.attenteMicro {
                         NoteVerite(texte: "En attente du micro : aucun son n'arrive.", genre: .avertissement)
+                    }
+                    if alertes.actives, let depuis = alertes.lunettesAbsentesDepuis {
+                        let fin = depuis.addingTimeInterval(AlertesSonoresTelephone.delaiSansLunettes)
+                        NoteVerite(texte: "Lunettes absentes : sans elles, les alertes s'arrêteront seules à \(fin.formatted(date: .omitted, time: .shortened)).",
+                                   genre: .avertissement)
                     }
                     if let interruption = perception.micro.interruption {
                         NoteVerite(texte: interruption, genre: .avertissement)
@@ -137,17 +142,7 @@ struct EcranAlertes: View {
         .fondIRIS()
         .navigationTitle("Alertes sonores")
         .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(item: $alertePleinEcran) { alerte in
-            AlertePleinEcran(alerte: alerte) { alertePleinEcran = nil }
-        }
-        .onAppear {
-            alertes.surAlerte = { alerte in
-                alertePleinEcran = alerte
-            }
-        }
-        .onDisappear {
-            alertes.surAlerte = nil
-        }
+        // Le plein écran d'une alerte est affiché par la racine de l'app (RacineVue), essais compris.
     }
 
     private func ligneAlerte(_ alerte: AlerteSonore) -> some View {

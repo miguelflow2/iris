@@ -35,7 +35,7 @@ from .telecommande import Telecommande
 from .events import EventHub
 from .glasses import GlassesService
 from .memory import MemoryService
-from .lunettes_presence import PresenceLunettes
+from .lunettes_presence import PresenceLunettes, exiger_lunettes, exiger_lunettes_pc, raison_capture_pc
 from .plans import PLANS, PlanService
 from .licence import LicenceSync
 from .comptes import Comptes
@@ -177,7 +177,10 @@ class AppContext:
             self.settings, self.settings.data_dir, voice=self.voice, glasses=self.glasses, hub=self.hub
         )
         self.voice.presence_lunettes = self.presence_lunettes
+        self.presence_lunettes.journal = self.consent.log
         self.chat.presence_lunettes = self.presence_lunettes
+        # Les outils du chat (rappel contextuel, pas à pas, prix…) trouvent les modules branchés par ici.
+        self.chat.contexte_app = self
         self.routines = RoutineService(self.db, self.hub)
         self.reminders = ReminderService(self.db, self.hub, announce=self._announce)
         self.chat.routines = self.routines
@@ -308,6 +311,10 @@ class AppContext:
                 if u.privacy_mode:
                     continue
                 pause_over = self.voice.paused_until and time.time() > self.voice.paused_until
+                if u.voice_autostart and not self.voice.running and raison_capture_pc(self) is not None:
+                    # Lunettes absentes, ou attestées par le téléphone seulement (leur porteur est dehors) :
+                    # le micro de cet ordinateur reste fermé. start() refuserait aussi ; on ne le sollicite pas.
+                    continue
                 if u.voice_autostart and not self.voice.running and not self.voice.muted and (not self.voice.stopped_by_user or pause_over):
                     if self.voice.model_ready() or self.consent.is_granted("audio_raw"):
                         log.info("chien de garde : redémarrage de l'écoute vocale")
@@ -421,6 +428,15 @@ class AppContext:
                     self.hub.publish("privacy.purged", **purged)
             except Exception as exc:  # pragma: no cover
                 log.warning("purge en erreur: %s", exc)
+            try:
+                # Le journal technique suit la même rétention (constat du 2026-09-14 : il n'est pas chiffré).
+                from .verrou import purger_journal_technique
+
+                jours = int(getattr(self.settings.user, "retention_days", 0) or 0)
+                if jours > 0:
+                    await asyncio.to_thread(purger_journal_technique, jours)
+            except Exception as exc:  # pragma: no cover
+                log.warning("purge du journal technique en erreur : %s", exc)
             await asyncio.sleep(3600)
 
     def status(self) -> dict:
@@ -486,6 +502,13 @@ class AgentUpdate(BaseModel):
     base_url: str | None = None
     label: str | None = None
     api_key: str | None = None
+    # Confirmation seulement (jamais gardée) : exigée pour retirer ou remplacer le jeton d'appareil « vela »
+    # quand le verrouillage à distance est actif — c'est ce jeton qui garde le canal du verrou ouvert.
+    mot_de_passe: str | None = None
+
+
+class ConfirmationIn(BaseModel):
+    mot_de_passe: str | None = None
 
 
 class ConversationCreate(BaseModel):
@@ -508,6 +531,27 @@ class MessageIn(BaseModel):
     text: str = ""
     images: list[ImageIn] = Field(default_factory=list)
     agent: str = "auto"
+
+
+class CommandeVocaleIn(BaseModel):
+    texte: str = Field(default="", max_length=2000)
+    source: str = Field(default="iphone", max_length=20)
+    conversation_id: str | None = Field(default=None, max_length=64)
+
+
+# Dehors, une phrase qui ouvrirait le micro de l'ordinateur resté à la maison (mode traduction, interprète).
+PHRASE_MICRO_MAISON = ("Dehors, je n'ouvre pas le micro de l'ordinateur resté à la maison : "
+                       "utilise l'interprète de l'application du téléphone.")
+
+# Session refusée parce qu'IRIS a été effacée à distance (comptes.motif_revocation). Le code permet à l'app
+# iPhone, en arrière-plan au moment de l'effacement, de retirer à sa réouverture les copies gardées sur elle.
+CODE_EFFACE_A_DISTANCE = "efface_a_distance"
+PHRASE_EFFACE_A_DISTANCE = ("IRIS a été effacée à distance et est verrouillée. "
+                            "Reconnectez-vous avec le mot de passe du propriétaire.")
+# Même cause, une fois l'ordinateur déverrouillé par son propriétaire : dire « est verrouillée » serait faux.
+PHRASE_EFFACE_A_DISTANCE_DEVERROUILLEE = ("IRIS a été effacée à distance. "
+                                          "Reconnectez-vous avec le mot de passe du propriétaire.")
+PHRASES_EFFACE_A_DISTANCE = (PHRASE_EFFACE_A_DISTANCE, PHRASE_EFFACE_A_DISTANCE_DEVERROUILLEE)
 
 
 class ConfirmIn(BaseModel):
@@ -608,6 +652,12 @@ class AttestationLunettesIn(BaseModel):
     source: str = "telephone"
 
 
+class AssociationLunettesIn(BaseModel):
+    nom: str
+    identifiant: str = ""
+    mot_de_passe: str | None = None
+
+
 class DemoIn(BaseModel):
     mot_de_passe: str
 
@@ -615,7 +665,22 @@ class DemoIn(BaseModel):
 # Réglages qui ouvriraient IRIS sans lunettes : jamais modifiables par PATCH /api/settings (un écran
 # client, ou un appel direct, suffirait sinon à contourner la règle « lunettes d'abord »). Le mode
 # démonstration passe par POST /api/demo/activer, avec le mot de passe du propriétaire.
-REGLAGES_PROTEGES = ("require_glasses", "demo_sans_lunettes")
+# « glasses » (constat du 2026-09-14) : un nom de lunettes posé à la main (« Micro ») faisait passer
+# n'importe quel micro pour les lunettes. Le nom et l'adresse ne changent que par une vraie connexion
+# Bluetooth (POST /api/glasses/connect) ou par l'oubli (POST /api/glasses/forget).
+REGLAGES_PROTEGES = ("require_glasses", "demo_sans_lunettes", "glasses")
+# Constat du 2026-09-14 : sur l'ordinateur, l'application utilise le jeton local et ne demande aucun mot
+# de passe. Le voleur d'un portable resté ouvert couperait le verrouillage à distance en changeant l'un de
+# ces réglages avant que le propriétaire n'arrive sur la page /verrou. Quand le verrouillage à distance
+# est actif (et qu'un mot de passe existe), les modifier exige le mot de passe du propriétaire.
+MESSAGE_ASSOCIATION_SANS_COMPTE = (
+    "Crée d'abord le mot de passe du propriétaire sur l'ordinateur (Profil › Compte et sécurité) : c'est lui qui autorise "
+    "un appareil de plus à dire que les lunettes sont connectées."
+)
+MESSAGE_REGLAGE_VERROU = (
+    "Le verrouillage à distance est actif : ce réglage le couperait. Désactivez d'abord le verrouillage à "
+    "distance (Profil › Verrouillage à distance) avec le mot de passe du propriétaire, puis réessayez."
+)
 
 
 class GlassesPhotoIn(BaseModel):
@@ -758,6 +823,12 @@ def create_app(
         if supplied and supplied != token and ctx.comptes.session_valide(supplied):
             return None
         if supplied != token:
+            motif = getattr(ctx.comptes, "motif_revocation", None)
+            if supplied and callable(motif) and motif(supplied) == "effacement":
+                verrou = getattr(ctx, "verrou", None)
+                if verrou is not None and getattr(verrou, "verrouille", False):
+                    return PHRASE_EFFACE_A_DISTANCE
+                return PHRASE_EFFACE_A_DISTANCE_DEVERROUILLEE
             return "jeton de session invalide"
         # Jeton maître accepté — mais IRIS écrit elle-même ce jeton dans l'adresse qu'elle donne au
         # téléphone (« /m?token=… »). Une adresse finit dans un historique, une capture d'écran, un
@@ -771,6 +842,8 @@ def create_app(
 
     def require_token(request: Request) -> None:
         raison = raison_de_refus(request)
+        if raison in PHRASES_EFFACE_A_DISTANCE:
+            raise HTTPException(status_code=401, detail={"code": CODE_EFFACE_A_DISTANCE, "message": raison})
         if raison is not None:
             raise HTTPException(status_code=401, detail=raison)
 
@@ -801,12 +874,20 @@ def create_app(
     @app.patch("/api/settings", dependencies=auth)
     def patch_settings(patch: SettingsPatch):
         data = patch.model_dump()
+        # Le mot de passe n'est jamais un réglage : il ne sert qu'à confirmer, et n'est ni gardé ni renvoyé.
+        mot_de_passe = data.pop("mot_de_passe", None)
         proteges = [cle for cle in REGLAGES_PROTEGES if cle in data]
         if proteges:
             raise HTTPException(403, "Réglage protégé : il ne se modifie pas depuis l'application.")
         if "persona" in data and data["persona"] not in PERSONAS:
             raise HTTPException(400, "rôle inconnu")
         before = ctx.settings.user
+        _verifier_reglages_du_verrou(data, before, mot_de_passe)
+        if data.get("verrou_vocal_actif") is True:
+            from .verrou_vocal import NON_OFFERTE, fonction_offerte
+
+            if not fonction_offerte():
+                raise HTTPException(409, NON_OFFERTE)
         restart_voice = ctx.voice.running and any(
             k in data and data[k] != getattr(before, k) for k in ("wake_word", "language", "stt_engine", "local_only")
         )
@@ -820,6 +901,71 @@ def create_app(
         if "privacy_mode" in data:
             apply_privacy_mode(user.privacy_mode)
         return user.model_dump()
+
+    def _verifier_reglages_du_verrou(data: dict, before: Any, mot_de_passe: Any) -> None:
+        """Refuse (403) ce qui couperait le verrouillage à distance actif sans le mot de passe du propriétaire :
+        l'éteindre (`verrou_distant_actif` à faux), changer ou vider l'adresse du relais ou le courriel du compte.
+
+        `verrou_distant_actif` éteint : la décision passe par VerrouIRIS.definir_distant (l'état réel vit dans
+        verrou.json). Sans mot de passe, 403 dit tel quel : rendre 200 puis rétablir le réglage en silence
+        laissait l'écran annoncer « désactivé » à tort. Le mode 100 % local, lui, reste permis : il garde le
+        canal « verrouillage seulement » ouvert tant que le verrouillage à distance est actif
+        (telecommande.Telecommande.actif)."""
+        verrou = getattr(ctx, "verrou", None)
+        actif = bool(getattr(verrou, "distant_actif", None)) if verrou is not None else bool(
+            getattr(before, "verrou_distant_actif", False))
+        if not actif or not ctx.comptes.configure:
+            return
+        definir_distant = getattr(verrou, "definir_distant", None) if verrou is not None else None
+        if data.get("verrou_distant_actif") is False and callable(definir_distant):
+            from .verrou import RefusVerrou
+
+            try:
+                definir_distant(False, mot_de_passe if isinstance(mot_de_passe, str) else None)
+            except RefusVerrou as exc:
+                raise HTTPException(exc.code, exc.message)
+
+        def _propre(valeur: Any) -> str:
+            return str(valeur or "").strip().rstrip("/").lower()
+
+        touches = []
+        for cle in ("relay_server", "licence_email"):
+            if cle in data and _propre(data[cle]) != _propre(getattr(before, cle, "")):
+                touches.append(cle)
+        if not touches:
+            return
+        _exiger_mot_de_passe_du_verrou(mot_de_passe, ", ".join(touches))
+
+    def _verrou_distant_protege() -> bool:
+        """Vrai quand couper le canal du verrouillage à distance doit exiger le mot de passe du propriétaire."""
+        verrou = getattr(ctx, "verrou", None)
+        actif = bool(getattr(verrou, "distant_actif", None)) if verrou is not None else bool(
+            getattr(ctx.settings.user, "verrou_distant_actif", False))
+        return actif and bool(ctx.comptes.configure)
+
+    def _exiger_mot_de_passe_du_verrou(mot_de_passe: Any, detail: str) -> None:
+        """429 pendant la limitation des essais ; 403 MESSAGE_REGLAGE_VERROU (journalisé) sans le bon mot de passe."""
+        trop = getattr(ctx.comptes, "_trop_d_essais", None)
+        if callable(trop) and trop():
+            raise HTTPException(429, "Trop de tentatives : réessayez dans quelques minutes.")
+        if isinstance(mot_de_passe, str) and mot_de_passe and ctx.comptes.verifier(mot_de_passe):
+            return
+        ctx.consent.log("reglage_protege_refuse", detail=detail)
+        raise HTTPException(403, MESSAGE_REGLAGE_VERROU)
+
+    def _proteger_jeton_vela(name: str, nouvelle_cle: str | None, mot_de_passe: Any) -> None:
+        """Constat du 2026-09-14 : retirer le jeton d'appareil « vela » (DELETE …/key ou PUT api_key vide) éteignait
+        le canal du verrouillage à distance (Telecommande.actif exige un jeton), sans mot de passe ; avec le mode
+        100 % local, assurer_acces_vela ne le réobtenait jamais. Le retirer ou le remplacer par une autre valeur
+        exige donc le mot de passe du propriétaire tant que le verrouillage à distance est actif.
+        nouvelle_cle None = suppression."""
+        if name != "vela" or not _verrou_distant_protege():
+            return
+        actuel = (ctx.secrets.get_api_key("vela") or "").strip()
+        propose = (nouvelle_cle or "").strip()
+        if not actuel or propose == actuel:
+            return  # rien à couper : aucun jeton en place, ou la même valeur réécrite
+        _exiger_mot_de_passe_du_verrou(mot_de_passe, "jeton vela")
 
     def apply_privacy_mode(enabled: bool) -> None:
         """Mode confidentiel : coupe le micro (et empêche toute relance) tant qu'il est actif."""
@@ -867,8 +1013,9 @@ def create_app(
     def update_agent(name: str, body: AgentUpdate):
         if name not in AGENT_NAMES:
             raise HTTPException(404, "moteur IA inconnu")
-        patch = {k: v for k, v in body.model_dump().items() if v is not None and k != "api_key"}
+        patch = {k: v for k, v in body.model_dump().items() if v is not None and k not in ("api_key", "mot_de_passe")}
         if body.api_key is not None:
+            _proteger_jeton_vela(name, body.api_key, body.mot_de_passe)
             ctx.secrets.set_api_key(name, body.api_key)
             ctx.consent.log("api_key_updated" if body.api_key else "api_key_removed", agent=name)
         if patch:
@@ -878,9 +1025,10 @@ def create_app(
         return view
 
     @app.delete("/api/agents/{name}/key", dependencies=auth)
-    def delete_agent_key(name: str):
+    def delete_agent_key(name: str, body: ConfirmationIn | None = None):
         if name not in AGENT_NAMES:
             raise HTTPException(404, "moteur IA inconnu")
+        _proteger_jeton_vela(name, None, body.mot_de_passe if body is not None else None)
         ctx.secrets.delete_api_key(name)
         ctx.consent.log("api_key_removed", agent=name)
         view = agent_view(name)
@@ -924,11 +1072,20 @@ def create_app(
         return {**conv, "messages": ctx.chat.messages(conv["id"])}
 
     @app.get("/api/conversations/{conv_id}", dependencies=auth)
-    def get_conversation(conv_id: str):
+    def get_conversation(conv_id: str, depuis: str | None = Query(default=None, max_length=64),
+                         limit: int | None = Query(default=None, ge=1, le=500)):
+        """Sans paramètre : toute la conversation (500 messages au plus), comme avant. `depuis` : seulement les
+        messages après celui-là ; `limit` : les N derniers. `depuis_trouve` faux = recharger tout."""
         conv = ctx.chat.get_conversation(conv_id)
         if not conv:
             raise HTTPException(404, "conversation introuvable")
-        return {**conv, "messages": ctx.chat.messages(conv_id)}
+        # issue_non_gardee : dernière demande finie SANS message (consentement requis, erreur publiée seulement),
+        # lue par le téléphone qui a perdu l'événement pendant une coupure de sa liaison.
+        issue = ctx.chat.issue_non_gardee(conv_id)
+        if depuis is None and limit is None:
+            return {**conv, "messages": ctx.chat.messages(conv_id), "issue_non_gardee": issue}
+        messages, trouve = ctx.chat.messages_depuis(conv_id, depuis, limit)
+        return {**conv, "messages": messages, "depuis_trouve": trouve, "issue_non_gardee": issue}
 
     @app.patch("/api/conversations/{conv_id}", dependencies=auth)
     def patch_conversation(conv_id: str, body: ConversationPatch):
@@ -951,6 +1108,80 @@ def create_app(
             raise HTTPException(404, "conversation introuvable")
         except RuntimeError as exc:
             raise HTTPException(409, str(exc))
+
+    @app.post("/api/voix/commande", dependencies=auth)
+    async def voix_commande(body: CommandeVocaleIn):
+        """Une phrase dite dans les lunettes reliées à l'app du téléphone, déjà transcrite par le téléphone.
+
+        Même chemin qu'une commande dite au micro de l'ordinateur (demande de l'équipe iOS, 2026-09-14) :
+        les interceptions d'abord (mode invité, pas à pas, vision, résumé…), puis le chat avec la règle de
+        la voix (lunettes exigées, pas d'aperçu écrit, réponse orale courte). La réponse est rendue au
+        téléphone, qui la lit : l'ordinateur resté à la maison ne parle pas.
+        Ce qui ouvrirait le micro de l'ordinateur (mode traduction, interprète) est refusé avec la phrase à dire."""
+        texte = (body.texte or "").strip()
+        if not texte:
+            raise HTTPException(422, "Phrase vide.")
+        exiger_lunettes(ctx, "voix")
+        if ctx.settings.user.privacy_mode:
+            raise HTTPException(409, "Mode confidentiel actif : IRIS ne traite aucune commande vocale.")
+        debut = time.monotonic()
+
+        def reponse(phrase: str, intercepte: bool, **extra: Any) -> dict:
+            return {"texte": phrase, "intercepte": intercepte,
+                    "duree_ms": int((time.monotonic() - debut) * 1000), **extra}
+
+        voix = ctx.voice
+        try:
+            from .traduction import est_phrase_interprete
+
+            ouvre_micro = est_phrase_interprete(texte) == "demarrer"
+        except Exception:  # pragma: no cover - module voisin absent
+            ouvre_micro = False
+        est_traduction = getattr(voix, "_est_demande_traduction", None)
+        if ouvre_micro or (callable(est_traduction) and est_traduction(texte)):
+            return reponse(PHRASE_MICRO_MAISON, True, refus="micro_de_la_maison")
+        mode_invite = getattr(ctx, "mode_invite", None)
+        if bool(getattr(mode_invite, "actif", False)):
+            # Filet (constat du 2026-09-14) : cette phrase a été transcrite par le téléphone, sans audio ; aucun
+            # verrou vocal ne l'a admise. Elle ne sort jamais du mode invité, même si l'interception manquait.
+            try:
+                from .mode_invite import _DESACTIVER, SORTIE_VOCALE_REFUSEE, _normaliser, heure_locale
+
+                if _DESACTIVER.match(_normaliser(texte)):
+                    ctx.consent.log("mode_invite_sortie_vocale_refusee",
+                                    detail="commande transcrite par le téléphone, voix non vérifiée")
+                    return reponse(SORTIE_VOCALE_REFUSEE.format(heure=heure_locale(mode_invite.jusqua)), True,
+                                   refus="voix_non_verifiee")
+            except ImportError:  # pragma: no cover - module voisin absent
+                pass
+        if getattr(voix, "_interceptions", None):
+            # Dans un fil : _intercepter attend les interceptions asynchrones sur la boucle du service, qui
+            # doit rester libre (un appel direct ici l'attendrait sur elle-même). L'origine dit aux interceptions
+            # que cette phrase n'est pas passée par le verrou vocal du micro de l'ordinateur.
+            from .voice.listener import ORIGINE_VOIX_TELEPHONE
+
+            phrase = await asyncio.to_thread(voix._intercepter, texte, ORIGINE_VOIX_TELEPHONE)
+            if phrase is not None:
+                return reponse(phrase, True)
+        if body.conversation_id:
+            conv = ctx.chat.get_conversation(body.conversation_id)
+            if conv is None:
+                raise HTTPException(404, "conversation introuvable")
+        else:
+            conv = ctx.voice_conversation()
+        try:
+            resultat = await ctx.chat.run_and_wait(conv["id"], texte, agent="auto", source="voix_telephone")
+        except RuntimeError:
+            raise HTTPException(409, "Une réponse est déjà en cours dans cette conversation.")
+        message = resultat.get("message") or {}
+        extra: dict[str, Any] = {"conversation_id": conv["id"], "message_id": message.get("id")}
+        if resultat.get("glasses_required"):
+            extra["lunettes_requises"] = True
+        if resultat.get("consent_required"):
+            extra["consentement_requis"] = resultat["consent_required"]
+            return reponse("Je ne peux pas envoyer cette demande : le consentement n'est pas accordé. "
+                           "Ouvre Confidentialité dans IRIS.", False, **extra)
+        return reponse(message.get("text") or resultat.get("error") or "", False, **extra)
 
     @app.post("/api/conversations/{conv_id}/cancel", dependencies=auth)
     def cancel_message(conv_id: str):
@@ -1001,7 +1232,18 @@ def create_app(
         n = ctx.memory.clear()
         ctx.consent.log("memory_cleared", detail=f"{n} souvenirs")
         ctx.hub.publish("memory.updated", count=0)
-        return {"deleted": n}
+        return {"deleted": n, "journal_technique": _vider_journal_technique()}
+
+    def _vider_journal_technique() -> int:
+        """Tout effacer, c'est aussi le journal technique (backend.log) : ses lignes ne portent plus de texte
+        dicté, mais celles d'une version antérieure au 2026-09-14 en portaient, et il n'est pas chiffré."""
+        try:
+            from .verrou import purger_journal_technique
+
+            return purger_journal_technique(None)
+        except Exception as exc:  # pragma: no cover - l'effacement demandé a déjà eu lieu
+            log.warning("journal technique non vidé : %s", exc)
+            return 0
 
     @app.get("/api/memory/export", dependencies=auth)
     def export_memory():
@@ -1045,6 +1287,7 @@ def create_app(
 
     @app.post("/api/tasks", dependencies=auth)
     async def create_task(body: TaskIn):
+        exiger_lunettes(ctx, "taches")
         return await ctx.tasks.create(body.title, body.instructions, body.agent)
 
     @app.get("/api/tasks/{task_id}", dependencies=auth)
@@ -1130,6 +1373,7 @@ def create_app(
         3. le fil audio, lui, voit le mode armé au bloc suivant et entre dans la boucle de
            traduction sans attendre un mot d'activation (VoiceListener._wake_cycle).
         La phrase rendue est toujours vraie : elle annonce la traduction, ou dit pourquoi il n'y en a pas."""
+        exiger_lunettes_pc(ctx, "traduction")  # micro de l'ordinateur
         empeche = ctx.traduction.pourquoi_impossible()
         if not empeche and ctx.consent.is_granted("audio_raw") and not ctx.voice.running:
             ctx.voice.start()  # les verrous sont dans start() ; s'il refuse, `running` reste faux et il dit pourquoi
@@ -1339,6 +1583,7 @@ def create_app(
 
     @app.post("/api/routines/{routine_id}/run", dependencies=auth)
     async def run_routine(routine_id: str):
+        exiger_lunettes(ctx, "routines")
         routine = ctx.routines.get(routine_id)
         if not routine:
             raise HTTPException(404, "routine introuvable")
@@ -1370,6 +1615,7 @@ def create_app(
     # ------------------------------------------------------------------ mémoire : résumé de journée
     @app.post("/api/memory/summarize-day", dependencies=auth)
     async def summarize_day(body: SummaryIn):
+        exiger_lunettes(ctx, "resume_journee")
         try:
             return await ctx.chat.summarize_day(body.day)
         except Exception as exc:
@@ -1399,6 +1645,7 @@ def create_app(
 
     @app.post("/api/watches", dependencies=auth)
     def watch_create(body: WatchBody):
+        exiger_lunettes(ctx, "surveillances")
         try:
             return ctx.watch.create(body.name, body.url, body.criteria, body.interval_min, body.site)
         except ValueError as exc:
@@ -1424,14 +1671,28 @@ def create_app(
         return {"ok": ctx.watch.delete(watch_id)}
 
     # ------------------------------------------------------------------ accès mobile
+    # En-têtes de sécurité de la page téléphone (CSP avec frame-ancestors, Permissions-Policy, nosniff) :
+    # fabriqués par routes_mobile, posés ICI parce que ces trois routes masquent celles des modules.
+    # Import protégé : si routes_mobile ne se charge pas, la page reste servie comme avant (sa balise
+    # meta et la garde anti-cadre de coeur.js restent en place) plutôt que de disparaître.
+    try:
+        from .routes_mobile import reponse_agent_service, reponse_manifeste, reponse_page
+    except Exception as exc:  # pragma: no cover - dépend d'un module voisin
+        log.warning("page téléphone : en-têtes de sécurité indisponibles (%s)", exc)
+        reponse_agent_service = reponse_manifeste = reponse_page = None
+
     @app.get("/manifest.webmanifest")
     def manifeste():
         """Décrit l'application au téléphone : nom, icônes, plein écran."""
+        if reponse_manifeste is not None:
+            return reponse_manifeste(MANIFESTE)
         return JSONResponse(MANIFESTE, media_type="application/manifest+json")
 
     @app.get("/sw.js")
     def agent_service():
         """Agent de service : Android l'exige pour proposer l'installation."""
+        if reponse_agent_service is not None:
+            return reponse_agent_service(AGENT_SERVICE)
         return Response(AGENT_SERVICE, media_type="application/javascript")
 
     @app.get("/icone-{taille}.png")
@@ -1443,9 +1704,11 @@ def create_app(
                         headers={"Cache-Control": "public, max-age=86400"})
 
     @app.get("/m", response_class=HTMLResponse)
-    def page_mobile():
+    def page_mobile(request: Request):
         """Coquille de l'interface téléphone. Volontairement publique : elle ne contient aucune
         donnée, seulement le formulaire de connexion. Tout ce qui suit exige une session."""
+        if reponse_page is not None:
+            return reponse_page(ctx, request, PAGE_MOBILE)
         return HTMLResponse(PAGE_MOBILE)
 
     @app.get("/api/compte")
@@ -1552,8 +1815,22 @@ def create_app(
         return ctx.presence_lunettes.attester(body.nom, body.identifiant, body.batterie, body.source)
 
     @app.delete("/api/lunettes/attestation", dependencies=auth)
-    def lunettes_attestation_retirer():
-        return ctx.presence_lunettes.retirer_attestation()
+    def lunettes_attestation_retirer(identifiant: str | None = Query(default=None, max_length=120)):
+        return ctx.presence_lunettes.retirer_attestation(identifiant)
+
+    @app.post("/api/lunettes/association", dependencies=auth)
+    def lunettes_association(body: AssociationLunettesIn):
+        """Associe un appareil de plus (second téléphone, app iPhone après la page Android) aux lunettes connues
+        de cet ordinateur. Le premier appareil est associé à sa première attestation ; les suivants exigent le
+        mot de passe du propriétaire. Contre-vérification du 2026-09-14 : sans mot de passe défini, la route
+        associait n'importe quel identifiant inventé (valide=True) ; elle répond maintenant 409."""
+        if not ctx.comptes.configure:
+            raise HTTPException(409, MESSAGE_ASSOCIATION_SANS_COMPTE)
+        trop = getattr(ctx.comptes, "_trop_d_essais", None)
+        if callable(trop) and trop():
+            raise HTTPException(429, "Trop de tentatives : réessayez dans quelques minutes.")
+        valide = bool(body.mot_de_passe) and ctx.comptes.verifier(body.mot_de_passe or "")
+        return ctx.presence_lunettes.associer(body.nom, body.identifiant, valide)
 
     # Mode démonstration : accès propriétaire CACHÉ (décision de Miguel, 2026-09-13). Jamais affiché
     # dans un écran client ; exige le mot de passe du propriétaire.
@@ -1564,14 +1841,16 @@ def create_app(
         if not ctx.comptes.verifier(body.mot_de_passe):
             raise HTTPException(403, "Mot de passe incorrect.")
         user = ctx.settings.update({"demo_sans_lunettes": True})
-        ctx.consent.log("demo_active")
+        # Nom neutre dans le registre : il est visible par quiconque ouvre Confidentialité et part dans
+        # l'export ; l'accès propriétaire caché ne s'y nomme pas.
+        ctx.consent.log("acces_proprietaire", detail="mot de passe vérifié")
         ctx.hub.publish("settings.updated", settings=user.model_dump())
         return ctx.presence_lunettes.etat()
 
     @app.post("/api/demo/desactiver", dependencies=auth)
     def demo_desactiver():
         user = ctx.settings.update({"demo_sans_lunettes": False})
-        ctx.consent.log("demo_desactive")
+        ctx.consent.log("acces_proprietaire_fin")
         ctx.hub.publish("settings.updated", settings=user.model_dump())
         return ctx.presence_lunettes.etat()
 
@@ -1589,7 +1868,8 @@ def create_app(
         status = await ctx.glasses.connect(body.address, body.name, attempts=max(1, min(body.attempts, 5)))
         if not status["connected"]:
             raise HTTPException(400, status.get("error") or "connexion impossible")
-        ctx.consent.log("glasses_connected", detail=f"{body.name or ''} {body.address}")
+        # Le nom journalisé est celui annoncé par l'appareil (glasses.connect), pas celui fourni par l'appelant.
+        ctx.consent.log("glasses_connected", detail=f"{(status.get('device') or {}).get('name') or ''} {body.address}")
         return status
 
     @app.post("/api/glasses/disconnect", dependencies=auth)
@@ -1608,26 +1888,28 @@ def create_app(
 
     @app.post("/api/glasses/photo", dependencies=auth)
     async def glasses_photo(body: GlassesPhotoIn):
+        exiger_lunettes_pc(ctx, "photo_lunettes")  # caméra reliée à l'ordinateur
         # Caméra des lunettes VELA : déclenche une prise de vue et rapatrie le JPEG EN LOCAL.
         # Le module est honnête par construction — il lève CameraIndisponible sur la paire audio
         # (pas de service ae00) et ProtocoleNonConfirme tant que l'en-tête de trame n'est pas prouvé
         # (sauf mode « lunettes_exploration »). On renvoie 409 avec le message tel quel dans ces cas :
         # ce n'est pas une panne, c'est une limite assumée qu'on affiche honnêtement à l'utilisateur.
         from .lunettes_camera import (
-            CameraLunettes, CameraIndisponible, ProtocoleNonConfirme,
+            CameraLunettes, CameraIndisponible, ProtocoleNonConfirme, refus_camera_client,
         )
 
         cam = CameraLunettes(ctx.glasses)
         try:
             res = await cam.prendre_photo(reconnaissance=bool(body.reconnaissance))
         except (CameraIndisponible, ProtocoleNonConfirme) as exc:
-            raise HTTPException(409, str(exc))
+            # {code, message} : la phrase client ; le texte technique du module reste au journal.
+            raise HTTPException(409, refus_camera_client(exc))
         except Exception:
             # Détail (chemins locaux, erreur BLE) au journal, pas dans la réponse HTTP.
             log.exception("échec de la prise de photo des lunettes")
             raise HTTPException(500, "La prise de photo a échoué.")
         if res.ok and res.chemin:
-            ctx.consent.log("lunettes_photo", detail=res.chemin)
+            ctx.consent.log("lunettes_photo", detail=Path(str(res.chemin)).name)  # le nom seul, pas le chemin
             ctx.hub.publish("glasses.photo", chemin=res.chemin, octets=res.octets)
         return {
             "ok": res.ok,

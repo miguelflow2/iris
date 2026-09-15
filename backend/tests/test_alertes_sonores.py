@@ -308,6 +308,38 @@ def test_le_prenom_du_service_vient_des_reglages(tmp_path):
     assert service.etat()["prenom"] == {"prenom": "miguel", "disponible": True, "raison": None}
 
 
+def test_un_prenom_absent_du_vocabulaire_local_est_dit_indisponible(tmp_path):
+    """Grammaire restreinte : un mot hors lexique serait ignoré, l'alerte ne se déclencherait jamais."""
+    ctx, _dits = faux_contexte(tmp_path, user_name="Siobhan", alertes_types=["prenom"])
+    cherches: list[str] = []
+    crees: list[list[str]] = []
+    modele = types.SimpleNamespace(vosk_model_find_word=lambda mot: cherches.append(mot) or -1)
+    ctx.voice._vosk = types.SimpleNamespace(model=modele, recognizer=lambda grammaire, words=False: crees.append(grammaire))
+    service = al.ServiceAlertes(ctx)
+    assert service.traiter_bloc(b"\x00\x00" * 4000) == []
+    etat = service.etat()["prenom"]
+    assert cherches == ["siobhan"] and crees == [], "aucun reconnaisseur inutile n'est créé"
+    assert etat["disponible"] is False and "absent du vocabulaire" in etat["raison"] and "siobhan" in etat["raison"]
+    # Un prénom présent dans le lexique : le reconnaisseur restreint est bien créé.
+    modele.vosk_model_find_word = lambda mot: 1234
+    ctx.voice._vosk.recognizer = lambda grammaire, words=False: crees.append(grammaire) or FauxReconnaisseur([])
+    service.recharger_prenom()
+    service.traiter_bloc(b"\x00\x00" * 4000)
+    assert crees == [["siobhan"]] and service.etat()["prenom"]["disponible"] is True
+
+
+def test_une_panne_du_micro_est_dite_en_francais_sans_detail_technique(tmp_path):
+    ctx, _dits = faux_contexte(tmp_path)
+    ctx.voice.running, ctx.voice.state = False, "off"
+
+    def panne():
+        raise OSError("Error opening InputStream: Invalid number of channels [PaErrorCode -9998]")
+
+    ctx.voice.start = panne
+    raison = al.assurer_ecoute(ctx)
+    assert raison == al.MICRO_NON_DEMARRE and "PaErrorCode" not in raison and "Error" not in raison
+
+
 # --------------------------------------------------------------------------- routes
 # Application légère : le routeur des alertes, le vrai bus d'événements et les vrais réglages, sans le
 # reste d'IRIS. Le branchement dans create_app (authentification, crochets de démarrage) est prouvé
@@ -394,5 +426,36 @@ def test_les_alertes_suivent_le_reglage_et_le_mode_confidentiel(application):
         assert r.status_code == 200 and r.json()["en_marche"] is False and not ctx.settings.user.alertes_actives
     finally:
         reglages(ctx, privacy_mode=False, alertes_actives=False)
+        attendre(lambda: not ctx.alertes.actif, 5.0)
+    assert not ctx.alertes.actif
+
+
+def test_les_alertes_voulues_demarrent_quand_les_lunettes_arrivent_apres_coup(application):
+    """Lunettes connectées après l'activation : l'événement de présence relance les alertes, sans
+    attendre un changement de réglage ni un redémarrage."""
+    from iris.lunettes_presence import MESSAGE_REQUISES, LunettesRequises
+
+    ctx, client = application
+
+    class Presence:
+        presentes = False
+
+        def exiger(self, fonction):
+            if not self.presentes:
+                raise LunettesRequises(fonction)
+
+    presence = Presence()
+    ctx.presence_lunettes = presence
+    try:
+        reglages(ctx, alertes_actives=True)
+        assert attendre(lambda: ctx.alertes.raison == MESSAGE_REQUISES, 5.0)
+        assert not ctx.alertes.actif
+        presence.presentes = True
+        ctx.hub.publish("lunettes.presence", presentes=True, source="telephone")
+        assert attendre(lambda: ctx.alertes.actif, 5.0), "lunettes.presence doit démarrer les alertes voulues"
+        assert ctx.alertes.raison != MESSAGE_REQUISES
+    finally:
+        del ctx.presence_lunettes
+        reglages(ctx, alertes_actives=False)
         attendre(lambda: not ctx.alertes.actif, 5.0)
     assert not ctx.alertes.actif

@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .partage import ServicePartage
+from .lunettes_presence import exiger_lunettes, exiger_lunettes_pc
 
 
 class DemarrerIn(BaseModel):
@@ -28,6 +29,8 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/partage/demarrer")
     async def demarrer(body: DemarrerIn):
+        # Écran ou caméra reliée à l'ordinateur : lunettes vues par l'ordinateur. Caméra du téléphone : attestation.
+        (exiger_lunettes if (body.source or "") == "telephone" else exiger_lunettes_pc)(ctx, "vision_partagee")
         # RefusPartage est un HTTPException : 409 / 403 / 422 / 429 / 500 / 502 / 503 remontent tels quels.
         return await service.demarrer(body.source, body.intervalle_s)
 
@@ -37,6 +40,7 @@ def creer_routeur(ctx) -> APIRouter:
 
     @routeur.post("/api/partage/prolonger")
     async def prolonger():
+        exiger_lunettes(ctx, "vision_partagee")
         return await service.prolonger()
 
     @routeur.get("/api/partage/etat")

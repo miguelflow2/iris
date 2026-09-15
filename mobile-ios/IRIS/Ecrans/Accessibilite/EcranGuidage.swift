@@ -8,6 +8,7 @@ import MapKit
 import SwiftUI
 import UIKit
 
+@MainActor
 struct EcranGuidage: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
@@ -273,6 +274,7 @@ struct EcranGuidage: View {
 
 // MARK: - Où suis-je ?
 
+@MainActor
 struct EcranOuSuisJe: View {
     @Environment(EnvironnementIRIS.self) private var env
     let perception: PerceptionIRIS
@@ -362,6 +364,7 @@ struct EcranOuSuisJe: View {
 }
 
 /// Accord explicite, une fois sur cet iPhone, avant d'envoyer la position au service de cartes d'iOS.
+@MainActor
 struct CarteAccordCartes: View {
     let guidage: GuidageAPied
 

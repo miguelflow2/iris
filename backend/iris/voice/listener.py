@@ -3,6 +3,7 @@ Tout se passe sur l'appareil avec Vosk ; le repli Google n'est utilisé qu'avec 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import difflib
 import json
 import logging
@@ -35,6 +36,13 @@ SPEECH_PEAK = 700  # amplitude minimale considérée comme de la parole (sur 327
 WEAK_MIC_PEAK = 1500  # en dessous : le micro capte trop faiblement, on le signale à l'utilisateur
 POLITESSE = {"ok", "okay", "bon", "merci", "svp", "stp"}  # écartés avant de reconnaître un ordre d'arrêt
 CLOUD_TIMEOUT = 4.0  # renfort de reconnaissance cloud : au-delà, on garde la transcription locale
+# D'où vient la phrase qu'une interception est en train de traiter. « micro_pc » : l'écoute de cet ordinateur,
+# dont l'audio est passé par _locuteur_admis (verrou vocal). « voix_telephone » : texte déjà transcrit par le
+# téléphone (POST /api/voix/commande) — aucun audio, donc aucun verrou vocal n'a pu l'admettre. Une interception
+# qui accorde un droit au propriétaire seul (sortir du mode invité) lit cette origine au lieu de supposer.
+ORIGINE_MICRO_PC = "micro_pc"
+ORIGINE_VOIX_TELEPHONE = "voix_telephone"
+ORIGINE_COMMANDE: contextvars.ContextVar[str] = contextvars.ContextVar("origine_commande", default=ORIGINE_MICRO_PC)
 # Le micro livre un bloc toutes les 0,25 s. Vingt blocs manquants d'affilée, ce n'est plus un
 # ralentissement : le périphérique a disparu (lunettes éteintes, hors de portée, Bluetooth coupé).
 # Cinq secondes laissent aussi passer l'établissement du lien mains libres, qui prend jusqu'à 2 s.
@@ -201,6 +209,51 @@ def _compact(nom: object) -> str:
     return " ".join(str(nom or "").split()).lower()
 
 
+# Mots qui figurent dans le nom de presque tous les micros : un nom de lunettes fait de ces mots ne prouve rien.
+NOM_LUNETTES_MIN = 6
+MOTS_GENERIQUES_MICRO = frozenset((
+    "micro", "microphone", "mic", "casque", "headset", "hands-free", "handsfree", "realtek", "usb", "audio",
+    "bluetooth", "stereo", "haut-parleurs", "speakers", "high", "definition", "device", "input", "entree",
+    # Contre-vérification du 2026-09-14 : « Microphone Array », « Intel® Smart Sound » passaient.
+    "array", "intel", "smart", "sound", "technology", "technologie", "sst", "amd", "nvidia", "conexant",
+    "integrated", "integre", "interne", "internal", "webcam", "camera", "line", "ligne", "digital", "numerique",
+    "analog", "mixer", "wireless", "sans-fil", "de", "du", "la", "le", "et", "and", "for", "the", "pour",
+    # Finition B du 2026-09-14 : noms FRANÇAIS par défaut de Windows qui passaient encore — « Réseau de microphones
+    # (Technologie Intel® Smart Sound pour microphones numériques) », « Microphones (Realtek(R) Audio) »,
+    # « Groupe de microphones ». Les accents sont retirés et le pluriel ramené au singulier avant la comparaison
+    # (voir _mot_generique), la liste ne porte donc que des formes simples.
+    "reseau", "groupe", "peripherique", "systeme", "haut-parleur", "ecouteur", "avant", "arriere", "front", "rear",
+    "port", "prise", "jack", "externe", "external", "pilote", "driver", "wasapi", "mme", "wdm", "ks", "virtual",
+    "virtuel", "cable", "ag", "voice", "voix", "communication", "communications", "default", "defaut", "par",
+    "des", "les", "au", "aux", "sur", "with", "on", "in", "of", "hd", "pro", "multimedia", "controller",
+    "controleur", "hdmi", "displayport", "nvidia", "optical", "optique", "spdif", "wave", "wav",
+))
+
+
+def _mot_generique(mot: str) -> bool:
+    """Le mot (déjà en minuscules) est-il un mot générique de périphérique audio ? Sans accents, et au singulier :
+    « microphones », « numériques », « réseaux » sont des mots génériques comme leurs singuliers."""
+    simple = "".join(c for c in unicodedata.normalize("NFD", mot) if unicodedata.category(c) != "Mn")
+    if simple in MOTS_GENERIQUES_MICRO:
+        return True
+    for fin in ("s", "x"):
+        if simple.endswith(fin) and simple[: -len(fin)] in MOTS_GENERIQUES_MICRO:
+            return True
+    return False
+
+
+def nom_de_lunettes_distinctif(nom: object) -> bool:
+    """Un nom de lunettes peut-il servir de preuve dans la liste des micros ? Au moins NOM_LUNETTES_MIN
+    caractères, et au moins un mot qui n'est pas un mot générique de périphérique audio."""
+    propre = _compact(nom)
+    if len(propre) < NOM_LUNETTES_MIN:
+        return False
+    # Découpage sur toute ponctuation (« realtek(r) » donnait un mot « realtek(r » jugé distinctif) ; un mot
+    # distinctif a au moins 3 caractères (« r » de « (R) », « tm » ne distinguent rien).
+    mots = [m.strip("-_") for m in re.split(r"[^0-9a-zà-ÿ_\-]+", propre)]
+    return any(len(m) >= 3 and not _mot_generique(m) for m in mots)
+
+
 def nom_correspond(nom: str, cherche: str) -> bool:
     """Le périphérique `nom` est-il celui qu'on cherche ? Insensible à la casse et à la troncature.
 
@@ -330,6 +383,12 @@ def rafraichir_peripheriques(sd) -> bool:
         VERROU_PORTAUDIO.release()
 
 
+async def _avec_origine(attente: Awaitable[Any], origine: str) -> Any:
+    """Exécute une interception asynchrone avec l'origine de la commande posée dans son propre contexte."""
+    ORIGINE_COMMANDE.set(origine)  # contexte de la tâche créée par run_coroutine_threadsafe : aucune fuite
+    return await attente
+
+
 class VoiceListener:
     def __init__(
         self,
@@ -418,14 +477,15 @@ class VoiceListener:
         if self.glasses_connected is not None and self.glasses_connected():
             return True
         nom = (self.settings.user.glasses.name or "").strip().lower()
-        if not nom:
+        # Constat du 2026-09-14 : un nom court ou générique (« Micro », « Casque ») se retrouve dans le nom de
+        # presque tous les micros, et faisait passer celui du portable pour les lunettes. Le nom doit être
+        # assez long et propre à un appareil ; la seule correspondance du premier mot ne suffit plus.
+        if not nom_de_lunettes_distinctif(nom):
             return False
-        peripheriques = [d.lower() for d in self.mic_devices()]
-        if any(nom in d for d in peripheriques):
-            return True
-        # Windows tronque les noms MME à 31 caractères : « Casque (M01 Pro_F444 Hands-Free ».
-        tete = nom.split()[0]
-        return len(tete) >= 3 and any(tete in d for d in peripheriques)
+        peripheriques = [" ".join(d.lower().split()) for d in self.mic_devices()]
+        # Windows tronque les noms MME à 31 caractères (« Casque (M01 Pro_F444 Hands-Free ») : le nom
+        # ENTIER des lunettes y figure encore, c'est lui qu'on cherche.
+        return any(" ".join(nom.split()) in d for d in peripheriques)
 
     def lunettes_requises(self) -> str | None:
         """Message à afficher si le pilotage vocal est verrouillé faute de lunettes, sinon None.
@@ -453,6 +513,17 @@ class VoiceListener:
         if presence is not None:
             # Règle « lunettes d'abord » (2026-09-13) : plus de passe-droit pour un appareil qui n'a
             # jamais connu de lunettes — la voix passe par les lunettes, point.
+            # Constat du 2026-09-14 : des lunettes attestées par le TÉLÉPHONE sont dehors, sur le nez de
+            # leur propriétaire. Le micro de CET ordinateur resterait fermé : sinon il écouterait la
+            # maison (journal, alertes, sous-titres) et un « Dis-moi Iris » d'un tiers le piloterait.
+            capture_pc = getattr(presence, "presentes_pour_capture_pc", None)
+            if callable(capture_pc):
+                if capture_pc():
+                    return None
+                if presence.presentes():
+                    return ("Tes lunettes sont connectées à ton téléphone : l'ordinateur n'ouvre pas son micro "
+                            "pendant ce temps.")
+                return "Connecte tes lunettes VELA pour parler à IRIS."
             return None if presence.presentes() else "Connecte tes lunettes VELA pour parler à IRIS."
         u = self.settings.user
         if not u.require_glasses or u.demo_sans_lunettes:
@@ -755,7 +826,9 @@ class VoiceListener:
             spoken = [w for w in text.split() if w != "[unk]"]
             # un « stop » isole prononce par l'utilisateur, pas un mot noye dans la phrase d'IRIS
             if spoken and len(spoken) <= 2 and " ".join(spoken) in stop_words and time.time() - started > 0.3:
-                log.info("mot d'arret entendu : %r", text)
+                # Constat du 2026-09-14 : le journal technique (backend.log) n'est ni chiffré ni purgé par la
+                # rétention ; il ne reçoit donc aucun mot entendu, seulement des métadonnées.
+                log.info("mot d'arrêt entendu (%d mot(s))", len(spoken))
                 self.interrupt()
                 break
         if capture is None:
@@ -957,7 +1030,9 @@ class VoiceListener:
         # 5 septembre 2026 : « micro Casque … introuvable → micro par défaut »). Vérification AVANT
         # d'ouvrir. Le repli reste permis quand les lunettes SONT présentes (lunettes_requises rend
         # None) — micro voulu momentanément muet, lien mains libres qui raccroche puis reprend seul.
-        if device is None and voulu and self.lunettes_requises():
+        # Constat du 2026-09-14 : refusé aussi sans micro voulu, et quand les lunettes ne sont attestées que
+        # par le téléphone (lunettes_requises rend alors la raison) — leur porteur n'est pas devant ce PC.
+        if device is None and self.lunettes_requises():
             raise RuntimeError("verrou lunettes : repli sur le micro par défaut refusé")
         # Fréquence d'ouverture du flux. Quand un micro est choisi, on prend celle qu'il ANNONCE,
         # même si elle ment : MME annonce 44100 Hz pour les lunettes, dont le lien mains libres
@@ -1241,7 +1316,7 @@ class VoiceListener:
                         self.hub.publish("voice.heard", text=phrase)
                     pending, offset = [], 0
                     continue
-                log.info("mot d'activation reconnu : %r", text)
+                log.info("mot d'activation reconnu (%d mot(s))", len(words))
                 self.hub.publish("voice.wake", text=phrase)
                 # Commande dite dans le même souffle : la grammaire ne sait pas la transcrire ([unk]),
                 # on rejoue son audio dans le reconnaisseur de commande au lieu de le jeter.
@@ -1267,6 +1342,12 @@ class VoiceListener:
             if found:
                 self.hub.publish("voice.wake", text=text)
                 if rest.strip():
+                    # Commande dite dans le même souffle que le mot d'activation : elle n'a pas traversé
+                    # _listen_command, qui applique le verrou vocal. Le segment entier (mot d'activation compris)
+                    # passe donc par le même verrou ici ; sans cela, n'importe quelle voix exécutait une commande
+                    # d'un seul souffle, y compris « fin du mode invité » (finition du 2026-09-14).
+                    if not self._locuteur_admis(segment):
+                        return
                     self._process(rest)
                 else:
                     self._command_cycle(ack=True)
@@ -1395,22 +1476,29 @@ class VoiceListener:
     def retirer_interception(self, nom: str) -> None:
         self._interceptions = [i for i in self._interceptions if i[1] != nom]
 
-    def _intercepter(self, text: str) -> str | None:
-        for _priorite, nom, fonction in list(self._interceptions):
-            try:
-                resultat = fonction(text)
-                if inspect.isawaitable(resultat):
-                    if self.loop is None:
-                        if inspect.iscoroutine(resultat):
-                            resultat.close()
-                        continue
-                    resultat = asyncio.run_coroutine_threadsafe(resultat, self.loop).result(timeout=90)  # type: ignore[arg-type]
-            except Exception as exc:
-                log.warning("interception %s en erreur : %s", nom, exc)
-                continue
-            if resultat is not None:
-                return str(resultat)
-        return None
+    def _intercepter(self, text: str, origine: str = ORIGINE_MICRO_PC) -> str | None:
+        """Consulte les interceptions par priorité. `origine` est posée dans ORIGINE_COMMANDE pendant l'appel (y
+        compris dans les interceptions asynchrones exécutées sur la boucle, qui n'héritent pas du contexte du fil)."""
+        jeton = ORIGINE_COMMANDE.set(origine)
+        try:
+            for _priorite, nom, fonction in list(self._interceptions):
+                try:
+                    resultat = fonction(text)
+                    if inspect.isawaitable(resultat):
+                        if self.loop is None:
+                            if inspect.iscoroutine(resultat):
+                                resultat.close()
+                            continue
+                        resultat = asyncio.run_coroutine_threadsafe(
+                            _avec_origine(resultat, origine), self.loop).result(timeout=90)
+                except Exception as exc:
+                    log.warning("interception %s en erreur : %s", nom, exc)
+                    continue
+                if resultat is not None:
+                    return str(resultat)
+            return None
+        finally:
+            ORIGINE_COMMANDE.reset(jeton)
 
     def _locuteur_admis(self, pcm: bytes) -> bool:
         """Verrou vocal : la commande n'est exécutée que si la voix est celle du propriétaire."""
@@ -1496,9 +1584,12 @@ class VoiceListener:
         return rest.strip() if found else text
 
     def _log_stt(self, engine: str, text: str, seconds: float, peak: int) -> None:
+        # Constat du 2026-09-14 : backend.log n'est ni chiffré ni soumis à la rétention. On y garde de quoi
+        # diagnostiquer la reconnaissance (moteur, durée, niveau, retard), jamais ce qui a été dit.
         log.info(
-            "stt %s: %r (%.1f s d'audio, pic %d, retard %.1f s, %d bloc(s) perdu(s), micro %s)",
-            engine, text, seconds, peak, self._audio.qsize() * BLOCK / stt.SAMPLE_RATE, self.dropped, self.device_name,
+            "stt %s : %d mot(s) (%.1f s d'audio, pic %d, retard %.1f s, %d bloc(s) perdu(s), micro %s)",
+            engine, len((text or "").split()), seconds, peak, self._audio.qsize() * BLOCK / stt.SAMPLE_RATE,
+            self.dropped, self.device_name,
         )
 
     def _cloud_upgrade(self, pcm: bytes, local_text: str) -> str:
@@ -1524,7 +1615,8 @@ class VoiceListener:
             return ""
         self.consent.log("external_send", data_type="audio_raw", agent="google-stt", detail=f"{int(seconds * 1000)} ms d'audio")
         if normalize(text) != normalize(local_text):
-            log.info("stt cloud: %r (local: %r)", text, local_text)
+            log.info("renfort de transcription retenu : %d mot(s) (transcription locale : %d mot(s))",
+                     len(text.split()), len((local_text or "").split()))
         return text
 
     def _process(self, text: str, depth: int = 0) -> None:
@@ -1883,7 +1975,7 @@ class VoiceListener:
         # exigé en tête : sans lui, rien de ce qui vient après ne ferme le mode.
         premier_mot_arret = bool(suite) and len(suite) <= 3 and (suite[0] == "fin" or self._est_arret(suite[0]))
         if trouve and (self._est_arret(reste) or premier_mot_arret):
-            log.info("mode traduction : sortie demandée (%r)", phrase)
+            log.info("mode traduction : sortie demandée (%d mot(s))", len(phrase.split()))
             return "demande"
         return ""
 

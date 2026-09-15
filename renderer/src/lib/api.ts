@@ -57,12 +57,35 @@ export function messageErreur(err: unknown): string {
   return String(err)
 }
 
+/**
+ * Refus de la caméra des lunettes, dit au client. Le module caméra du service (lunettes_camera.py) refuse
+ * la photo pour TOUTES les paires tant que l'en-tête de sa trame n'est pas confirmé sur le vrai matériel ;
+ * son message technique (charge utile en hexadécimal, chemin d'un document interne, nom d'un réglage
+ * d'exploration qui écrirait des octets non prouvés dans la puce) ne doit jamais atteindre un client. Tant
+ * que le service ne renvoie pas lui-même { code: "camera_non_confirmee", message }, la phrase est remplacée ici.
+ */
+export const CAMERA_NON_CONFIRMEE =
+  'La caméra des lunettes n’est pas encore activée dans IRIS (son protocole est en cours de confirmation) : aucune photo n’a été prise. En attendant, utilisez une photo prise avec votre téléphone, ou l’écran de l’ordinateur.'
+const CAMERA_ABSENTE = 'Ces lunettes n’exposent pas de caméra utilisable par IRIS : aucune photo n’a été prise.'
+
+/** Remplace le jargon interne connu du service par une phrase client ; laisse tout le reste intact. */
+export function phraseClient(texte: string): string {
+  if (/lunettes_exploration|LUNETTES-CAMERA-PROTOCOLE|en-tête exact de la trame/i.test(texte)) return CAMERA_NON_CONFIRMEE
+  if (/service ae00|caractéristiques ae01/i.test(texte)) return CAMERA_ABSENTE
+  return texte
+}
+
+/** Vrai si l'erreur est le refus « caméra des lunettes pas encore activée » (code du service ou phrase reconnue). */
+export function estCameraNonConfirmee(err: unknown): boolean {
+  return err instanceof ApiError && (err.code === 'camera_non_confirmee' || err.message === CAMERA_NON_CONFIRMEE)
+}
+
 /** Phrase lisible depuis le « detail » d'une réponse : la phrase du service, jamais du JSON brut quand on peut l'éviter. */
 function texteDetail(detail: unknown, repli: string): string {
-  if (typeof detail === 'string' && detail) return detail
+  if (typeof detail === 'string' && detail) return phraseClient(detail)
   if (detail && typeof detail === 'object') {
     const d = detail as Record<string, unknown>
-    if (typeof d.message === 'string' && d.message) return d.message
+    if (typeof d.message === 'string' && d.message) return phraseClient(d.message)
     // Erreurs de validation de FastAPI : une liste de { msg, loc }.
     if (Array.isArray(detail) && detail.length && typeof (detail[0] as any)?.msg === 'string') {
       return (detail as any[]).map((e) => e.msg).join(' ; ')
@@ -214,6 +237,42 @@ class Api {
       throw this.erreur(res.status, res.statusText, payload)
     }
     return res.blob()
+  }
+
+  /**
+   * Envoie un fichier tel quel (octets bruts, sans base64 ni JSON) et suit la progression de l'envoi.
+   * Chromium lit le fichier par morceaux depuis le disque : un enregistrement de plusieurs centaines de
+   * mégaoctets ne devient jamais une chaîne JavaScript (une chaîne V8 plafonne vers 536 millions de
+   * caractères, et un encodage base64 de 400 Mo la dépasse). XMLHttpRequest plutôt que fetch : seul lui
+   * rapporte la progression d'un envoi.
+   */
+  envoyerFichier<T = any>(path: string, fichier: Blob, contentType: string, onProgres?: (fraction: number) => void): Promise<T> {
+    const info = this.info
+    if (!info) return Promise.reject(new ApiError('Backend IRIS non démarré', 0, true))
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${info.baseUrl}${path}`)
+      xhr.setRequestHeader('Authorization', `Bearer ${info.token}`)
+      xhr.setRequestHeader('Content-Type', contentType)
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable && onProgres) onProgres(ev.loaded / Math.max(1, ev.total))
+      }
+      xhr.onerror = () => reject(new ApiError('Le service IRIS de cet ordinateur est injoignable.', 0, true))
+      xhr.onabort = () => reject(new ApiError('Envoi interrompu.', 0, true))
+      xhr.onload = () => {
+        let payload: unknown = xhr.responseText
+        if ((xhr.getResponseHeader('content-type') || '').includes('application/json')) {
+          try {
+            payload = JSON.parse(xhr.responseText)
+          } catch {
+            payload = xhr.responseText
+          }
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(payload as T)
+        else reject(this.erreur(xhr.status, xhr.statusText, payload))
+      }
+      xhr.send(fichier)
+    })
   }
 
   get<T = any>(path: string): Promise<T> {

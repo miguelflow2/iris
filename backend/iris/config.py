@@ -131,6 +131,48 @@ def _borner(valeur: object, minimum: int, maximum: int, defaut: int) -> int:
         return defaut
 
 
+# Services cartographiques PUBLICS du guidage à pied de la page téléphone (données OpenStreetMap). Ce sont des
+# serveurs bénévoles sans engagement de service, dont la limite (une requête par seconde) vaut pour la SOMME
+# des utilisateurs d'une application : ils ne tiennent pas une mise en marché à grande échelle. Les réglages
+# guidage_recherche / guidage_itineraire permettent de brancher une instance propre ou un fournisseur sous
+# contrat SANS changer le code ; vides, la page téléphone retombe sur ces services publics et le dit.
+GUIDAGE_RECHERCHE_PUBLIQUE = "https://nominatim.openstreetmap.org"
+GUIDAGE_ITINERAIRE_PUBLIC = "https://routing.openstreetmap.de/routed-foot/route/v1/foot/"
+
+
+def adresse_service_cartographique(valeur: object, dossier: bool = False) -> str:
+    """Adresse d'un service cartographique compatible (recherche d'adresse ou itinéraire), ou "" si elle n'est
+    pas sûre. Seulement https (http en boucle locale pour les essais), ni identifiants, ni paramètres, ni
+    fragment : la position GPS du téléphone y part, et l'origine entre telle quelle dans la politique de
+    contenu de la page. `dossier` : préfixe auquel la page ajoute « lon,lat;lon,lat » (barre finale)."""
+    from urllib.parse import urlsplit
+
+    brut = str(valeur or "").strip()
+    if not brut or len(brut) > 300 or any(c.isspace() or c in "\"'<>;`" for c in brut):
+        return ""
+    try:
+        parts = urlsplit(brut)
+        port = parts.port
+    except ValueError:
+        return ""
+    hote = (parts.hostname or "").lower()
+    if not hote or parts.username or parts.password or parts.query or parts.fragment or "?" in brut or "#" in brut:
+        return ""
+    if parts.scheme == "https":
+        pass
+    elif parts.scheme == "http" and hote in ("127.0.0.1", "localhost"):
+        pass
+    else:
+        return ""
+    if not all(c.isalnum() or c in ".-" for c in hote):
+        return ""
+    chemin = parts.path or ""
+    if not all(c.isalnum() or c in "/._-~%" for c in chemin):
+        return ""
+    base = f"{parts.scheme}://{hote}" + (f":{port}" if port else "") + chemin.rstrip("/")
+    return base + "/" if dossier else base
+
+
 class AgentConfig(BaseModel):
     label: str = ""
     active: bool = False
@@ -301,6 +343,9 @@ class UserSettings(BaseModel):
     ecoute_assistee_reduction: int = 60  # 0-100, réduction du bruit
     bouton_description_signature: str = ""  # trame du bouton des lunettes apprise (uuid:hex)
     bouton_description_mode: str = "scene"  # description déclenchée par ce bouton
+    # Garder la photo des lunettes avec la description retenue (« où ai-je posé… » la montre ensuite). Désactivé
+    # par défaut : aucune image n'est conservée sans réglage explicite ; la description texte, elle, suit « Retenir ».
+    vision_garder_photos: bool = False
     album_filigrane: bool = False
     album_enregistrement_auto: bool = False
     album_dossier_export: str = ""  # vide = Images/IRIS de l'utilisateur
@@ -316,7 +361,23 @@ class UserSettings(BaseModel):
     zones_sans_memoire: list[dict] = Field(default_factory=list)  # [{id, nom, lat, lon, rayon_m}]
     mode_invite_minutes: int = 120  # retour automatique à la normale après ce délai
     verrou_distant_actif: bool = False  # verrouillage / effacement à distance par le relais
+    # ------------------------------------------------------------------ guidage à pied (page téléphone)
+    # Vides = services publics d'OpenStreetMap (GUIDAGE_RECHERCHE_PUBLIQUE, GUIDAGE_ITINERAIRE_PUBLIC). Sinon :
+    # adresse d'un service compatible Nominatim (recherche) et préfixe d'un service compatible OSRM à pied
+    # (itinéraire), instance propre ou fournisseur sous contrat. La page téléphone y envoie la position.
+    guidage_recherche: str = ""
+    guidage_itineraire: str = ""
     agents: dict[str, AgentConfig] = Field(default_factory=_default_agents)
+
+    @field_validator("guidage_recherche", mode="before")
+    @classmethod
+    def _adresse_recherche(cls, valeur: object) -> str:
+        return adresse_service_cartographique(valeur)
+
+    @field_validator("guidage_itineraire", mode="before")
+    @classmethod
+    def _adresse_itineraire(cls, valeur: object) -> str:
+        return adresse_service_cartographique(valeur, dossier=True)
 
     @field_validator("tts_rate", mode="before")
     @classmethod

@@ -17,6 +17,17 @@ import pytest
 from iris import verrou_vocal as vv
 from iris.verrou_vocal import RefusVerrouVocal
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
+
+@pytest.fixture(autouse=True)
+def declaration_faite(monkeypatch):
+    """Ces tests portent sur la fonction une fois offerte, c'est-à-dire après la déclaration de VELA à la
+    Commission d'accès à l'information. Le cas « non offerte » (celui du code livré) a son propre test."""
+    monkeypatch.setattr(vv, "DECLARATION_CAI", "2026-07-01")
+
 TAUX = 16000
 VOYELLES = ((730, 1090, 2440), (530, 1840, 2480), (270, 2290, 3010), (570, 840, 2410),
             (300, 870, 2240), (660, 1720, 2410), (490, 910, 2350))
@@ -113,6 +124,33 @@ def test_meme_locuteur_score_haut_autre_timbre_score_bas():
     assert min(memes) >= 70, memes
     assert max(autres) <= 40, autres
     assert vv.score_depuis_ecart(0.0, 1.0) == 100 and vv.score_depuis_ecart(5.0, 1.0) == 50
+
+
+# --------------------------------------------------------------------------- non offerte avant la déclaration
+def test_non_offerte_tant_que_vela_na_pas_declare(client, app, monkeypatch):
+    """Constat du 2026-09-14 (LCCJTI, art. 44 et 45) : sans déclaration préalable de VELA, ni consentement, ni
+    échantillon, ni test, ni activation ; ce n'est pas un réglage. Retirer et effacer restent permis."""
+    monkeypatch.setattr(vv, "DECLARATION_CAI", None)
+    service = _service(app)
+    etat = client.get("/api/confiance/voix").json()
+    assert etat["offerte"] is False and "Commission d'accès" in etat["raison_non_offerte"]
+    assert "60 jours" in etat["note_legale"] and "art. 44 et 45" in etat["note_legale"]
+    assert "mot de passe" in etat["note_legale"]
+    for chemin, corps in (("/api/confiance/voix/consentement", {"accepte": True}),
+                          ("/api/confiance/voix/echantillon", {"secondes": 2}),
+                          ("/api/confiance/voix/tester", {"secondes": 2})):
+        r = client.post(chemin, json=corps)
+        assert r.status_code == 409 and "non encore offerte" in r.json()["detail"], chemin
+    assert client.patch("/api/settings", json={"verrou_vocal_actif": True}).status_code == 409
+    assert client.get("/api/settings").json()["verrou_vocal_actif"] is False
+    assert client.post("/api/confiance/voix/consentement", json={"accepte": False}).status_code == 200
+    assert client.delete("/api/confiance/voix").status_code == 200
+    with pytest.raises(RefusVerrouVocal):
+        service.ajouter_echantillon_pcm(voix(*PROPRIETAIRE, 4.0, 0))
+    # Même un réglage forcé sur le disque n'installe aucun vérificateur.
+    app.state.ctx.settings.update({"verrou_vocal_actif": True})
+    service.appliquer()
+    assert app.state.ctx.voice.verificateur_locuteur is None
 
 
 # --------------------------------------------------------------------------- consentement et stockage

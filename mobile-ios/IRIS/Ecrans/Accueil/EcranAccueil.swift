@@ -3,6 +3,7 @@
 
 import SwiftUI
 
+@MainActor
 struct EcranAccueil: View {
     @Environment(EnvironnementIRIS.self) private var env
 
@@ -61,6 +62,33 @@ struct EcranAccueil: View {
                                       detail: "Ce qui marche quand l'ordinateur ne répond pas.")
                     }
                 }
+
+                Carte(titre: "Au quotidien") {
+                    NavigationLink { EcranRecus() } label: {
+                        LigneFonction(icone: "doc.text.viewfinder", titre: "Reçus",
+                                      detail: "Photographie un reçu : ton ordinateur le lit et le range. Montants à vérifier.")
+                    }
+                    Divider().overlay(Couleurs.ligne)
+                    NavigationLink { EcranPrix() } label: {
+                        LigneFonction(icone: "tag", titre: "Comparer les prix",
+                                      detail: "Prix trouvés en ligne par ton ordinateur, à vérifier en magasin.")
+                    }
+                    Divider().overlay(Couleurs.ligne)
+                    NavigationLink { EcranPasAPas() } label: {
+                        LigneFonction(icone: "list.number", titre: "Pas à pas",
+                                      detail: "Une étape à la fois, lue à voix haute : recette, montage, réparation.")
+                    }
+                    Divider().overlay(Couleurs.ligne)
+                    NavigationLink { EcranEntrainement() } label: {
+                        LigneFonction(icone: "figure.strengthtraining.traditional", titre: "Entraînement",
+                                      detail: "Séries et repos chronométrés. IRIS ne compte pas les répétitions.")
+                    }
+                    Divider().overlay(Couleurs.ligne)
+                    NavigationLink { EcranResumeJour() } label: {
+                        LigneFonction(icone: "calendar", titre: "Résumé du jour",
+                                      detail: "Ce qu'IRIS a noté sur ton ordinateur : fait, reste à faire, rappels.")
+                    }
+                }
             }
             .padding()
         }
@@ -86,6 +114,7 @@ struct EcranAccueil: View {
     }
 }
 
+@MainActor
 struct LigneFonction: View {
     let icone: String
     let titre: String
@@ -115,6 +144,7 @@ struct LigneFonction: View {
 }
 
 /// La carte de la voix : bouton « Parler à IRIS » (une phrase) et interrupteur « Dis-moi Iris ».
+@MainActor
 struct CarteVoix: View {
     @Environment(EnvironnementIRIS.self) private var env
     @State private var erreur: String? = nil
@@ -199,7 +229,7 @@ struct CarteVoix: View {
         do {
             let phrase = try await env.voix.ecouterUnePhrase(langue: env.voix.langueIRIS, delaiMax: 8)
             enEcoute = false
-            if let reponse = await env.conversation.envoyer(phrase) {
+            if let reponse = await env.demanderAVoix(phrase) {
                 await env.voix.parler(reponse)
             }
         } catch {

@@ -164,7 +164,7 @@ function Bandeaux(): JSX.Element | null {
     <div className="bandeaux" role="status" aria-live="polite">
       {inviteActif ? (
         <button type="button" className="bandeau invite" onClick={() => nav.ouvrir('mode-invite')}>
-          Mode invité : rien n’est mémorisé{jusqua ? ` (jusqu’à ${jusqua})` : ''}
+          Mode invité : mémoire suspendue{jusqua ? ` (jusqu’à ${jusqua})` : ''}
         </button>
       ) : null}
       {dansZone ? (

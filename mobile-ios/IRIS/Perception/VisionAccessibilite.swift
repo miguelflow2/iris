@@ -151,7 +151,8 @@ final class VisionAccessibilite: ServiceVision {
         return analyse.resultat
     }
 
-    /// « Où ai-je posé… » : cherche dans les souvenirs réels de l'ordinateur (pas une capture : permis sans lunettes).
+    /// « Où ai-je posé… » : cherche dans les souvenirs réels de l'ordinateur. Pas une capture, mais
+    /// l'ordinateur exige aujourd'hui les lunettes sur cette route (428) : le refus s'affiche tel quel.
     func ouEst(_ question: String) async throws -> ReponseOuEst {
         try await pont.post("/api/accessibilite/ou-est", corps: DemandeOuEst(question: question), delai: 45)
     }

@@ -24,6 +24,10 @@ import iris.chat as chat_module
 from iris.connectors.base import BaseConnector, Chunk
 from iris.lunettes_camera import CameraIndisponible, ProtocoleNonConfirme, ResultatPhoto
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 NOMS_INTERDITS = ("claude", "anthropic", "openai", "gpt", "gemini", "google", "elevenlabs", "vosk", "piper",
                   "rapidocr", "openrouter")
 
@@ -95,12 +99,17 @@ class FauxMoteur(BaseConnector):
     supports_images = True
     appels: list[dict] = []
     reponse = "Une table en bois au centre, une chaise à gauche."
+    attente = 0.0  # un moteur qui tarde à répondre (délai maximal)
 
     def __init__(self):
         super().__init__("cle", "faux-modele")
 
     async def stream(self, messages, system, tools=None, run_tool=None, options=None):
         FauxMoteur.appels.append({"messages": messages, "system": system, "tools": tools, "options": options})
+        if FauxMoteur.attente:
+            import asyncio
+
+            await asyncio.sleep(FauxMoteur.attente)
         yield Chunk("text", text=FauxMoteur.reponse)
         yield Chunk("done")
 
@@ -113,6 +122,7 @@ def moteur(monkeypatch, client):
     """Un moteur externe prêt (clé présente), sans aucun consentement accordé."""
     FauxMoteur.appels = []
     FauxMoteur.reponse = "Une table en bois au centre, une chaise à gauche."
+    FauxMoteur.attente = 0.0
     monkeypatch.setattr(chat_module, "build_connector", lambda name, settings, secrets: FauxMoteur())
     client.put("/api/agents/claude", json={"active": True, "api_key": "sk-test-vision"})
     return FauxMoteur
@@ -440,6 +450,7 @@ def test_couleur_sans_moteur_est_une_estimation_annoncee(app, client):
 def test_photo_des_lunettes_temoin_annonce_et_album(app, client, moteur, camera, paroles, evenements):
     accorder(client, "image")
     ctx = app.state.ctx
+    ctx.settings.update({"vision_garder_photos": True})  # réglage explicite : sans lui, la photo n'est pas gardée
     r = client.post("/api/accessibilite/decrire", json={"mode": "scene", "source": "lunettes", "parler": False})
     assert r.status_code == 200, r.text
     corps = r.json()
@@ -449,8 +460,74 @@ def test_photo_des_lunettes_temoin_annonce_et_album(app, client, moteur, camera,
     assert corps["chemin"] and Path(corps["chemin"]).exists()
     assert "caméra des lunettes" in moteur.appels[-1]["system"]
     nom = Path(corps["chemin"]).name
-    assert any(e["type"] == "album.nouveau" and e["nom"] == nom and e["genre"] == "photo" for e in evenements)
+    # origine « description » : l'album ne recopie pas ces photos vers le dossier Images.
+    assert any(e["type"] == "album.nouveau" and e["nom"] == nom and e["genre"] == "photo"
+               and e.get("origine") == "description" for e in evenements)
     assert ctx.memory.list(limit=1)[0]["source_text"] == nom
+    assert "non chiffrée" in corps["note"], "garder la photo se dit, avec ce qu'elle devient"
+
+
+def test_sans_le_reglage_la_photo_decrite_nest_pas_gardee(app, client, moteur, camera, paroles, evenements):
+    """Demande de la revue service-a : aucune image conservée sans réglage explicite (défaut : désactivé).
+    La description, elle, est retenue ; la note dit que la photo ne l'est pas."""
+    accorder(client, "image")
+    ctx = app.state.ctx
+    from iris.config import UserSettings
+
+    assert UserSettings().vision_garder_photos is False, "désactivé par défaut"
+    ctx.settings.update({"vision_garder_photos": False})
+    r = client.post("/api/accessibilite/decrire", json={"mode": "scene", "source": "lunettes", "parler": False})
+    assert r.status_code == 200, r.text
+    corps = r.json()
+    assert corps["chemin"] is None and not any(camera.dossier.glob("*.jpg"))
+    assert not any(e["type"] in ("album.nouveau", "glasses.photo") for e in evenements)
+    assert ctx.memory.count() == 1, "la description reste retenue"
+    assert "n'a pas été gardée" in corps["note"]
+
+
+def test_memoriser_faux_efface_la_photo_des_lunettes(app, client, moteur, camera, paroles, evenements):
+    """Demander une description n'est pas demander de garder la photo (d'une lettre, de billets, de passants)."""
+    accorder(client, "image")
+    r = client.post("/api/accessibilite/decrire", json={"mode": "billets", "source": "lunettes", "parler": False,
+                                                        "memoriser": False})
+    corps = r.json()
+    assert r.status_code == 200 and corps["texte"] == moteur.reponse and camera.prises == 1
+    assert corps["chemin"] is None and not any(camera.dossier.glob("*.jpg")), "la photo est effacée tout de suite"
+    assert not any(e["type"] in ("album.nouveau", "glasses.photo") for e in evenements)
+    assert not (corps["note"] or "").count("gardée")
+
+
+def test_une_description_ratee_ne_garde_pas_la_photo(app, client, moteur, camera, paroles):
+    accorder(client, "image")
+    moteur.reponse = ""
+    corps = client.post("/api/accessibilite/decrire", json={"mode": "scene", "source": "lunettes", "parler": False}).json()
+    assert corps["texte"] == acc.DESCRIPTION_RATEE and corps["chemin"] is None
+    assert not any(camera.dossier.glob("*.jpg"))
+
+
+# --------------------------------------------------------------------------- délai maximal du moteur
+def test_un_moteur_trop_lent_repond_504_et_ne_garde_pas_la_photo(app, client, moteur, camera, paroles, monkeypatch):
+    accorder(client, "image")
+    monkeypatch.setattr(acc, "DELAI_MOTEUR_S", 0.3)
+    moteur.attente = 3.0
+    import time as _time
+
+    debut = _time.monotonic()
+    r = client.post("/api/accessibilite/decrire", json={"mode": "scene", "source": "lunettes", "parler": False})
+    assert r.status_code == 504 and r.json()["detail"] == acc.MOTEUR_LENT
+    assert _time.monotonic() - debut < 2.5, "la requête n'attend pas le moteur au-delà du délai"
+    assert not any(camera.dossier.glob("*.jpg"))
+    # À la voix : une phrase courte, pas un gel de 90 s suivi d'un second envoi par le modèle.
+    assert app.state.ctx.voice._intercepter("qu'est-ce qu'il y a devant moi") == acc.MOTEUR_LENT_PHRASE
+
+
+def test_lecture_retombe_sur_le_texte_local_quand_le_moteur_est_trop_lent(client, moteur, faux_ocr, monkeypatch):
+    accorder(client, "image")
+    monkeypatch.setattr(acc, "DELAI_MOTEUR_S", 0.3)
+    moteur.attente = 3.0
+    r = client.post("/api/accessibilite/decrire", json={"mode": "lecture", "source": "image", "image": image_json(),
+                                                        "parler": False})
+    assert r.status_code == 200 and r.json()["texte"] == TEXTE_OCR
 
 
 def test_sans_annonce_de_capture_pas_de_photo_dite(app, client, moteur, camera, paroles):
@@ -475,7 +552,11 @@ def test_camera_indisponible_409_avec_le_message_exact(app, client, moteur, came
     accorder(client, "image")
     camera.erreur = erreur
     r = client.post("/api/accessibilite/decrire", json={"mode": "scene", "source": "lunettes", "parler": False})
-    assert r.status_code == 409 and r.json()["detail"] == str(erreur)
+    # {code, message} depuis le 2026-09-14 : la phrase client, jamais le texte technique du module caméra.
+    from iris.lunettes_camera import refus_camera_client
+
+    assert r.status_code == 409 and r.json()["detail"] == refus_camera_client(erreur)
+    assert "trame" not in r.json()["detail"]["message"]
     assert app.state.ctx.capture.snapshot()["camera"] is False
     assert moteur.appels == []
 
@@ -588,6 +669,31 @@ def test_ou_est_consulte_le_journal(app, client):
     assert "auto" in r.json()["reponse"]
 
 
+def test_mode_invite_ne_livre_ni_souvenirs_ni_journal(app, client, paroles):
+    """Un invité n'obtient pas, par « où ai-je posé… », les souvenirs ou les conversations du propriétaire."""
+    ctx = app.state.ctx
+    ctx.memory.add("[Photo 10:00] Des clés posées sur la table de la cuisine.", source="photo", kind="vision")
+    ctx.journal = FauxJournal([{"id": "j1", "ts": "2026-09-13T15:00:00+00:00",
+                                "texte": "J'ai caché mes clés dans le tiroir du bureau.", "source": "sous_titres"}])
+    ctx.memory.suspendre("invite")
+    try:
+        r = client.post("/api/accessibilite/ou-est", json={"question": "Où j'ai posé mes clés ?"})
+        assert r.status_code == 200
+        assert r.json() == {"reponse": acc.MODE_INVITE_SOUVENIRS, "souvenirs": [], "local": True}
+        assert ctx.voice._intercepter("où j'ai posé mes clés") == acc.MODE_INVITE_SOUVENIRS
+        assert ctx.voice._intercepter("où sont mes clés") is None, "phrase générique : la garde du chat s'applique"
+        corps = r.text
+        assert "cuisine" not in corps and "tiroir" not in corps
+    finally:
+        ctx.memory.reprendre("invite")
+    # Une zone sans mémoire, elle, ne cache pas ses propres souvenirs au propriétaire.
+    ctx.memory.suspendre("zone:Clinique")
+    try:
+        assert "cuisine" in client.post("/api/accessibilite/ou-est", json={"question": "Où j'ai posé mes clés ?"}).json()["reponse"]
+    finally:
+        ctx.memory.reprendre("zone:Clinique")
+
+
 # --------------------------------------------------------------------------- voix
 @pytest.mark.parametrize("phrase, attendu", [
     ("qu'est-ce qu'il y a devant moi", ("scene", "lunettes")),
@@ -604,6 +710,51 @@ def test_ou_est_consulte_le_journal(app, client):
     ("décris l'écran", ("ecran", "ecran")),
     ("où j'ai posé mes clés", ("ou-est", "lunettes")),
     ("où est mon portefeuille", ("ou-est-generique", "lunettes")),
+    ("Iris, c'est quel billet ça ?", ("billets", "lunettes")),
+    ("quelle pièce", ("billets", "lunettes")),
+    ("quel bus arrive", ("affichage", "lunettes")),
+    ("c'est quoi le numéro du bus", ("affichage", "lunettes")),
+    ("c'est quelle marque", ("objet", "lunettes")),
+    ("lis-moi le menu", ("lecture", "lunettes")),
+    # Demandes typiques d'une personne non voyante, avec une queue qui désigne ce qu'elle a sous les yeux :
+    # l'ancrage « $ » seul les faisait partir au modèle (contre-vérification du 2026-09-14).
+    ("c'est quel bus qui arrive", ("affichage", "lunettes")),
+    ("quel bus arrive là-bas", ("affichage", "lunettes")),
+    ("c'est quel autobus qui s'en vient", ("affichage", "lunettes")),
+    ("c'est quelle pièce de monnaie", ("billets", "lunettes")),
+    ("c'est quel billet que je tiens", ("billets", "lunettes")),
+    ("quel billet je tiens", ("billets", "lunettes")),
+    ("lis-moi le menu du restaurant", ("lecture", "lunettes")),
+    ("lis le menu s'il te plaît", ("lecture", "lunettes")),
+    ("qu'est-ce que je tiens dans la main", ("objet", "lunettes")),
+    ("c'est quelle marque ce téléphone", ("objet", "lunettes")),
+    ("c'est quelle couleur ce chandail", ("couleur", "lunettes")),
+    ("qu'est-ce que je regarde là", ("scene", "lunettes")),
+    ("de quelle couleur est ce chandail", ("couleur", "lunettes")),
+    ("de quelle couleur sont mes chaussettes", ("couleur", "lunettes")),
+    ("quelle est la couleur de mon chandail", ("couleur", "lunettes")),
+    ("décris la pièce où je suis", ("scene", "lunettes")),
+    ("décris l'endroit", ("scene", "lunettes")),
+    ("décris les gens autour de moi", ("personnes", "lunettes")),
+    ("décris la personne devant moi", ("personnes", "lunettes")),
+    ("c'est quoi ce produit", ("objet", "lunettes")),
+    ("quel est ce produit que je tiens", ("objet", "lunettes")),
+    ("compte les billets", ("billets", "lunettes")),
+    ("combien vaut ce billet", ("billets", "lunettes")),
+    ("lis ce document", ("lecture", "lunettes")),
+    ("lis ce document à l'écran", ("lecture", "ecran")),
+    # Reconnues avant l'ancrage « $ », perdues par lui (finition du 2026-09-14) : queues « j'ai », « en ce
+    # moment » et objet de deux mots « ma chemise de nuit » ; objet désigné par un article pour la lecture.
+    ("quel billet j'ai dans la main", ("billets", "lunettes")),
+    ("qu'est-ce que je regarde en ce moment", ("scene", "lunettes")),
+    ("c'est de quelle couleur ma chemise de nuit", ("couleur", "lunettes")),
+    ("qu'est-ce que j'ai dans la main droite", ("objet", "lunettes")),
+    ("lis l'étiquette de la bouteille", ("lecture", "lunettes")),
+    ("lis-moi l'étiquette de ce pot", ("lecture", "lunettes")),
+    ("lis-moi le texte de ce document", ("lecture", "lunettes")),
+    ("lis-moi le panneau du quai", ("affichage", "lunettes")),
+    ("que dit le panneau en face de moi", ("affichage", "lunettes")),
+    ("compte mon argent dans ma main", ("billets", "lunettes")),
 ])
 def test_les_phrases_vocales_sont_reconnues(phrase, attendu):
     assert acc.reconnaitre_demande(phrase) == attendu
@@ -612,9 +763,45 @@ def test_les_phrases_vocales_sont_reconnues(phrase, attendu):
 @pytest.mark.parametrize("phrase", [
     "ouvre youtube", "combien d'argent faut-il pour un voyage", "quel bus prendre pour aller au centre-ville",
     "quelle heure est-il", "lis mes courriels", "mets de la musique",
+    # Faux positifs relevés à la revue : des questions ordinaires qui déclenchaient une photo.
+    "quel billet d'avion est le moins cher", "dans quelle pièce est le chat",
+    "c'est quoi le numéro du bus pour aller à Laval", "c'est quelle marque de voiture la plus fiable",
+    "c'est dans quelle pièce", "pour aller à Laval c'est quel bus", "qu'est-ce que je regarde ce soir à la télé",
+    "c'est quelle couleur le drapeau du Canada", "lis le menu démarrer",
+    # Questions de connaissance que les motifs non ancrés interceptaient encore (contre-vérification du 2026-09-14).
+    "décris la pièce de théâtre Tartuffe", "décris l'endroit où Napoléon est mort",
+    "décris la personne idéale pour ce poste", "décris les gens de la Renaissance",
+    "de quelle couleur est ce drapeau du Japon", "quelle couleur c'est le drapeau du Canada",
+    "de quelle couleur est ma voiture préférée selon toi", "de quelle couleur est le ciel",
+    "c'est quoi ce produit dont tout le monde parle", "quel est ce produit que tu m'as recommandé hier",
+    "compte les billets vendus pour le concert", "lis ce document Word sur le bureau",
+    "combien d'argent j'ai dans la main gauche selon toi", "lis-moi ça plus tard",
+    "qu'est-ce que je regarde ce soir", "quel bus ce matin",
+    # Motifs « verbe + objet » qui étaient reconnus n'importe où dans la phrase (finition du 2026-09-14) :
+    # textos, courriels, fichiers, web, loi, compte bancaire, jeu de cartes.
+    "lis-moi le texte de Marc", "lis-moi le texte que Julie m'a envoyé", "lis ce texte sur Wikipédia",
+    "lis-moi cette lettre de la banque dans mes courriels", "lis-moi ça, le dernier courriel",
+    "lis moi l'étiquette du fichier", "compte mon argent dans mon compte bancaire",
+    "compte ces billets de Taylor Swift", "combien d'argent j'ai dans la main de poker",
+    "que dit le panneau de la loi", "lis le panneau de configuration", "de quelle couleur est ce drapeau",
+    "de quelle couleur sont mes yeux", "lis-moi le texte de la chanson", "quel billet du concert",
 ])
 def test_les_autres_phrases_passent_leur_chemin(service, phrase):
     assert service.interception(phrase) is None
+
+
+def test_ou_est_generique_exige_un_souvenir_qui_parle_de_lobjet(app, client):
+    """« Où est ma commande Amazon ? » ne s'arrête pas sur une phrase entendue qui contient « commande »."""
+    ctx = app.state.ctx
+    ctx.journal = FauxJournal([
+        {"id": "j1", "ts": "2026-09-13T15:00:00+00:00", "texte": "On a reçu la commande de papier hier.", "source": "sous_titres"},
+        {"id": "j2", "ts": "2026-09-13T16:00:00+00:00", "texte": "J'ai laissé mes clés sur le comptoir.", "source": "sous_titres"},
+    ])
+    assert ctx.voice._intercepter("où est ma commande Amazon") is None
+    reponse = ctx.voice._intercepter("où sont mes clés")
+    assert reponse is not None and "comptoir" in reponse
+    assert acc.couverture_objet("ma commande Amazon", "On a reçu la commande de papier hier.") == 0.5
+    assert acc.couverture_objet("mes clés", "une clé USB") == 1.0
 
 
 def test_linterception_est_branchee_en_priorite_40(app, client):

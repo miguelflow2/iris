@@ -36,6 +36,27 @@ services:
       # Doit être IDENTIQUE à IRIS_LICENSE_SECRET de vela-licences (sinon les clés sont rejetées).
       - key: VELA_LICENCE_SECRET
         sync: false
+      # --- Verrouillage à distance : liaison de l'ordinateur par courriel (2026-09-14) ---
+      # Sans serveur de courriel, AUCUN ordinateur ne peut être lié : la page /verrou n'atteint personne
+      # (/sante répond « liaison_possible: false » et la page le dit). Valeurs du fournisseur de courriel
+      # transactionnel choisi (secrets — jamais dans git). VELA_SMTP_PORT : 587 (STARTTLS) ou 465.
+      - key: VELA_SMTP_HOTE
+        sync: false
+      - key: VELA_SMTP_PORT
+        sync: false
+      - key: VELA_SMTP_UTILISATEUR
+        sync: false
+      - key: VELA_SMTP_MOTDEPASSE
+        sync: false
+      # Adresse d'expédition vérifiée chez le fournisseur (ex. VELA <no-reply@velaglass.ca>).
+      - key: VELA_COURRIEL_EXPEDITEUR
+        sync: false
+      # Adresse publique du relais, pour le lien envoyé par courriel (ex. https://relais.velaglass.ca).
+      - key: VELA_URL_PUBLIQUE
+        sync: false
+      # ⚠️ /tmp est effacé à chaque redémarrage du service gratuit : les liaisons confirmées
+      # (liaisons-pc.json) sont alors perdues et chaque ordinateur doit reconfirmer par courriel.
+      # Un disque persistant (offre payante) est nécessaire pour qu'une liaison dure.
       - key: VELA_DONNEES
         value: /tmp/vela-donnees
 

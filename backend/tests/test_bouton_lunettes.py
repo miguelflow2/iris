@@ -58,6 +58,16 @@ class FauxAccessibilite:
         return {"ok": True, "texte": "Une table."}
 
 
+def attendre(condition, delai: float = 3.0) -> bool:
+    """La voix du bouton part dans son propre fil (jamais dans la boucle asyncio) : on attend qu'elle passe."""
+    fin = time.monotonic() + delai
+    while time.monotonic() < fin:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
+
+
 def faux_contexte(tmp_path, connectees: bool = True, accessibilite=None, **reglages):
     settings = Settings(tmp_path / "donnees")
     settings.update(reglages)
@@ -113,7 +123,8 @@ def test_le_bouton_est_appris_et_enregistre(tmp_path, monkeypatch):
     assert ctx.settings.user.bouton_description_signature == f"{BOUTON}:0a0101"
     assert [e["etat"] for e in ctx.hub.de_type("bouton.apprentissage")] == ["reference", "appuyez", "appris"]
     assert ctx.hub.de_type("settings.updated")
-    assert "Bouton appris." in dits
+    assert attendre(lambda: "Bouton appris." in dits)
+    assert dits.index("Appuyez maintenant sur le bouton des lunettes, deux ou trois fois.") < dits.index("Bouton appris.")
     assert service.etat()["apprentissage"] is False
 
 
@@ -126,7 +137,7 @@ def test_rien_de_nouveau_echec_honnete(tmp_path, monkeypatch):
     assert "n'émettent rien sur le canal Bluetooth basse énergie pour ce bouton" in resultat["raison"]
     assert ctx.settings.user.bouton_description_signature == ""
     assert ctx.hub.de_type("bouton.apprentissage")[-1]["etat"] == "echec"
-    assert dits[-1] == resultat["raison"]
+    assert attendre(lambda: bool(dits) and dits[-1] == resultat["raison"])
 
 
 def test_lunettes_non_connectees_ou_mode_confidentiel_echec_immediat(tmp_path):
@@ -175,7 +186,7 @@ def test_un_refus_de_description_est_dit_a_voix_haute(tmp_path):
     asyncio.run(scenario())
     evenement = ctx.hub.de_type("bouton.lunettes")[-1]
     assert evenement["action"] == "erreur" and "Images jointes" in evenement["raison"]
-    assert dits and "consentement" in dits[-1]
+    assert attendre(lambda: bool(dits) and "consentement" in dits[-1])
 
 
 def test_mode_confidentiel_et_description_absente(tmp_path):
@@ -186,7 +197,26 @@ def test_mode_confidentiel_et_description_absente(tmp_path):
     ctx2, dits2 = faux_contexte(tmp_path / "b", bouton_description_signature=f"{BOUTON}:01")
     bl.ServiceBouton(ctx2).recevoir_paquet(paquet(BOUTON, "01"))
     assert ctx2.hub.de_type("bouton.lunettes")[-1]["action"] == "indisponible"
-    assert "n'est pas disponible" in dits2[-1]
+    assert attendre(lambda: bool(dits2) and "n'est pas disponible" in dits2[-1])
+
+
+def test_la_voix_du_bouton_ne_bloque_jamais_la_boucle(tmp_path):
+    """Premier démarrage de la voix Windows : speak peut attendre de longues secondes. _dire rend la main
+    tout de suite, et les phrases sont dites dans l'ordre."""
+    ctx, dits = faux_contexte(tmp_path)
+
+    def speak_lent(texte, force=False):
+        time.sleep(1.0)
+        dits.append(texte)
+        return True
+
+    ctx.tts.speak = speak_lent
+    service = bl.ServiceBouton(ctx)
+    debut = time.monotonic()
+    service._dire("Première.")
+    service._dire("Seconde.")
+    assert time.monotonic() - debut < 0.5, "deux phrases d'une seconde chacune : _dire ne les attend pas"
+    assert attendre(lambda: len(dits) == 2, 8.0) and dits == ["Première.", "Seconde."]
 
 
 def test_oublier_efface_la_signature(tmp_path):

@@ -9,7 +9,7 @@
  * données vivantes, et une réponse périmée servie hors ligne serait pire que pas de réponse du tout.
  * Les autres origines (cartographie, relais) ne sont pas interceptées non plus.
  */
-const CACHE = 'iris-coquille-v3';
+const CACHE = 'iris-coquille-v4';   // changer de nom purge l'ancienne coquille à l'activation
 const COQUILLE = [
   '/m', '/m/app.css', '/m/js/api.js', '/m/js/coeur.js',
   '/manifest.webmanifest', '/icone-192.png', '/icone-512.png',

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import inspect
 import json
 import logging
 import math
@@ -355,8 +356,11 @@ class ClientRelais:
         donnees = await self._post(f"{base}/api/appareil", {"machine": machine, "email": courriel})
         return str(donnees.get("jeton") or "").strip()
 
-    async def creer(self, base: str, jeton_appareil: str) -> dict:
-        return await self._post(f"{base}/api/partage/creer", {"jeton_appareil": jeton_appareil})
+    async def creer(self, base: str, jeton_appareil: str, preuve_pc: dict | None = None) -> dict:
+        corps: dict = {"jeton_appareil": jeton_appareil}
+        if preuve_pc:
+            corps["preuve_pc"] = preuve_pc  # preuve horodatée de l'ordinateur lié (serveur/partage_vision.py)
+        return await self._post(f"{base}/api/partage/creer", corps)
 
     async def renouveler(self, base: str, jeton_emetteur: str) -> dict:
         return await self._post(f"{base}/api/partage/renouveler", {"jeton_emetteur": jeton_emetteur})
@@ -604,14 +608,16 @@ class ServicePartage:
         le Bluetooth) et efface quand même son fichier — sans cela, une photo terminée à l'instant de l'arrêt
         resterait sur le disque, et son résultat serait perdu."""
         try:
-            from .lunettes_camera import CameraIndisponible, ProtocoleNonConfirme
+            from .lunettes_camera import CameraIndisponible, ProtocoleNonConfirme, refus_camera_client
         except Exception:  # pragma: no cover - module caméra absent : aucune exception à reconnaître
             CameraIndisponible = ProtocoleNonConfirme = ()  # type: ignore[assignment,misc]
+            refus_camera_client = lambda exc: {"code": "camera_absente", "message": str(exc)}  # noqa: E731
         try:
             try:
                 resultat = await asyncio.wait_for(camera.prendre_photo(reconnaissance=False), timeout=DELAI_PHOTO_S)
             except (ProtocoleNonConfirme, CameraIndisponible) as exc:  # type: ignore[misc]
-                raise RefusPartage(409, str(exc))
+                refus = refus_camera_client(exc)
+                raise RefusPartage(409, refus["message"], detail=refus)
             except RefusPartage:
                 raise
             except (asyncio.TimeoutError, TimeoutError):
@@ -667,12 +673,22 @@ class ServicePartage:
         jeton = await self._jeton_appareil(base)
         for essai in range(2):
             try:
-                reponse = await self.client_relais.creer(base, jeton)
+                # Constat du 2026-09-14 : quand cet ordinateur est lié au courriel sur le relais, la création exige
+                # sa preuve (sinon un tiers qui connaît le courriel fermait en boucle le partage en cours).
+                preuve = getattr(getattr(self.ctx, "telecommande", None), "preuve_horodatee", None)
+                preuve_pc = preuve("vela-partage-creer") if callable(preuve) else None
+                creer = self.client_relais.creer
+                try:
+                    inspect.signature(creer).bind(base, jeton, preuve_pc)
+                    avec_preuve = preuve_pc is not None
+                except (TypeError, ValueError):  # client de relais d'une version antérieure
+                    avec_preuve = False
+                reponse = await (creer(base, jeton, preuve_pc) if avec_preuve else creer(base, jeton))
             except ErreurRelais as exc:
                 if exc.statut == 401 and essai == 0:
                     jeton = await self._jeton_appareil(base, renouveler=True)
                     continue
-                if exc.statut in (429, 503) and exc.message:
+                if exc.statut in (403, 409, 429, 503) and exc.message:
                     raise RefusPartage(exc.statut, exc.message)  # message du relais : français, sans détail technique
                 log.info("partage : création refusée par le relais (statut %s)", exc.statut)
                 raise RefusPartage(502, RELAIS_INJOIGNABLE)

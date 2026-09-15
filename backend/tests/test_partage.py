@@ -32,6 +32,10 @@ import iris.partage as partage
 from iris.lunettes_camera import CameraIndisponible, ProtocoleNonConfirme, ResultatPhoto
 from iris.partage import ErreurRelais
 
+# Lunettes d'abord (2026-09-13) : ces tests portent sur la fonction elle-même, lunettes présentes.
+# La garde est vérifiée à part, avec et sans lunettes, dans test_garde_lunettes.py.
+pytestmark = pytest.mark.usefixtures("lunettes_presentes")
+
 NOMS_INTERDITS = ("claude", "anthropic", "openai", "gpt", "gemini", "google", "elevenlabs", "vosk", "piper",
                   "twilio", "openrouter")
 JETON_APPAREIL = "jeton-appareil-test"
@@ -304,6 +308,29 @@ def test_jeton_d_appareil_obtenu_ou_renouvele_aupres_du_relais(client, ctx, rela
     assert [j for _b, j in relais.creations] == [JETON_APPAREIL, "jeton-neuf"]
 
 
+def test_la_creation_porte_la_preuve_de_lordinateur_lie(client, ctx, relais, monkeypatch):
+    """Constat du 2026-09-14 : le relais exige, pour un compte dont l'ordinateur est lié, sa preuve horodatée."""
+    recues: list = []
+
+    async def creer_avec_preuve(base, jeton, preuve_pc=None):
+        recues.append(preuve_pc)
+        return await FauxRelais.creer(relais, base, jeton)
+
+    monkeypatch.setattr(relais, "creer", creer_avec_preuve)
+    ctx.consent.set("screen", True)
+    assert client.post("/api/partage/demarrer", json={"source": "ecran"}).status_code == 200
+    client.post("/api/partage/arreter")
+    assert recues and set(recues[0]) == {"horodatage", "preuve"} and len(recues[0]["preuve"]) == 43
+
+
+def test_un_partage_deja_en_cours_sur_le_compte_est_dit(client, ctx, relais):
+    ctx.consent.set("screen", True)
+    relais.erreur_creation = ErreurRelais(409, "Un partage est déjà en cours sur ce compte : arrêtez-le avant d'en créer un autre, ou réessayez dans une minute.")
+    r = client.post("/api/partage/demarrer", json={"source": "ecran"})
+    relais.erreur_creation = None
+    assert r.status_code == 409 and "déjà en cours" in str(r.json()["detail"])
+
+
 # --------------------------------------------------------------------------- écran
 def test_partage_d_ecran_envoie_mesure_et_s_arrete_proprement(client, ctx, relais, app):
     ctx.consent.set("screen", True)
@@ -488,7 +515,8 @@ def test_lunettes_protocole_non_confirme_refus_mot_pour_mot_sans_lien(client, ct
     camera = FausseCamera(ctx, tmp_path, erreur=refus, exploration=False)
     ctx.partage.fabrique_camera = lambda: camera
     r = client.post("/api/partage/demarrer", json={"source": "lunettes"})
-    assert r.status_code == 409 and r.json()["detail"] == str(refus)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "camera_non_confirmee"
+    assert "trame" not in r.json()["detail"]["message"]
     assert relais.creations == []  # aucun lien créé pour une caméra qui ne peut pas photographier
     assert ctx.capture.snapshot()["camera"] is False
     assert "Photo." not in app.state.test.paroles  # pas d'annonce d'une photo qui n'aura pas lieu
@@ -496,7 +524,7 @@ def test_lunettes_protocole_non_confirme_refus_mot_pour_mot_sans_lien(client, ct
     camera = FausseCamera(ctx, tmp_path, erreur=CameraIndisponible("Ces lunettes n'exposent pas l'interface caméra."))
     ctx.partage.fabrique_camera = lambda: camera
     r = client.post("/api/partage/demarrer", json={"source": "lunettes"})
-    assert r.status_code == 409 and r.json()["detail"] == "Ces lunettes n'exposent pas l'interface caméra."
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "camera_absente"
 
     camera = FausseCamera(ctx, tmp_path, connectees=False)
     ctx.partage.fabrique_camera = lambda: camera

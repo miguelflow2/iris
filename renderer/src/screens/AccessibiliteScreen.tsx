@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { CarteReglage, Holo, Liste, Rangee, Segmente, Toggle, TopBar } from '../components/ui'
 import { IcoAvertissement, IcoHautParleur, IcoJournal, IcoLunettes, IcoOreille, IcoRecherche, IcoStop, IcoTelephone, IcoTraduire } from '../components/icons'
 import { CarteLunettesRequises } from '../components/LunettesRequises'
-import { api, estLunettesRequises, messageErreur, refusConsentement } from '../lib/api'
+import { api, estCameraNonConfirmee, estLunettesRequises, messageErreur, refusConsentement } from '../lib/api'
 import { useStore } from '../lib/store'
 import './AccessibiliteScreen.css'
 
@@ -56,9 +56,14 @@ interface Refus {
   message: string
   consentement: { data_type: string; label: string; message: string } | null
   mode: ModeVision
+  /** refus « caméra des lunettes pas encore activée » : on propose les deux sources qui marchent */
+  camera: boolean
 }
 
 const CLE_SOURCE = 'iris.accessibilite.source'
+// Lu aussi par le process principal (electron/main/index.ts, lireChoixRetenir) : Ctrl+Maj+D suit ce choix quand
+// la caméra des lunettes est activée par le service (sinon le raccourci ne prend aucune photo : electron/main/decrire.ts).
+const CLE_RETENIR = 'iris.accessibilite.retenir'
 const TTS_NORMAL = 185
 const TTS_MIN = 90
 const TTS_MAX = 555
@@ -71,7 +76,7 @@ const SOURCES: { id: Source; label: string }[] = [
 
 const NOTE_SOURCE: Record<Source, string> = {
   lunettes:
-    'Photo prise par la caméra des lunettes : quelques secondes par image, jamais de vidéo en direct. Si la caméra de votre paire n’est pas encore prise en charge, IRIS le dit ; prenez alors la photo avec votre téléphone (Image importée) ou décrivez l’écran du PC.',
+    'La caméra des lunettes n’est pas encore activée dans IRIS (protocole en cours de confirmation) : pour l’instant, une description demandée avec cette source est refusée. En attendant, importez une photo prise avec votre téléphone (Image importée) ou décrivez l’écran du PC. Même activée, la caméra prendra une photo en quelques secondes, jamais de vidéo en direct.',
   ecran: 'Capture de l’écran de cet ordinateur au moment où vous choisissez un mode.',
   image: 'Une photo choisie sur cet ordinateur, par exemple prise avec votre téléphone.'
 }
@@ -83,15 +88,33 @@ export const LIMITES_ACCESSIBILITE: string[] = [
   'Pas de reconnaissance des personnes par leur nom : ce sont des données biométriques, qui exigeraient un consentement exprès et une déclaration préalable à la Commission d’accès à l’information du Québec. IRIS décrit les personnes sans les identifier.',
   'Pas de langue des signes.',
   'Pas d’enregistrement vidéo, de mise à jour du micrologiciel ni d’effacement de la mémoire interne des lunettes : le fabricant ne documente pas ce protocole.',
-  'L’empreinte vocale (verrou vocal) est livrée désactivée et demande votre consentement exprès ; une déclaration à la Commission d’accès à l’information est requise avant sa mise en marché.'
+  'L’empreinte vocale (verrou vocal) n’est pas encore offerte : au Québec, la vérification d’identité par la voix et la banque d’empreintes doivent être déclarées à la Commission d’accès à l’information au moins 60 jours avant leur mise en service, et VELA ne l’a pas encore fait. Elle exigera ensuite votre consentement exprès.'
 ]
 
+// Par défaut, une photo importée : la caméra des lunettes n'est pas encore activée par le service (protocole non
+// confirmé), et un premier essai qui aboutit à un refus n'apprend rien à personne. Un choix explicite est respecté.
 function lireSource(): Source {
   try {
     const v = window.localStorage.getItem(CLE_SOURCE)
-    return v === 'ecran' || v === 'image' || v === 'lunettes' ? v : 'lunettes'
+    return v === 'ecran' || v === 'image' || v === 'lunettes' ? v : 'image'
   } catch {
-    return 'lunettes'
+    return 'image'
+  }
+}
+
+function lireRetenir(): boolean {
+  try {
+    return window.localStorage.getItem(CLE_RETENIR) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function ecrireRetenir(v: boolean): void {
+  try {
+    window.localStorage.setItem(CLE_RETENIR, v ? 'true' : 'false')
+  } catch {
+    /* stockage indisponible : le choix vaut pour cette visite, et le raccourci ne retient rien */
   }
 }
 
@@ -145,7 +168,7 @@ export function AccessibiliteScreen({ params: _params }: { params?: Record<strin
   const [erreurModes, setErreurModes] = useState('')
   const [source, setSourceEtat] = useState<Source>(lireSource)
   const [image, setImage] = useState<ImageChoisie | null>(null)
-  const [retenir, setRetenir] = useState(true)
+  const [retenir, setRetenirEtat] = useState<boolean>(lireRetenir)
   const [enCours, setEnCours] = useState<string | null>(null)
   const [resultat, setResultat] = useState<ResultatVision | null>(null)
   const [refus, setRefus] = useState<Refus | null>(null)
@@ -176,6 +199,11 @@ export function AccessibiliteScreen({ params: _params }: { params?: Record<strin
   useEffect(() => {
     setFacteur((Number(settings?.tts_rate) || TTS_NORMAL) / TTS_NORMAL)
   }, [settings?.tts_rate])
+
+  const setRetenir = (v: boolean): void => {
+    setRetenirEtat(v)
+    ecrireRetenir(v)
+  }
 
   const setSource = (v: Source): void => {
     setSourceEtat(v)
@@ -222,7 +250,7 @@ export function AccessibiliteScreen({ params: _params }: { params?: Record<strin
       // 428 : la feuille « lunettes requises » s'ouvre d'elle-même (App.tsx).
       if (estLunettesRequises(err)) return
       const c = refusConsentement(err)
-      setRefus({ message: c ? c.message : messageErreur(err), consentement: c, mode: m })
+      setRefus({ message: c ? c.message : messageErreur(err), consentement: c, mode: m, camera: src === 'lunettes' && estCameraNonConfirmee(err) })
     } finally {
       setEnCours(null)
     }
@@ -289,7 +317,24 @@ export function AccessibiliteScreen({ params: _params }: { params?: Record<strin
             <Toggle on={retenir} onChange={setRetenir} titre="Retenir la description dans ma mémoire" />
           </div>
           <div className="small muted" style={{ lineHeight: 1.45 }}>
-            Retenue, la description sert ensuite à « Où ai-je posé… ? ». Rien n’est retenu en mode invité ou dans une zone sans mémoire.
+            Retenue, la description sert ensuite à « Où ai-je posé… ? ». Rien n’est retenu en mode invité ou dans une zone sans mémoire.{' '}
+            {presence?.camera_lunettes_active === true
+              ? 'Le raccourci Ctrl+Maj+D (photo des lunettes) suit ce choix.'
+              : 'Le raccourci Ctrl+Maj+D ne décrit rien pour l’instant : la caméra des lunettes n’étant pas encore activée, il le dit et ne prend aucune photo.'}
+          </div>
+          <div className="row between" style={{ gap: 12 }}>
+            <span style={{ fontWeight: 600 }}>Garder les photos décrites</span>
+            <Toggle
+              on={Boolean(settings?.vision_garder_photos)}
+              onChange={(v) => {
+                updateSettings({ vision_garder_photos: v }).catch((err: unknown) => toast(messageErreur(err), 'error'))
+              }}
+              titre="Garder les photos décrites"
+            />
+          </div>
+          <div className="small muted" style={{ lineHeight: 1.45 }}>
+            Désactivé : la photo des lunettes est effacée dès qu’elle est décrite, seule la description est retenue. Activé : elle est gardée avec
+            la description retenue, sur cet ordinateur, non chiffrée, jusqu’à la durée de conservation ou jusqu’à ce que vous l’effaciez de l’album.
           </div>
         </div>
 
@@ -333,7 +378,15 @@ export function AccessibiliteScreen({ params: _params }: { params?: Record<strin
             }}
           />
         ) : refus ? (
-          <div className="bloc-note erreur" role="alert">{refus.message}</div>
+          <div className="bloc-note erreur" role="alert">
+            {refus.message}
+            {refus.camera ? (
+              <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
+                <button type="button" className="btn sm" onClick={() => { setSource('image'); setRefus(null) }}>Utiliser une image importée</button>
+                <button type="button" className="btn sm" onClick={() => { setSource('ecran'); setRefus(null) }}>Décrire l’écran du PC</button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {/* ------------------------------------------------------------ résultat */}

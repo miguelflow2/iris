@@ -5,6 +5,7 @@ import { BackendProcess, type BackendInfo } from './backend'
 import { BackendLink } from './link'
 import { IndicatorWindow, type CaptureState } from './indicator'
 import { is } from './is'
+import { cameraActive, decisionDecrire, libelleMenuDecrire, MESSAGE_LUNETTES_REQUISES, phraseRefus, URL_ACHAT_LUNETTES } from './decrire'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -36,9 +37,8 @@ let privacyMode = false
 let micMuted = false
 let inviteActif = false
 let descriptionEnCours = false
-
-const URL_ACHAT_LUNETTES = 'https://velaglass.ca/lunettes.html'
-const MESSAGE_LUNETTES_REQUISES = 'Cette fonction marche avec les lunettes VELA. Connecte tes lunettes pour l’utiliser.'
+// Dit par le service (GET /api/lunettes/presence, événement lunettes.presence) ; faux tant qu'il ne l'a pas dit.
+let cameraLunettesActive = false
 
 const APP_ICON = join(__dirname, '../../build/icon.png')
 
@@ -113,12 +113,13 @@ function buildTrayMenu(): Menu {
       click: () => link.send({ type: voiceRunning ? 'voice.pause' : 'voice.start', minutes: 10 })
     },
     { label: 'Parler maintenant (Ctrl+Maj+Espace)', click: () => link.send({ type: 'voice.push_to_talk' }) },
-    { label: 'Décrire devant moi (Ctrl+Maj+D)', click: () => decrireDevantMoi() },
+    { label: libelleMenuDecrire(cameraLunettesActive), click: () => decrireDevantMoi() },
     { label: 'Stop (couper la parole)', click: () => link.send({ type: 'tts.stop' }) },
     { label: micMuted ? 'Réactiver le micro (Ctrl+Maj+M)' : 'Micro muet (Ctrl+Maj+M)', type: 'checkbox', checked: micMuted, click: () => link.send({ type: 'voice.toggle_mute' }) },
     { type: 'separator' },
     { label: 'Mode confidentiel (micro coupé)', type: 'checkbox', checked: privacyMode, click: () => link.send({ type: 'privacy.toggle' }) },
-    { label: 'Mode invité (rien n’est mémorisé)', type: 'checkbox', checked: inviteActif, click: () => basculerInvite() },
+    // « mémoire suspendue », pas « rien n'est mémorisé » : rappels et tâches créés pendant la session restent (mode_invite.py).
+    { label: 'Mode invité (mémoire suspendue)', type: 'checkbox', checked: inviteActif, click: () => basculerInvite() },
     { type: 'separator' },
     { label: 'Quitter IRIS', click: () => app.quit() }
   ])
@@ -185,17 +186,43 @@ async function appelService(method: 'GET' | 'POST', path: string, body?: unknown
   }
 }
 
-/** La phrase du service pour un refus, jamais du JSON brut. */
-function phraseRefus(data: any, repli: string): string {
-  const detail = data?.detail
-  if (typeof detail === 'string' && detail) return detail
-  if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message
-  return repli
+/** Retient ce que le service dit de la caméra des lunettes et remet le menu de la barre système à jour. */
+function noterCameraLunettes(presence: any): void {
+  const active = cameraActive(presence)
+  if (active === cameraLunettesActive) return
+  cameraLunettesActive = active
+  tray?.setContextMenu(buildTrayMenu())
+}
+
+/**
+ * Le choix « Retenir la description dans ma mémoire » de l'écran Accessibilité, gardé par la fenêtre
+ * (localStorage, clé iris.accessibilite.retenir, « true » ou « false ») : le raccourci suit le même choix que
+ * l'écran, y compris sa valeur par défaut (retenir). La fenêtre fermée est seulement cachée : son renderer
+ * tourne encore et répond. Choix illisible (fenêtre détruite, stockage bloqué, pas de réponse en 1 s) : rien
+ * n'est retenu, car un raccourci ne doit pas remplir la mémoire sur une supposition. La mémoire suspendue
+ * (mode invité, zone sans mémoire) est de toute façon respectée par le service.
+ */
+async function lireChoixRetenir(): Promise<boolean> {
+  const fenetre = mainWindow
+  if (!fenetre || fenetre.isDestroyed()) return false
+  try {
+    const lecture = fenetre.webContents.executeJavaScript(
+      "(() => { try { return { valeur: window.localStorage.getItem('iris.accessibilite.retenir') } } catch { return null } })()",
+      false
+    ) as Promise<{ valeur: string | null } | null>
+    const reponse = await Promise.race([lecture, new Promise<null>((r) => setTimeout(() => r(null), 1000))])
+    if (!reponse || typeof reponse !== 'object') return false
+    return reponse.valeur !== 'false'
+  } catch {
+    return false
+  }
 }
 
 /**
  * « Décrire devant moi » (Ctrl+Maj+D et barre système). Lunettes d'abord : sans lunettes présentes,
  * rien d'autre qu'une notification — aucune capture d'écran de repli, aucun appel de description.
+ * Caméra des lunettes non activée par le service (camera_lunettes_active=false) : aucune photo n'est
+ * demandée ; la notification dit la limite et où décrire une image ou l'écran (electron/main/decrire.ts).
  */
 async function decrireDevantMoi(): Promise<void> {
   if (descriptionEnCours) {
@@ -205,25 +232,20 @@ async function decrireDevantMoi(): Promise<void> {
   descriptionEnCours = true
   try {
     const presence = await appelService('GET', '/api/lunettes/presence')
-    if (presence.status === 401) {
-      notify('IRIS', phraseRefus(presence.data, 'IRIS est verrouillée.'))
-      return
-    }
-    if (presence.ok && presence.data && presence.data.presentes === false) {
-      notify('IRIS — lunettes requises', `${MESSAGE_LUNETTES_REQUISES} ${presence.data.acheter_url || URL_ACHAT_LUNETTES}`)
-      return
-    }
-    if (!presence.ok) {
-      // Présence invérifiable (service injoignable, version sans cette route) : on ne capte rien.
-      notify('IRIS', phraseRefus(presence.data, 'La présence des lunettes n’a pas pu être vérifiée.'))
+    if (presence.ok) noterCameraLunettes(presence.data)
+    const decision = decisionDecrire(presence)
+    if ('notifier' in decision) {
+      notify(decision.notifier.titre, decision.notifier.corps)
       return
     }
     // Une photo des lunettes prend quelques secondes, puis la description : délai large.
-    const r = await appelService('POST', '/api/accessibilite/decrire', { mode: 'scene', source: 'lunettes', parler: true, memoriser: true }, 120000)
+    const memoriser = await lireChoixRetenir()
+    const r = await appelService('POST', '/api/accessibilite/decrire', { ...decision.decrire, parler: true, memoriser }, 120000)
     if (r.ok) {
-      const texte = String(r.data?.texte || '').trim()
-      // La description est lue à voix haute par IRIS ; la notification en garde une trace lisible.
-      if (texte) notify('IRIS — devant vous', texte.length > 240 ? `${texte.slice(0, 237)}…` : texte)
+      // La description est lue à voix haute. Son texte n'est PAS recopié dans la notification : Windows garde
+      // les notifications dans son Centre de notifications et peut les montrer sur l'écran verrouillé, hors
+      // d'IRIS, sans chiffrement, même en mode invité ou dans une zone sans mémoire.
+      notify('IRIS — devant vous', 'Description terminée et lue à voix haute.')
       return
     }
     if (r.status === 428) {
@@ -300,20 +322,29 @@ function wireLink(): void {
       const confiance = typeof e.confiance === 'number' ? ` (confiance ${Math.round(e.confiance * 100)} %)` : ''
       notify(e.test ? 'IRIS — essai d’alerte sonore' : 'IRIS — alerte sonore', `${e.libelle || 'Son important détecté'}${confiance}. Vérifiez autour de vous.`)
     }
+    // Corps génériques : ni le nom de la personne, ni le texte du rappel, ni le message du proche ne sont
+    // recopiés dans l'historique des notifications de Windows (voir decrireDevantMoi). Le détail reste
+    // dans IRIS : écran Rappels et messages de la Vision partagée.
     if (event.type === 'rappel.contexte') {
-      const e = event as { personne?: string; texte?: string }
-      notify(e.personne ? `IRIS — rappel pour ${e.personne}` : 'IRIS — rappel', e.texte || '')
+      notify('IRIS — rappel', 'Un rappel lié à une personne s’est déclenché. Ouvrez IRIS pour le lire.')
     }
     if (event.type === 'partage.message') {
-      const e = event as { texte?: string }
-      notify('IRIS — message de votre proche', e.texte || '')
+      notify('IRIS — vision partagée', 'Nouveau message de votre proche, lu à voix haute. Il s’affiche aussi dans IRIS pendant le partage.')
     }
     if (event.type === 'invite.etat') {
       inviteActif = Boolean((event as { actif?: boolean }).actif)
       tray?.setContextMenu(buildTrayMenu())
     }
+    if (event.type === 'lunettes.presence' && 'camera_lunettes_active' in event) {
+      noterCameraLunettes(event)
+    }
     if (event.type === 'hello') {
       lireInvite().catch(() => undefined)
+      appelService('GET', '/api/lunettes/presence')
+        .then((r) => {
+          if (r.ok) noterCameraLunettes(r.data)
+        })
+        .catch(() => undefined)
     }
   })
 }
@@ -398,7 +429,9 @@ ipcMain.handle('iris:app', () => ({
   version: app.getVersion(),
   platform: process.platform,
   userData: app.getPath('userData'),
-  logPath: backend?.logPath ?? ''
+  logPath: backend?.logPath ?? '',
+  // Version installée ou code source : certains guides (scripts du dossier « scripts ») n'existent qu'avec le code source.
+  isPackaged: app.isPackaged
 }))
 ipcMain.handle('iris:openExternal', (_event, url: string) => {
   if (/^https?:\/\//.test(url)) shell.openExternal(url)

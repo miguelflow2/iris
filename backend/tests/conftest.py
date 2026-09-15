@@ -42,3 +42,18 @@ def client_sans_jeton(app):
 
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture()
+def lunettes_presentes(monkeypatch):
+    """Garde « lunettes d'abord » satisfaite (2026-09-13), pour les tests d'une fonction qui capte ou agit.
+
+    On ne touche QUE la porte des fonctions (PresenceLunettes.exiger, utilisée par les routes, les
+    services et les boucles de fond) : le verrou de l'écoute (VoiceListener.lunettes_requises) garde son
+    comportement, pour qu'aucun test n'ouvre le vrai micro par l'autodémarrage de l'écoute. La garde
+    elle-même est vérifiée, avec et sans lunettes, par tests/test_garde_lunettes.py."""
+    from iris.lunettes_presence import PresenceLunettes
+
+    monkeypatch.setattr(PresenceLunettes, "exiger", lambda self, fonction: None)
+    # Même porte pour ce qui ouvre le micro, l'écran ou la caméra de l'ordinateur (constat du 2026-09-14).
+    monkeypatch.setattr(PresenceLunettes, "exiger_capture_pc", lambda self, fonction: None)

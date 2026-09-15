@@ -16,8 +16,24 @@ Ce que le relais fait, et ne fait pas :
 - le spectateur n'a que le code à 8 caractères (alphabet sans 0/O, 1/I/L), tiré par `secrets` : environ
   8 × 10¹¹ possibilités, et 10 essais ratés par 15 minutes au plus par adresse IP ;
 - bornes : 3 spectateurs, 10 images par seconde, 300 Ko par image, JPEG seulement, 30 minutes de vie
-  renouvelables par l'émetteur, 2 sessions par compte (la plus vieille est remplacée), 100 sessions en
-  tout ;
+  renouvelables par l'émetteur, 2 sessions par compte ET par adresse IP de création, 100 sessions en tout ;
+- constat du 2026-09-14 : le jeton d'appareil s'obtient pour n'importe quel courriel, et « la plus vieille
+  session est remplacée » laissait un tiers fermer en boucle le partage d'une personne malvoyante en pleine
+  aide à distance. Désormais une session dont l'émetteur est connecté (ou l'a été dans la dernière minute,
+  ou créée depuis moins d'une minute) n'est JAMAIS remplacée : la création répond 409 « un partage est déjà
+  en cours sur ce compte » ; et quand un ordinateur est lié au compte (relais.liaison_confirmee), la création
+  exige sa preuve horodatée (relais.verifier_preuve_horodatee).
+  Contre-vérification du 2026-09-14 : le quota de 5 créations par 15 minutes était compté par COMPTE, donc
+  partagé avec quiconque connaît le courriel ; un tiers l'épuisait sans fin et la victime recevait 429. Il est
+  maintenant compté par (compte, adresse IP) : les créations d'un tiers n'entament pas celui de la victime.
+  Finition B du 2026-09-14 : SESSIONS_PAR_COMPTE restait compté par compte seul. Depuis UNE adresse, un tiers
+  gardait deux émetteurs connectés et la victime (compte sans ordinateur lié : tous, tant que le courriel de
+  liaison n'est pas en service) recevait 409 aussi longtemps qu'il renouvelait, avec un « réessayez dans une
+  minute » faux. La limite est maintenant comptée par (compte, adresse IP de création) : les partages d'un tiers
+  ne prennent pas la place de ceux de la victime, et « réessayez dans une minute » n'est dit que lorsqu'une
+  session cédera réellement sa place au bout d'une minute. Limite dite : derrière une même adresse (même
+  réseau Wi-Fi public), un tiers et la victime partagent ce plafond ; lier l'ordinateur (preuve exigée) supprime
+  ce revers ;
 - aucun code, jeton ni courriel n'est écrit dans les journaux.
 
 Le module ne modifie pas relais.py : il reçoit le module relais lui-même (lire_jeton, normaliser).
@@ -58,12 +74,15 @@ MESSAGES_PAR_FENETRE = 5
 FENETRE_MESSAGES_S = 10.0
 ECHECS_MAX = 10
 FENETRE_ECHECS_S = 900.0  # 15 minutes
-CREATIONS_MAX = 20
+CREATIONS_MAX = 20  # par adresse IP
+CREATIONS_PAR_COMPTE = 5  # par (compte, adresse IP) : un tiers n'épuise pas le quota de la victime
+REMPLACEMENT_SANS_EMETTEUR_S = 60.0
 FENETRE_CREATIONS_S = 900.0
 DELAI_HELLO_S = 15.0
 TIC_S = 5.0  # cadence des états envoyés et de la vérification d'expiration sur chaque connexion
 FENETRE_CADENCE_S = 30.0
 SOURCES = ("lunettes", "ecran", "telephone")
+SEL_ADRESSES = secrets.token_hex(16)  # tiré au démarrage : les empreintes d'adresses ne vivent qu'en mémoire
 DEBUT_JPEG = b"\xff\xd8\xff"
 
 # Codes de fermeture WebSocket (plage 4000-4999 réservée aux applications).
@@ -79,6 +98,15 @@ MESSAGES_FIN = {
     "arrete": "Votre proche a arrêté le partage.",
     "remplacee": "Ce partage a été remplacé par un nouveau lien.",
 }
+MESSAGE_DEJA_EN_COURS = (
+    "Un partage est déjà en cours sur ce compte : arrêtez-le avant d'en créer un autre, ou réessayez dans une minute."
+)
+# Les sessions qui occupent la place sont en service (émetteur connecté) : aucune ne cédera d'elle-même dans une minute.
+MESSAGE_DEJA_EN_SERVICE = (
+    "Deux partages sont déjà en cours sur ce compte depuis cette connexion Internet, et leurs émetteurs sont "
+    "connectés : arrêtez-en un avant d'en créer un autre."
+)
+MESSAGE_PC_NON_LIE = "Cet appareil n'est pas l'ordinateur lié à ce compte VELA : le partage n'est pas créé."
 MESSAGE_INCONNU = "Ce lien de partage n'existe pas ou a expiré. Demandez un nouveau lien à votre proche."
 MESSAGE_COMPLET = "Trois personnes regardent déjà ce partage : c'est le maximum. Réessayez plus tard."
 _HOTE = re.compile(r"^[A-Za-z0-9.\-]+(:\d{1,5})?$")
@@ -232,6 +260,8 @@ class _Session:
     fenetre: deque = field(default_factory=deque)
     horodatages: deque = field(default_factory=lambda: deque(maxlen=60))
     fermee: bool = False
+    emetteur_vu_a: float = 0.0  # dernier instant où un émetteur était connecté
+    adresse: str = ""  # empreinte de l'adresse IP de création (jamais l'adresse en clair)
 
 
 async def _servir(canal: _Canal, lire) -> None:
@@ -439,23 +469,46 @@ def creer_routeur_partage(relais: Any) -> APIRouter:
             return JSONResponse({"detail": "Jeton d'appareil invalide ou expiré. Relancez IRIS pour en obtenir un nouveau."},
                                 status_code=401)
         compte = relais.normaliser(info.get("courriel") or "") or "anonyme:" + str(info.get("machine") or "?")
-        for cle in (f"ip:{ip}", f"compte:{compte}"):
+        lie = getattr(relais, "liaison_confirmee", None)
+        if callable(lie) and not compte.startswith("anonyme:") and lie(compte):
+            preuve = corps.get("preuve_pc") if isinstance(corps.get("preuve_pc"), dict) else {}
+            if not relais.verifier_preuve_horodatee(compte, "vela-partage-creer", preuve.get("horodatage"),
+                                                    str(preuve.get("preuve") or "")):
+                return JSONResponse({"detail": MESSAGE_PC_NON_LIE}, status_code=403)
+        cles_quota = ((f"ip:{ip}", CREATIONS_MAX), (f"compte:{compte}|ip:{ip}", CREATIONS_PAR_COMPTE))
+        for cle, plafond in cles_quota:
             recentes = _recentes(creations, cle, FENETRE_CREATIONS_S)
-            if len(recentes) >= CREATIONS_MAX:
+            if len(recentes) >= plafond:
                 delai = recentes[0] + FENETRE_CREATIONS_S - maintenant()
                 minutes = max(1, int(-(-delai // 60)))
                 return JSONResponse(
                     {"detail": f"Trop de partages créés en peu de temps. Réessayez dans {minutes} minute{'s' if minutes > 1 else ''}."},
                     status_code=429, headers={"Retry-After": str(int(delai) + 1)})
         _purger()
-        du_compte = sorted((s for s in sessions.values() if s.compte == compte), key=lambda s: s.cree_a)
+        t_creation = maintenant()
+        adresse = hashlib.sha256(f"partage-ip|{SEL_ADRESSES}|{compte}|{ip}".encode("utf-8")).hexdigest()[:24]
+        # Compté par (compte, adresse de création) : les partages d'un tiers ne prennent pas la place de la victime.
+        du_compte = sorted((s for s in sessions.values() if s.compte == compte and s.adresse == adresse),
+                           key=lambda s: s.cree_a)
+
+        def _remplacable(s: _Session) -> bool:
+            # Jamais une session en service : émetteur connecté, ou vu (ou créée) il y a moins d'une minute.
+            return s.emetteur is None and t_creation - max(s.cree_a, s.emetteur_vu_a) > REMPLACEMENT_SANS_EMETTEUR_S
+
         while len(du_compte) >= SESSIONS_PAR_COMPTE:
-            _fermer(du_compte.pop(0), "remplacee")
+            candidates = [s for s in du_compte if _remplacable(s)]
+            if not candidates:
+                # « Réessayez dans une minute » n'est vrai que si une session cédera sa place d'ici là.
+                en_service = all(s.emetteur is not None for s in du_compte)
+                return JSONResponse({"detail": MESSAGE_DEJA_EN_SERVICE if en_service else MESSAGE_DEJA_EN_COURS},
+                                    status_code=409)
+            du_compte.remove(candidates[0])
+            _fermer(candidates[0], "remplacee")
         if len(sessions) >= SESSIONS_MAX:
             log.warning("partage : plafond de %s sessions atteint", SESSIONS_MAX)
             return JSONResponse({"detail": "Le partage de vision est momentanément saturé. Réessayez dans quelques minutes."},
                                 status_code=503)
-        for cle in (f"ip:{ip}", f"compte:{compte}"):
+        for cle, _ in cles_quota:
             creations[cle].append(maintenant())
         code = generer_code()
         while code in sessions:
@@ -463,7 +516,7 @@ def creer_routeur_partage(relais: Any) -> APIRouter:
         jeton_emetteur = secrets.token_urlsafe(32)
         t = maintenant()
         session = _Session(code=code, compte=compte, empreinte=empreinte(jeton_emetteur), cree_a=t,
-                           expire_a=t + DUREE_SESSION_S)
+                           expire_a=t + DUREE_SESSION_S, adresse=adresse)
         sessions[code] = session
         par_jeton[session.empreinte] = session
         base = _base_publique(request)
@@ -550,6 +603,7 @@ def creer_routeur_partage(relais: Any) -> APIRouter:
                 ancien.fermer({"type": "fin", "raison": "remplace",
                                "message": "Un autre appareil émet maintenant pour ce partage."}, FERMETURE_REMPLACE)
             session.emetteur = canal
+            session.emetteur_vu_a = maintenant()
             if source in SOURCES:
                 session.source = source
         else:
@@ -597,6 +651,7 @@ def creer_routeur_partage(relais: Any) -> APIRouter:
         finally:
             if session.emetteur is canal:
                 session.emetteur = None
+                session.emetteur_vu_a = maintenant()
                 if not session.fermee:
                     _prevenir_spectateurs(session)
             if canal in session.controles:

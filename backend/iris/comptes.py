@@ -31,6 +31,9 @@ DUREE_SESSION = 30 * 24 * 3600  # 30 jours : on ne veut pas retaper son mot de p
 MIN_LONGUEUR = 8
 ESSAIS_MAX = 8  # au-delà, on ralentit fortement : un mot de passe local doit résister à la force brute
 FENETRE_ESSAIS = 900  # 15 minutes
+# Révocations motivées (effacements à distance) gardées au plus : un effacement est rare ; la borne évite
+# seulement qu'un fichier grossisse sans fin.
+REVOCATIONS_GARDEES = 20
 
 
 def _b64(donnees: bytes) -> str:
@@ -115,6 +118,9 @@ class Comptes:
                 "secret_session": _b64(secrets.token_bytes(32)),
                 "cree_le": ancien.get("cree_le") or maintenant,
                 "modifie_le": maintenant,
+                # Un changement de mot de passe (souvent fait juste après la perte d'un téléphone) ne doit pas
+                # effacer la trace d'un effacement à distance : le téléphone perdu doit encore l'apprendre.
+                "revocations_motivees": self._revocations_valables(ancien),
             }
         )
         self._essais.clear()
@@ -171,10 +177,61 @@ class Comptes:
         except ValueError:
             return False
 
-    def revoquer_tout(self) -> None:
-        """Déconnecte tous les appareils, sans changer le mot de passe."""
+    def revoquer_tout(self, motif: str = "") -> None:
+        """Déconnecte tous les appareils, sans changer le mot de passe.
+
+        `motif` (« effacement » pour l'effacement à distance) est gardé avec l'ANCIEN secret de session, dans une
+        LISTE : un téléphone perdu, en arrière-plan au moment de l'effacement, n'a pas vu l'événement verrou.etat ;
+        à sa réouverture, sa session refusée doit pouvoir lui dire POURQUOI, pour qu'il retire les copies gardées
+        sur lui. Jusqu'au 2026-09-14, seul le dernier motif était gardé : le geste naturel du propriétaire après
+        la perte, « Déconnecter tous les appareils » (révocation sans motif), écrasait la trace et le téléphone
+        perdu gardait ses cours lisibles. Une révocation sans motif n'efface donc plus rien de la liste ; chaque
+        entrée vit jusqu'à l'échéance maximale des sessions émises sous son secret. Seul un jeton réellement émis
+        (signature valide sous un secret révoqué) l'apprend : un jeton inventé reçoit le refus ordinaire."""
         d = self._lire()
         if d:
+            revocations = self._revocations_valables(d)
+            if motif:
+                revocations.append({
+                    "secret": d.get("secret_session", ""),
+                    "motif": motif,
+                    # une session émise sous ce secret expire au plus tard DUREE_SESSION après sa révocation
+                    "jusqua": int(time.time() + DUREE_SESSION),
+                })
+            d["revocations_motivees"] = revocations[-REVOCATIONS_GARDEES:]
+            d.pop("secret_session_revoque", None)
+            d.pop("motif_revocation", None)
             d["secret_session"] = _b64(secrets.token_bytes(32))
             self._ecrire(d)
             log.info("toutes les sessions ont été révoquées")
+
+    @staticmethod
+    def _revocations_valables(d: dict) -> list[dict]:
+        """Les révocations motivées encore utiles (sessions émises sous leur secret pas toutes expirées).
+        Reprend l'ancien format à une seule entrée (secret_session_revoque + motif_revocation) sans le perdre."""
+        maintenant = time.time()
+        entrees = [e for e in (d.get("revocations_motivees") or []) if isinstance(e, dict)]
+        if d.get("secret_session_revoque") and d.get("motif_revocation"):
+            entrees.append({"secret": d["secret_session_revoque"], "motif": d["motif_revocation"],
+                            "jusqua": int(maintenant + DUREE_SESSION)})
+        return [e for e in entrees if e.get("secret") and e.get("motif") and float(e.get("jusqua") or 0) > maintenant]
+
+    def motif_revocation(self, jeton: str) -> str | None:
+        """Le motif de la révocation motivée (effacement) sous laquelle ce jeton avait été émis, sinon None.
+        Toutes les révocations motivées encore utiles sont regardées, pas seulement la dernière. L'échéance du
+        jeton n'est pas regardée : une session expirée entre-temps a tout de même existé sur cet appareil."""
+        if not jeton:
+            return None
+        try:
+            identifiant, echeance, signature = jeton.rsplit(".", 2)
+        except (ValueError, TypeError):
+            return None
+        corps = f"{identifiant}.{echeance}".encode()
+        for entree in reversed(self._revocations_valables(self._lire())):
+            try:
+                attendue = hmac.new(_debase64(entree["secret"]), corps, hashlib.sha256).digest()[:24]
+            except (ValueError, TypeError):
+                continue
+            if hmac.compare_digest(_b64(attendue), signature):
+                return entree["motif"]
+        return None

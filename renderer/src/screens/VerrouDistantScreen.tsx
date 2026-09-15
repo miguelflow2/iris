@@ -31,6 +31,14 @@ interface EtatVerrou {
   mot_de_passe_defini?: boolean
   courriel_defini?: boolean
   relais_connecte?: boolean
+  /** Code défini avant la preuve à usage unique (2026-09-14) : il doit être choisi de nouveau. */
+  code_a_redefinir?: boolean
+  /** Liaison de cet ordinateur au courriel sur le relais, confirmée par courriel (telecommande.py). */
+  liaison_relais?: { etat: string; message: string } | null
+  /** Code de 6 caractères de la clé de cet ordinateur, à recopier sur la page du courriel de liaison. */
+  empreinte_liaison?: string | null
+  /** IRIS démarre verrouillée et attend le mot de passe du propriétaire (choix de l'utilisateur). */
+  ouverture_verrouillee?: boolean
   limite?: string
 }
 
@@ -54,7 +62,7 @@ function Condition({ ok, titre, detail, action }: { ok: boolean | null; titre: s
 }
 
 export function VerrouDistantScreen({ params: _params }: { params?: Record<string, any> }): JSX.Element {
-  const { nav, settings, updateSettings, toast, rafraichirVerrou } = useStore()
+  const { nav, settings, toast, rafraichirVerrou } = useStore()
   const [etat, setEtat] = useState<EtatVerrou | null>(null)
   const [erreurEtat, setErreurEtat] = useState('')
   const [code, setCode] = useState('')
@@ -65,6 +73,12 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
   const [codeOk, setCodeOk] = useState('')
   const [erreurVerrou, setErreurVerrou] = useState('')
   const [confirmer, setConfirmer] = useState(false)
+  const [retraitOuverture, setRetraitOuverture] = useState(false)
+  const [motDePasseOuverture, setMotDePasseOuverture] = useState('')
+  const [erreurOuverture, setErreurOuverture] = useState('')
+  const [retraitDistant, setRetraitDistant] = useState(false)
+  const [motDePasseDistant, setMotDePasseDistant] = useState('')
+  const [erreurDistant, setErreurDistant] = useState('')
 
   const charger = useCallback(async (): Promise<void> => {
     try {
@@ -78,7 +92,7 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
   useEffect(() => {
     charger().catch(() => undefined)
     const off = api.on((e: IrisEvent) => {
-      if (e.type === 'settings.updated' || e.type === 'verrou.etat' || e.type === 'ws.open') charger().catch(() => undefined)
+      if (e.type === 'settings.updated' || e.type === 'verrou.etat' || e.type === 'verrou.distant' || e.type === 'ws.open') charger().catch(() => undefined)
     })
     // La liaison au relais s'ouvre quelques secondes après l'activation (et se rouvre seule après une
     // coupure) : l'écran relit l'état toutes les 5 s pour afficher ce qui est vrai maintenant.
@@ -96,19 +110,62 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
   const actif = Boolean(etat?.actif_distance ?? settings?.verrou_distant_actif)
   const motDePasseDefini = etat?.mot_de_passe_defini
   const remplacement = Boolean(etat?.code_defini)
+  // Contre-vérification du 2026-09-14 : « activé » ne veut pas dire « utilisable ». Tant que cet ordinateur n'est
+  // pas lié à votre compte sur le relais (courriel confirmé), la page /verrou ne peut pas l'atteindre.
+  const lie = etat?.liaison_relais?.etat === 'confirmee'
 
   const problemesCode: string[] = []
   if (code.length > 0 && (code.trim().length < CODE_MIN || code.trim().length > CODE_MAX)) problemesCode.push(`de ${CODE_MIN} à ${CODE_MAX} caractères`)
   if (code2.length > 0 && code !== code2) problemesCode.push('les deux saisies diffèrent')
   const codePret = code.trim().length >= CODE_MIN && code.trim().length <= CODE_MAX && code === code2 && (!remplacement || !motDePasseDefini || motDePasse.length > 0)
 
-  const basculer = (on: boolean): void => {
+  /* Activer : permis. Désactiver : le service exige le mot de passe du propriétaire (403 sinon). On le demande
+     AVANT, par la route dédiée : l'écran n'annonce « désactivé » que si le service l'a vraiment fait. */
+  const changerDistant = async (on: boolean, motDePasseSaisi: string | null): Promise<boolean> => {
     setOccupe('reglage')
-    updateSettings({ verrou_distant_actif: on })
-      .then(() => charger())
-      .then(() => toast(on ? 'Verrouillage à distance activé.' : 'Verrouillage à distance désactivé.', 'success'))
-      .catch((err: unknown) => toast(messageErreur(err), 'error'))
-      .finally(() => setOccupe(null))
+    setErreurDistant('')
+    try {
+      setEtat(await api.post<EtatVerrou>('/api/confiance/verrou/distant', { actif: on, mot_de_passe: motDePasseSaisi }))
+      toast(
+        on
+          ? lie
+            ? 'Verrouillage à distance activé.'
+            : 'Verrouillage à distance activé, mais pas encore utilisable : cet ordinateur doit d’abord être lié à votre compte (courriel de confirmation).'
+          : 'Verrouillage à distance désactivé.',
+        'success'
+      )
+      return true
+    } catch (err) {
+      setErreurDistant(messageErreur(err))
+      if (on) toast(messageErreur(err), 'error')
+      return false
+    } finally {
+      setOccupe(null)
+    }
+  }
+
+  const basculer = (on: boolean): void => {
+    if (!on && motDePasseDefini !== false) {
+      setRetraitDistant(true)
+      return
+    }
+    changerDistant(on, null).catch(() => undefined)
+  }
+
+  /* Constat du 2026-09-14 : sur cet ordinateur, IRIS s'ouvre sans mot de passe. Choisi, elle démarre verrouillée. */
+  const changerOuverture = async (on: boolean, motDePasseSaisi: string | null): Promise<boolean> => {
+    setOccupe('reglage')
+    setErreurOuverture('')
+    try {
+      setEtat(await api.post<EtatVerrou>('/api/confiance/verrou/ouverture', { actif: on, mot_de_passe: motDePasseSaisi }))
+      toast(on ? 'IRIS demandera le mot de passe à chaque ouverture.' : 'Le mot de passe n’est plus demandé à l’ouverture.', 'success')
+      return true
+    } catch (err) {
+      setErreurOuverture(messageErreur(err))
+      return false
+    } finally {
+      setOccupe(null)
+    }
   }
 
   const enregistrerCode = async (): Promise<void> => {
@@ -206,26 +263,59 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
               }
             />
             <Condition
-              ok={etat ? etat.code_defini : null}
+              ok={etat ? etat.code_defini && !etat.code_a_redefinir : null}
               titre="Code de secours"
-              detail={etat?.code_defini ? 'Défini (vous seul le connaissez ; IRIS n’en garde qu’une empreinte).' : 'À choisir plus bas.'}
+              detail={
+                etat?.code_a_redefinir
+                  ? 'À choisir de nouveau : le code défini avant la mise à jour de sécurité du 14 septembre 2026 ne sert plus à distance.'
+                  : etat?.code_defini
+                    ? 'Défini (vous seul le connaissez ; IRIS n’en garde qu’une empreinte et une clé chiffrée).'
+                    : 'À choisir plus bas.'
+              }
             />
             <Condition
               ok={etat ? actif : null}
               titre="Verrouillage à distance activé"
-              detail={actif ? 'Cet ordinateur accepte les commandes de la page, avec le bon code.' : 'Désactivé : la page ne peut rien faire sur cet ordinateur.'}
+              detail={
+                !actif
+                  ? 'Désactivé : la page ne peut rien faire sur cet ordinateur.'
+                  : lie
+                    ? 'Cet ordinateur accepte les commandes de la page, avec le bon code.'
+                    : 'Activé, mais pas encore utilisable : tant que cet ordinateur n’est pas lié à votre compte (ligne « Ordinateur lié » plus bas), la page ne peut pas l’atteindre.'
+              }
             />
             <Condition
               ok={etat ? Boolean(etat.relais_connecte) : null}
               titre="Liaison avec le relais"
               detail={
                 etat?.relais_connecte
-                  ? 'Connectée en ce moment.'
-                  : localOnly
-                    ? 'Fermée : le mode 100 % local coupe toute connexion au relais.'
-                    : actif
-                      ? 'Pas connectée pour le moment. Elle s’ouvre seule quand Internet et l’accès au relais VELA sont disponibles.'
-                      : 'Elle s’ouvre quand le verrouillage à distance est activé.'
+                  ? localOnly
+                    ? 'Connectée, en mode « verrouillage seulement » : le mode 100 % local ne laisse passer que les commandes de verrouillage.'
+                    : 'Connectée en ce moment.'
+                  : actif
+                    ? 'Pas connectée pour le moment. Elle s’ouvre seule quand Internet et l’accès au relais VELA sont disponibles.'
+                    : 'Elle s’ouvre quand le verrouillage à distance est activé.'
+              }
+            />
+            <Condition
+              ok={etat ? etat.liaison_relais?.etat === 'confirmee' : null}
+              titre="Ordinateur lié à votre compte"
+              detail={
+                <>
+                  {etat?.liaison_relais?.message ||
+                    (actif
+                      ? 'Vérifiée à la connexion au relais. Un courriel de confirmation est envoyé à l’adresse du compte : ouvrez son lien pour lier cet ordinateur.'
+                      : 'Quand le verrouillage à distance est activé, un courriel de confirmation lie cet ordinateur à votre compte. Sans ce lien, la page ne peut pas l’atteindre.')}
+                  {actif && !lie && etat?.empreinte_liaison ? (
+                    <span style={{ display: 'block', marginTop: 6 }}>
+                      Code à recopier sur la page du courriel :{' '}
+                      <strong style={{ fontFamily: 'ui-monospace, Consolas, monospace', letterSpacing: '0.2em', fontSize: '1.15em' }}>
+                        {etat.empreinte_liaison}
+                      </strong>
+                      . Il désigne cet ordinateur : ne confirmez jamais un courriel de liaison sans ce code.
+                    </span>
+                  ) : null}
+                </>
               }
             />
           </ul>
@@ -239,8 +329,22 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
           disabled={occupe !== null || !settings}
           onChange={basculer}
         />
+        <CarteReglage
+          titre="Demander le mot de passe à l’ouverture d’IRIS"
+          desc="Sur cet ordinateur, IRIS s’ouvre sans mot de passe. Activé, elle démarre verrouillée à chaque lancement et attend le mot de passe du propriétaire : un portable volé avec la session Windows ouverte ne donne plus accès à vos données dans IRIS. Le retirer exige ce mot de passe."
+          on={Boolean(etat?.ouverture_verrouillee)}
+          disabled={occupe !== null || !etat || motDePasseDefini === false}
+          onChange={(v) => {
+            if (v) changerOuverture(true, null).catch(() => undefined)
+            else setRetraitOuverture(true)
+          }}
+        />
+        {erreurOuverture && !retraitOuverture ? <div className="bloc-note erreur" role="alert">{erreurOuverture}</div> : null}
         {localOnly ? (
-          <div className="bloc-note attention">Le mode 100 % local est actif : aucune commande à distance ne peut arriver tant qu’il l’est.</div>
+          <div className="bloc-note attention">
+            Le mode 100 % local est actif : si le verrouillage à distance l’est aussi, IRIS garde seulement ce canal ouvert. Il ne transporte aucune donnée,
+            et aucune commande du téléphone : seulement un bonjour signé et les commandes de verrouillage ou d’effacement.
+          </div>
         ) : null}
 
         {/* ------------------------------------------------------------ code de secours */}
@@ -277,8 +381,9 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
           {erreurCode ? <div className="bloc-note erreur" role="alert">{erreurCode}</div> : null}
           {codeOk ? <div className="bloc-note ok" aria-live="polite">{codeOk}</div> : null}
           <div className="small muted" style={{ lineHeight: 1.45 }}>
-            Le code est haché sur cet ordinateur. Le relais ne le connaît pas et ne peut pas le vérifier : il le transmet, et c’est l’ordinateur qui le compare.
-            Après 5 codes erronés, l’ordinateur refuse pendant 15 minutes.
+            Le code ne quitte jamais le navigateur de la page : elle en tire une preuve à usage unique que cet ordinateur vérifie. Le relais voit passer la
+            preuve, pas le code. Une preuve permet toutefois d’essayer des codes hors ligne : choisissez un code long (12 caractères ou plus). Après 5 codes
+            erronés, l’ordinateur refuse pendant 15 minutes, même après un redémarrage.
           </div>
         </div>
 
@@ -325,14 +430,15 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
           <h3>Ce que « Effacer » supprime sur cet ordinateur</h3>
           <ul className="liste-limites">
             <li>La mémoire, le journal d’écoute, les cours, les reçus, les rappels liés aux personnes, les conversations, les tâches, les rappels et les veilles.</li>
-            <li>Les photos et enregistrements audio d’IRIS, l’empreinte vocale et les zones sans mémoire.</li>
+            <li>Les photos et enregistrements audio d’IRIS, l’empreinte vocale, les zones sans mémoire et l’état du mode invité.</li>
+            <li>Les copies de secours des réglages, les clés d’API enregistrées et le journal technique d’IRIS.</li>
             <li>Les accès enregistrés : sessions des téléphones (ils devront se reconnecter), code d’appairage, clés et identifiants de services, profil du navigateur piloté par IRIS. Les lunettes associées sont oubliées.</li>
             <li>La base est ensuite compactée. Puis IRIS se verrouille, si un mot de passe existe.</li>
           </ul>
           <h3 style={{ marginTop: 16 }}>Ce qui reste, exprès</h3>
           <ul className="liste-limites">
             <li>Le compte et le mot de passe du propriétaire, pour pouvoir déverrouiller.</li>
-            <li>L’accès de l’ordinateur au relais VELA, pour qu’il reste verrouillable à distance.</li>
+            <li>L’accès de l’ordinateur au relais VELA et sa clé de liaison, pour qu’il reste verrouillable à distance.</li>
           </ul>
           <h3 style={{ marginTop: 16 }}>Ce que la commande ne peut pas faire</h3>
           <ul className="liste-limites">
@@ -350,6 +456,96 @@ export function VerrouDistantScreen({ params: _params }: { params?: Record<strin
           </ul>
         </div>
       </div>
+
+      {retraitDistant ? (
+        <Modal
+          title="Désactiver le verrouillage à distance ?"
+          onClose={() => {
+            setRetraitDistant(false)
+            setMotDePasseDistant('')
+            setErreurDistant('')
+          }}
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  setRetraitDistant(false)
+                  setMotDePasseDistant('')
+                  setErreurDistant('')
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={!motDePasseDistant || occupe !== null}
+                onClick={async () => {
+                  const saisi = motDePasseDistant
+                  setMotDePasseDistant('')
+                  if (await changerDistant(false, saisi)) setRetraitDistant(false)
+                }}
+              >
+                Désactiver
+              </button>
+            </>
+          }
+        >
+          <div className="desc">
+            Sans verrouillage à distance, la page du relais ne pourra plus verrouiller ni effacer IRIS si cet ordinateur est perdu ou volé. Confirmez avec le mot
+            de passe du propriétaire.
+          </div>
+          <Field label="Mot de passe du propriétaire">
+            <input className="input" type="password" autoComplete="current-password" value={motDePasseDistant} onChange={(e) => setMotDePasseDistant(e.target.value)} />
+          </Field>
+          {erreurDistant ? <div className="bloc-note erreur" role="alert">{erreurDistant}</div> : null}
+        </Modal>
+      ) : null}
+
+      {retraitOuverture ? (
+        <Modal
+          title="Ne plus demander le mot de passe à l’ouverture ?"
+          onClose={() => {
+            setRetraitOuverture(false)
+            setMotDePasseOuverture('')
+            setErreurOuverture('')
+          }}
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  setRetraitOuverture(false)
+                  setMotDePasseOuverture('')
+                  setErreurOuverture('')
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={!motDePasseOuverture || occupe !== null}
+                onClick={async () => {
+                  const saisi = motDePasseOuverture
+                  setMotDePasseOuverture('')
+                  if (await changerOuverture(false, saisi)) setRetraitOuverture(false)
+                }}
+              >
+                Confirmer
+              </button>
+            </>
+          }
+        >
+          <Field label="Mot de passe du propriétaire">
+            <input className="input" type="password" autoComplete="current-password" value={motDePasseOuverture} onChange={(e) => setMotDePasseOuverture(e.target.value)} />
+          </Field>
+          {erreurOuverture ? <div className="bloc-note erreur" role="alert">{erreurOuverture}</div> : null}
+        </Modal>
+      ) : null}
 
       {confirmer ? (
         <Modal

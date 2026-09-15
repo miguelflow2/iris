@@ -9,6 +9,9 @@
 //   Siri (voir mobile-ios/REALITE-IOS.md, point 8). La session de reconnaissance est relancée toutes
 //   les ~55 s, par prudence envers les limites de durée d'une tâche de reconnaissance ;
 // - pendant que l'iPhone parle, il n'écoute pas (sinon IRIS s'entendrait elle-même) ;
+// - mode confidentiel réglé sur l'ordinateur : l'écoute est fermée tout de suite et refuse de repartir
+//   (pause nommée, voir suspendreVeille) ; même chose, avec sa propre raison, quand les alertes ou les
+//   sous-titres tiennent le micro ;
 // - le débit suit tts_rate/185, mais la voix d'iOS plafonne : au-delà d'environ 2×, elle ne va pas
 //   plus vite (AVSpeechUtteranceMaximumSpeechRate).
 //
@@ -25,12 +28,15 @@ enum ErreurVoix: Error, LocalizedError {
     case autorisationRefusee(String)
     case langueNonReconnue(String)
     case micro(String)
+    /// La voix est refusée pour une raison de règle (mode confidentiel, lunettes absentes, ordinateur
+    /// injoignable) : la phrase s'affiche telle quelle.
+    case refusee(String)
     case rienEntendu
     case interrompu
 
     var errorDescription: String? {
         switch self {
-        case .autorisationRefusee(let m), .micro(let m):
+        case .autorisationRefusee(let m), .micro(let m), .refusee(let m):
             return m
         case .langueNonReconnue(let langue):
             return "Cet iPhone ne reconnaît pas la parole en \(MoteurVoix.nomLangue(langue)) sans Internet. Écris la phrase, ou ajoute la langue dans Réglages › Général › Clavier › Dictée."
@@ -60,8 +66,18 @@ final class MoteurVoix: ServiceVoix {
 
     /// Commande entendue après le mot d'activation -> phrase à lire (nil : rien à dire).
     @ObservationIgnored var surCommande: (@MainActor (String) async -> String?)?
-    /// Garde appelée avant d'écouter : nil si la voix est permise, sinon la raison (lunettes absentes…).
+    /// Garde du mot d'activation : nil si la voix est permise, sinon la raison (lunettes absentes, ordinateur
+    /// injoignable…). Une commande part à l'ordinateur : sans lui, personne ne répondrait.
     @ObservationIgnored var refusVoix: (@MainActor () -> String?)?
+    /// Garde d'une écoute dirigée (« Parler », dictée, interprète) : verrou, mode confidentiel, lunettes. Pas
+    /// l'ordinateur : dicter une destination de guidage à pied marche sans lui.
+    @ObservationIgnored var refusEcoute: (@MainActor () -> String?)?
+    /// Qui tient déjà le micro de perception (alertes, sous-titres) ; nil s'il est libre. Deux moteurs
+    /// audio sur la même entrée se la disputent : la voix refuse plutôt que d'en voler une.
+    @ObservationIgnored var microOccupe: (@MainActor () -> String?)?
+    /// Pauses de l'écoute du mot d'activation, par clé (« confidentiel », « micro-perception »). Elles ne
+    /// touchent JAMAIS au choix de l'utilisateur retenu dans UserDefaults.
+    @ObservationIgnored private var pausesVeille: [String: String] = [:]
 
     @ObservationIgnored private let synthese = AVSpeechSynthesizer()
     @ObservationIgnored private let delegue = DelegueSynthese()
@@ -203,6 +219,12 @@ final class MoteurVoix: ServiceVoix {
     // MARK: - Écouter une phrase (interprète, bouton « Parler »)
 
     func ecouterUnePhrase(langue: String, delaiMax: TimeInterval) async throws -> String {
+        // Les écrans vérifient déjà ; ceci est le dernier rempart (verrou, mode confidentiel, lunettes, micro
+        // pris). Pas refusVoix : il exige l'ordinateur, et la dictée du guidage à pied marche sans lui.
+        if let refus = refusEcoute?() { throw ErreurVoix.refusee(refus) }
+        if let occupant = microOccupe?() {
+            throw ErreurVoix.micro("Le micro est déjà utilisé par \(occupant) sur cet iPhone. Arrête d'abord les alertes ou les sous-titres.")
+        }
         if let raison = await demanderAutorisations() { throw ErreurVoix.autorisationRefusee(raison) }
         let veilleAvant = motActivationVoulu
         attentePhrase?.conclure(.failure(ErreurVoix.interrompu))
@@ -297,6 +319,52 @@ final class MoteurVoix: ServiceVoix {
         }
     }
 
+    /// Pause nommée de l'écoute du mot d'activation (mode confidentiel, micro pris par la perception).
+    /// Ferme la reconnaissance tout de suite ; le choix de l'utilisateur (motActivationVoulu) est gardé.
+    func suspendreVeille(cle: String, raison: String) {
+        pausesVeille[cle] = raison
+        relance?.cancel()
+        relance = nil
+        let ecouteDirigee = attentePhrase != nil
+        if let attente = attentePhrase {
+            // Une écoute dirigée tourne (« Parler », dictée, interprète) : elle s'arrête aussi.
+            attente.conclure(.failure(ErreurVoix.refusee("Écoute arrêtée : \(raison)")))
+        }
+        if Self.fermerMicroAuSuspens(ecouteDirigee: ecouteDirigee, etat: etat) {
+            // TOUT DE SUITE, pas au retour asynchrone d'ecouterUnePhrase : l'appelant (MicroPerception) démarre
+            // son propre AVAudioEngine dès que cette fonction rend la main ; deux moteurs tiendraient sinon
+            // l'entrée en même temps (constat du 2026-09-14). La fin d'ecouterUnePhrase refermera sans effet.
+            fermerReconnaissance()
+            partiel = ""
+            if etat == .veille || etat == .commande { etat = .inactive }
+        }
+        if motActivationVoulu && etat != .parle && etat != .reflexion {
+            etat = .indisponible(raison: raison)
+        }
+    }
+
+    /// Faut-il fermer la reconnaissance (donc le moteur audio de la voix) quand une pause est posée ? Oui dès
+    /// qu'une écoute dirigée tourne ou que la veille / une commande tient le micro (fonction pure, testée).
+    nonisolated static func fermerMicroAuSuspens(ecouteDirigee: Bool, etat: EtatVoix) -> Bool {
+        ecouteDirigee || etat == .veille || etat == .commande
+    }
+
+    /// La voix tient-elle encore le micro dans cet état ? MicroPerception refuse de démarrer son moteur tant
+    /// que c'est vrai (dernier rempart si la pause n'a pas pu fermer la reconnaissance).
+    nonisolated static func voixTientLeMicro(_ etat: EtatVoix) -> Bool {
+        etat == .veille || etat == .commande
+    }
+
+    func reprendreVeille(cle: String) {
+        guard pausesVeille.removeValue(forKey: cle) != nil else { return }
+        if let autre = pausesVeille.values.first {
+            if case .indisponible = etat { etat = .indisponible(raison: autre) }
+            return
+        }
+        if case .indisponible = etat { etat = .inactive }
+        if motActivationVoulu { Task { await relancerVeille() } }
+    }
+
     /// L'app passe en arrière-plan : on coupe le micro (iOS ne permet pas mieux, et on ne le veut pas).
     func passerEnArrierePlan() {
         auPremierPlan = false
@@ -316,6 +384,12 @@ final class MoteurVoix: ServiceVoix {
     /// (Re)lance l'écoute du mot d'activation si toutes les conditions sont réunies.
     func relancerVeille() async {
         guard motActivationVoulu, auPremierPlan, attentePhrase == nil, parleEnCours == 0, !commandeEnTraitement else { return }
+        if let pause = pausesVeille.values.first {
+            // Pas de nouvel essai programmé : reprendreVeille relance quand la dernière pause est levée.
+            fermerReconnaissance()
+            etat = .indisponible(raison: pause)
+            return
+        }
         if let refus = refusVoix?() {
             fermerReconnaissance()
             etat = .indisponible(raison: refus)
