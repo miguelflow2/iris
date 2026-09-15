@@ -154,7 +154,7 @@
       </div>
 
       <div class="grid grid-3">
-        <div class="card os-card">
+        <div class="card os-card" id="carte-windows">
           <div class="os-head">
             <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Windows">
               <path d="M3 5.5 10.2 4.5v6.6H3V5.5Zm8.4-1.2L21 3v8.1h-9.6V4.3ZM3 12.3h7.2v6.6L3 17.9v-5.6Zm8.4 0H21V21l-9.6-1.3v-7.4Z"/>
@@ -233,6 +233,7 @@
               <em>Informations complémentaires</em>, puis <em>Exécuter quand même</em>. Ce message vient de ce
               que l’installeur n’est pas encore signé&nbsp;; il ne dit rien sur le contenu.</p>
           </div>
+          <p>Si rien ne se passe, voyez le <a href="#depannage">dépannage</a>.</p>
         </li>
 
         <li>
@@ -251,6 +252,58 @@
             voulons savoir. Les demandes libres, elles, passent par IRIS en ligne, en test.</p>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <!-- ===================================================== dépannage -->
+  <section id="depannage">
+    <div class="wrap narrow">
+      <p class="section-label">Dépannage</p>
+      <h2>Si rien ne se passe.</h2>
+      <p>Vous avez double-cliqué sur <code>IRIS-Setup.exe</code> et rien ne s’affiche&nbsp;? Faites ces vérifications, dans l’ordre.</p>
+
+      <ol class="steps-list" style="margin-top:28px">
+        <li>
+          <h3>Attendre une minute, sans cliquer de nouveau</h3>
+          <p>L’installeur pèse 369&nbsp;Mo&nbsp;: Windows l’analyse avant de l’afficher. Cela peut prendre une minute, parfois plus sur un ordinateur lent, sans aucun signe à l’écran. Cliquer de nouveau n’accélère rien.</p>
+        </li>
+
+        <li>
+          <h3>Conserver le fichier si le navigateur le signale</h3>
+          <p>Votre navigateur peut indiquer que <code>IRIS-Setup.exe</code> est rarement téléchargé et le mettre de côté. Ouvrez la liste des téléchargements (<span class="mono">Ctrl+J</span> dans Chrome et Edge), puis choisissez de conserver le fichier (le choix est parfois dans le menu «&nbsp;…&nbsp;» à côté du fichier). Ouvrez-le ensuite de nouveau.</p>
+        </li>
+
+        <li>
+          <h3>Passer l’avertissement de Windows</h3>
+          <p>Si Windows affiche «&nbsp;Windows a protégé votre ordinateur&nbsp;», suivez l’<a href="#etapes">étape&nbsp;2 de la marche à suivre</a>&nbsp;: <em>Informations complémentaires</em>, puis <em>Exécuter quand même</em>.</p>
+        </li>
+
+        <li>
+          <h3>Quitter IRIS si elle est déjà ouverte</h3>
+          <p>Si IRIS est déjà ouverte, l’installeur affiche, après le clic sur <em>Installer</em>, «&nbsp;IRIS est en cours d’utilisation&nbsp;». Cette fenêtre peut rester cachée, et l’installation semble alors bloquée. Pour l’éviter, quittez IRIS avant de lancer l’installeur&nbsp;: cherchez son icône près de l’horloge de Windows (parfois sous la flèche «&nbsp;^&nbsp;» des icônes cachées), faites un clic droit dessus, puis choisissez «&nbsp;Quitter IRIS&nbsp;».</p>
+        </li>
+
+        <li>
+          <h3>Regarder derrière les autres fenêtres</h3>
+          <p>Une fenêtre de l’installeur peut s’ouvrir derrière votre navigateur. Appuyez sur <span class="mono">Alt+Tab</span> pour voir toutes les fenêtres ouvertes, ou réduisez votre navigateur.</p>
+        </li>
+
+        <li>
+          <h3>Vérifier que le fichier est intact</h3>
+          <p>Ouvrez PowerShell (menu Démarrer, tapez «&nbsp;PowerShell&nbsp;»), collez cette commande, puis appuyez sur Entrée&nbsp;:</p>
+          <p style="margin-top:8px"><code style="overflow-wrap:anywhere">Get-FileHash "$env:USERPROFILE\Downloads\IRIS-Setup.exe" -Algorithm SHA256</code></p>
+          <p style="margin-top:8px">Comparez le résultat avec l’empreinte affichée dans la <a href="#carte-windows">carte Windows</a>, plus haut. PowerShell l’écrit en majuscules&nbsp;: c’est normal, seuls les chiffres et les lettres comptent. Si les deux empreintes sont les mêmes, le fichier est intact. Sinon, téléchargez-le de nouveau. Dans ce chemin, le dossier Téléchargements s’écrit <code>Downloads</code>&nbsp;: c’est normal. Si votre fichier est ailleurs, ou s’appelle <code>IRIS-Setup (1).exe</code>, adaptez le chemin.</p>
+        </li>
+
+        <li>
+          <h3>Nous écrire</h3>
+          <p>Si rien ne marche, écrivez-nous à <a href="mailto:contact@velaglass.ca?subject=Installation%20d%E2%80%99IRIS">contact@velaglass.ca</a>. Indiquez votre version de Windows (10 ou 11), ce qui s’affiche à l’écran (ou «&nbsp;rien&nbsp;») et l’empreinte obtenue juste au-dessus. Une vraie personne vous répond.</p>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <p><strong>Pourquoi Windows avertit.</strong> L’installeur d’IRIS n’est pas encore signé. Windows ne sait donc pas qui le publie, et il peut afficher un avertissement. Cet avertissement ne dit rien sur le contenu du fichier, et vous pouvez vérifier vous-même qu’il est intact (voir plus haut).</p>
+      </div>
     </div>
   </section>
 

@@ -154,7 +154,7 @@
       </div>
 
       <div class="grid grid-3">
-        <div class="card os-card">
+        <div class="card os-card" id="carte-windows">
           <div class="os-head">
             <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Windows">
               <path d="M3 5.5 10.2 4.5v6.6H3V5.5Zm8.4-1.2L21 3v8.1h-9.6V4.3ZM3 12.3h7.2v6.6L3 17.9v-5.6Zm8.4 0H21V21l-9.6-1.3v-7.4Z"/>
@@ -233,6 +233,7 @@
               <em>More info</em>, then <em>Run anyway</em>. This message appears because the installer
               isn’t signed yet; it says nothing about its content.</p>
           </div>
+          <p>If nothing happens, see <a href="#depannage">troubleshooting</a>.</p>
         </li>
 
         <li>
@@ -252,6 +253,58 @@
             in testing.</p>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <!-- ===================================================== troubleshooting -->
+  <section id="depannage">
+    <div class="wrap narrow">
+      <p class="section-label">Troubleshooting</p>
+      <h2>If nothing happens.</h2>
+      <p>You double-clicked <code>IRIS-Setup.exe</code> and nothing shows up? Go through these checks, in order.</p>
+
+      <ol class="steps-list" style="margin-top:28px">
+        <li>
+          <h3>Wait a minute, without clicking again</h3>
+          <p>The installer is 369&nbsp;MB: Windows scans it before showing it. This can take a minute, sometimes more on a slow computer, with no sign on screen. Clicking again doesn’t speed anything up.</p>
+        </li>
+
+        <li>
+          <h3>Keep the file if your browser flags it</h3>
+          <p>Your browser may say that <code>IRIS-Setup.exe</code> isn’t commonly downloaded and set it aside. Open the downloads list (<span class="mono">Ctrl+J</span> in Chrome and Edge), then choose to keep the file (the option is sometimes in the “…” menu next to the file). Then open it again.</p>
+        </li>
+
+        <li>
+          <h3>Get past the Windows warning</h3>
+          <p>If Windows shows “Windows protected your PC”, follow <a href="#etapes">step&nbsp;2 above</a>: <em>More info</em>, then <em>Run anyway</em>.</p>
+        </li>
+
+        <li>
+          <h3>Quit IRIS if it is already open</h3>
+          <p>If IRIS is already open, after you click <em>Install</em>, the installer shows “IRIS is running”. That window can stay hidden, and the installation then seems stuck. To avoid this, quit IRIS before starting the installer: look for its icon near the Windows clock (sometimes under the “^” arrow for hidden icons), right-click it, then choose “Quitter IRIS” (Quit IRIS).</p>
+        </li>
+
+        <li>
+          <h3>Look behind your other windows</h3>
+          <p>An installer window can open behind your browser. Press <span class="mono">Alt+Tab</span> to see all open windows, or minimize your browser.</p>
+        </li>
+
+        <li>
+          <h3>Check that the file is intact</h3>
+          <p>Open PowerShell (Start menu, type “PowerShell”), paste this command, then press Enter:</p>
+          <p style="margin-top:8px"><code style="overflow-wrap:anywhere">Get-FileHash "$env:USERPROFILE\Downloads\IRIS-Setup.exe" -Algorithm SHA256</code></p>
+          <p style="margin-top:8px">Compare the result with the hash shown on the <a href="#carte-windows">Windows card</a> above. PowerShell shows it in capital letters: that’s normal, only the letters and digits matter. If both hashes are the same, the file is intact. If not, download it again. If your file is somewhere else, or is named <code>IRIS-Setup (1).exe</code>, adjust the path.</p>
+        </li>
+
+        <li>
+          <h3>Write to us</h3>
+          <p>If nothing works, write to <a href="mailto:contact@velaglass.ca?subject=IRIS%20installation">contact@velaglass.ca</a>. Include your Windows version (10 or 11), what appears on screen (or “nothing”), and the hash you got just above. A real person answers.</p>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <p><strong>Why Windows warns you.</strong> The IRIS installer isn’t signed yet. So Windows doesn’t know who publishes it, and may show a warning. That warning says nothing about the file’s content, and you can check for yourself that the file is intact (see above).</p>
+      </div>
     </div>
   </section>
 

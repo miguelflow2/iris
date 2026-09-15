@@ -155,7 +155,7 @@
       </div>
 
       <div class="grid grid-3">
-        <div class="card os-card">
+        <div class="card os-card" id="carte-windows">
           <div class="os-head">
             <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Windows">
               <path d="M3 5.5 10.2 4.5v6.6H3V5.5Zm8.4-1.2L21 3v8.1h-9.6V4.3ZM3 12.3h7.2v6.6L3 17.9v-5.6Zm8.4 0H21V21l-9.6-1.3v-7.4Z"/>
@@ -230,10 +230,11 @@
           <p>Fai doppio clic sul file. Mantieni la cartella proposta se hai dubbi. IRIS si avvia da sola
             alla fine.</p>
           <div class="callout warn">
-            <p>Se Windows mostra «Windows ha protetto il PC», clicca su
+            <p>Se Windows mostra «PC protetto da Windows», clicca su
               <em>Ulteriori informazioni</em>, poi <em>Esegui comunque</em>. Questo messaggio deriva dal
               fatto che l'installer non è ancora firmato; non dice nulla sul contenuto.</p>
           </div>
+          <p>Se non succede nulla, consulta la <a href="#depannage">risoluzione dei problemi</a>.</p>
         </li>
 
         <li>
@@ -252,6 +253,58 @@
             proprio ciò che vogliamo sapere. Le richieste libere, invece, passano da IRIS online, in prova.</p>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <!-- ===================================================== risoluzione dei problemi -->
+  <section id="depannage">
+    <div class="wrap narrow">
+      <p class="section-label">Risoluzione dei problemi</p>
+      <h2>Se non succede nulla.</h2>
+      <p>Hai fatto doppio clic su <code>IRIS-Setup.exe</code> e non compare nulla? Fai questi controlli, in ordine.</p>
+
+      <ol class="steps-list" style="margin-top:28px">
+        <li>
+          <h3>Aspettare un minuto, senza cliccare di nuovo</h3>
+          <p>L'installer pesa 369&nbsp;MB: Windows lo analizza prima di mostrarlo. Può richiedere un minuto, a volte di più su un computer lento, senza alcun segno sullo schermo. Cliccare di nuovo non accelera nulla.</p>
+        </li>
+
+        <li>
+          <h3>Mantenere il file se il browser lo segnala</h3>
+          <p>Il tuo browser può segnalare che <code>IRIS-Setup.exe</code> non viene scaricato spesso e metterlo da parte. Apri l'elenco dei download (<span class="mono">Ctrl+J</span> in Chrome ed Edge) e scegli di mantenere il file (a volte l'opzione è nel menu «…» accanto al file). Poi aprilo di nuovo.</p>
+        </li>
+
+        <li>
+          <h3>Superare l'avviso di Windows</h3>
+          <p>Se Windows mostra «PC protetto da Windows», segui il <a href="#etapes">passaggio&nbsp;2 della procedura</a>: <em>Ulteriori informazioni</em>, poi <em>Esegui comunque</em>.</p>
+        </li>
+
+        <li>
+          <h3>Uscire da IRIS se è già aperta</h3>
+          <p>Se IRIS è già aperta, dopo il clic su <em>Installa</em> l'installer mostra «IRIS è in esecuzione». Questa finestra può restare nascosta, e l'installazione sembra allora bloccata. Per evitarlo, esci da IRIS prima di avviare l'installer: cerca la sua icona vicino all'orologio di Windows (a volte sotto la freccia «^» delle icone nascoste), fai clic destro sull'icona e scegli «Quitter IRIS» (Esci da IRIS).</p>
+        </li>
+
+        <li>
+          <h3>Guardare dietro le altre finestre</h3>
+          <p>Una finestra dell'installer può aprirsi dietro il browser. Premi <span class="mono">Alt+Tab</span> per vedere tutte le finestre aperte, oppure riduci a icona il browser.</p>
+        </li>
+
+        <li>
+          <h3>Verificare che il file sia integro</h3>
+          <p>Apri PowerShell (menu Start, digita «PowerShell»), incolla questo comando e premi Invio:</p>
+          <p style="margin-top:8px"><code style="overflow-wrap:anywhere">Get-FileHash "$env:USERPROFILE\Downloads\IRIS-Setup.exe" -Algorithm SHA256</code></p>
+          <p style="margin-top:8px">Confronta il risultato con l'impronta indicata nella <a href="#carte-windows">scheda Windows</a>, più in alto. PowerShell la mostra in maiuscolo: è normale, contano solo lettere e cifre. Se le due impronte sono uguali, il file è integro. Altrimenti, scaricalo di nuovo. In questo percorso, la cartella Download si scrive <code>Downloads</code>: è normale. Se il tuo file è altrove, o si chiama <code>IRIS-Setup (1).exe</code>, adatta il percorso.</p>
+        </li>
+
+        <li>
+          <h3>Scriverci</h3>
+          <p>Se non funziona nulla, scrivici a <a href="mailto:contact@velaglass.ca?subject=Installazione%20di%20IRIS">contact@velaglass.ca</a>. Indica la tua versione di Windows (10 o 11), cosa compare sullo schermo (o «nulla») e l'impronta ottenuta qui sopra. Risponde una persona vera.</p>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <p><strong>Perché Windows avvisa.</strong> L'installer di IRIS non è ancora firmato. Per questo Windows non sa chi lo pubblica e può mostrare un avviso. Questo avviso non dice nulla sul contenuto del file, e puoi verificare tu stesso che è integro (vedi sopra).</p>
+      </div>
     </div>
   </section>
 
